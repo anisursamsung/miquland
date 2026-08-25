@@ -37,6 +37,11 @@ private:
     int m_height = 30;
     bool m_visible = true;
 
+    struct ButtonRect {
+        int x, y, width, height;
+    };
+    ButtonRect m_menu_btn = { 0, 0, 0, 0 };
+
     struct WorkspaceButton {
         int x, y, width, height;
         size_t ws_id;

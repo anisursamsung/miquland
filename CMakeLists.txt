@@ -16,6 +16,7 @@ pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
 pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
 pkg_check_modules(GDK_PIXBUF REQUIRED IMPORTED_TARGET gdk-pixbuf-2.0)
+pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
 
 add_definitions(-DWLR_USE_UNSTABLE)
 
@@ -30,6 +31,9 @@ add_executable(biway
     src/cairo_buffer.cpp
     src/wallpaper.cpp
     src/bar.cpp
+    src/menu.cpp
+    src/palette/list_item_view.cpp
+    src/palette/list_view.cpp
 )
 
 target_include_directories(biway PRIVATE
@@ -41,6 +45,7 @@ target_include_directories(biway PRIVATE
     ${CAIRO_INCLUDE_DIRS}
     ${PANGOCAIRO_INCLUDE_DIRS}
     ${GDK_PIXBUF_INCLUDE_DIRS}
+    ${LIBINPUT_INCLUDE_DIRS}
 )
 
 target_link_libraries(biway PRIVATE
@@ -51,6 +56,7 @@ target_link_libraries(biway PRIVATE
     PkgConfig::CAIRO
     PkgConfig::PANGOCAIRO
     PkgConfig::GDK_PIXBUF
+    PkgConfig::LIBINPUT
 )
 
 target_compile_options(biway PRIVATE
@@ -58,4 +64,10 @@ target_compile_options(biway PRIVATE
     -Wno-unused-parameter
 )
 
-install(TARGETS biway RUNTIME DESTINATION bin)
+# Installation targets
+include(GNUInstallDirs)
+install(TARGETS biway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES assets/biway.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+install(FILES assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/biway)
+install(FILES assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+install(FILES assets/biway.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)

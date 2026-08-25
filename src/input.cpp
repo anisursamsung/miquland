@@ -4,8 +4,11 @@
 #include "view.hpp"
 #include "output.hpp"
 #include "bar.hpp"
+#include "config.hpp"
 #include <unistd.h>
 #include <cstdlib>
+
+#include "menu.hpp"
 
 namespace biway {
 
@@ -69,6 +72,7 @@ InputManager::~InputManager() {
 
 void InputManager::spawn_command(const char* cmd) {
     if (!cmd || !*cmd) return;
+    log_info("Executing command: " + std::string(cmd));
     if (fork() == 0) {
         setsid();
         execl("/bin/sh", "sh", "-c", cmd, nullptr);
@@ -85,73 +89,108 @@ void InputManager::remove_keyboard(Keyboard* kb) {
     }
 }
 
+void InputManager::reapply_device_config() {
+    bool natural_scroll = Config::get().is_natural_scroll_enabled();
+    for (auto* device : m_pointers) {
+        if (wlr_input_device_is_libinput(device)) {
+            struct libinput_device* libinput_dev = wlr_libinput_get_device_handle(device);
+            if (libinput_dev) {
+                if (libinput_device_config_scroll_has_natural_scroll(libinput_dev)) {
+                    libinput_device_config_scroll_set_natural_scroll_enabled(libinput_dev, natural_scroll ? 1 : 0);
+                    log_info(std::string("Live updated natural scroll: ") + (natural_scroll ? "true" : "false"));
+                }
+            }
+        }
+    }
+}
+
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
+    xkb_keysym_t norm_sym = (keysym >= XKB_KEY_A && keysym <= XKB_KEY_Z) ? (keysym - XKB_KEY_A + XKB_KEY_a) : keysym;
+
     bool mod = (modifiers & WLR_MODIFIER_LOGO) != 0;
     bool shift = (modifiers & WLR_MODIFIER_SHIFT) != 0;
+    bool ctrl = (modifiers & WLR_MODIFIER_CTRL) != 0;
+    bool alt = (modifiers & WLR_MODIFIER_ALT) != 0;
 
-    if (!mod) {
-        return false;
-    }
-
-    // Terminal: Super + Return
-    if (keysym == XKB_KEY_Return) {
-        const char* term = getenv("TERMINAL");
-        if (!term) term = "foot || alacritty || kitty || weston-terminal || xterm";
-        spawn_command(term);
-        return true;
-    }
-
-    // App launcher: Super + D or Super + Space
-    if (keysym == XKB_KEY_d || keysym == XKB_KEY_space) {
-        spawn_command("fuzzel || wofi --show drun || bemenu-run || dmenu_run");
-        return true;
-    }
-
-    // Toggle menu bar: Super + B
-    if (keysym == XKB_KEY_b || keysym == XKB_KEY_B) {
-        if (m_server->get_bar()) {
-            m_server->get_bar()->toggle_visibility();
+    // 1. If Menu is open, check if modal consumes the key
+    if (m_server->get_menu() && m_server->get_menu()->is_visible()) {
+        // System Exit: Super + Shift + Q
+        if (mod && shift && norm_sym == XKB_KEY_q) {
+            m_server->terminate();
+            return true;
         }
-        return true;
+        return m_server->get_menu()->handle_key(modifiers, keysym);
     }
 
-    // Close window: Super + Q or Super + Shift + C
-    if ((keysym == XKB_KEY_q && !shift) || (keysym == XKB_KEY_c && shift) || (keysym == XKB_KEY_C)) {
-        View* focused = m_server->get_focused_view();
-        if (focused) {
-            focused->close();
-        }
-        return true;
-    }
+    uint32_t active_mods = 0;
+    if (mod) active_mods |= WLR_MODIFIER_LOGO;
+    if (shift) active_mods |= WLR_MODIFIER_SHIFT;
+    if (ctrl) active_mods |= WLR_MODIFIER_CTRL;
+    if (alt) active_mods |= WLR_MODIFIER_ALT;
 
-    // Focus switching: Super + H / Left (Prev), Super + L / Right / Tab (Next)
-    if (keysym == XKB_KEY_h || keysym == XKB_KEY_Left) {
-        m_server->get_workspace_manager()->focus_prev_view();
-        return true;
-    }
-    if (keysym == XKB_KEY_l || keysym == XKB_KEY_Right || keysym == XKB_KEY_Tab) {
-        m_server->get_workspace_manager()->focus_next_view();
-        return true;
-    }
-
-    // Workspace switching & moving: Super + [1..9] and Super + Shift + [1..9]
-    if (keysym >= XKB_KEY_1 && keysym <= XKB_KEY_9) {
-        size_t ws_id = (keysym - XKB_KEY_1) + 1;
-        if (shift) {
-            View* focused = m_server->get_focused_view();
-            if (focused) {
-                m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
-            }
-        } else {
-            m_server->get_workspace_manager()->switch_to_workspace(ws_id);
-        }
-        return true;
-    }
-
-    // Exit compositor: Super + Shift + E or Super + Shift + Q
-    if (shift && (keysym == XKB_KEY_e || keysym == XKB_KEY_E || keysym == XKB_KEY_q || keysym == XKB_KEY_Q)) {
+    // 2. Reserved System Bindings
+    // Safe Exit compositor: Super + Shift + Q
+    if (mod && shift && norm_sym == XKB_KEY_q) {
+        log_info("System exit keybinding triggered (Super+Shift+Q)");
         m_server->terminate();
         return true;
+    }
+
+    // Terminal: Super + T
+    if (mod && !shift && !ctrl && !alt && norm_sym == XKB_KEY_t) {
+        std::string term = Config::get().get_terminal();
+        if (term.empty()) term = "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
+        log_info("Terminal keybinding triggered: " + term);
+        spawn_command(term.c_str());
+        return true;
+    }
+
+    // 3. User & Default Configurable Bindings
+    for (const auto& kb : Config::get().get_keybindings()) {
+        xkb_keysym_t kb_norm = (kb.keysym >= XKB_KEY_A && kb.keysym <= XKB_KEY_Z) ? (kb.keysym - XKB_KEY_A + XKB_KEY_a) : kb.keysym;
+        if (kb.modifiers == active_mods && kb_norm == norm_sym) {
+            const std::string& action = kb.action;
+            log_info("Keybinding matched: " + kb.combo_str + " -> " + action);
+
+            if (action == "menu" || action == "app_launcher") {
+                if (m_server->get_menu()) m_server->get_menu()->toggle();
+            } else if (action == "close" || action == "close_window") {
+                View* focused = m_server->get_focused_view();
+                if (focused) focused->close();
+            } else if (action == "toggle_bar") {
+                if (m_server->get_bar()) m_server->get_bar()->toggle_visibility();
+            } else if (action == "toggle_split" || action == "split_toggle") {
+                m_server->get_workspace_manager()->toggle_active_split();
+            } else if (action == "focus_win_1" || action == "window_1") {
+                m_server->get_workspace_manager()->focus_window_index(0);
+            } else if (action == "focus_win_2" || action == "window_2") {
+                m_server->get_workspace_manager()->focus_window_index(1);
+            } else if (action == "toggle_focus" || action == "next_window" || action == "focus_next") {
+                m_server->get_workspace_manager()->focus_next_view();
+            } else if (action == "prev_window" || action == "focus_prev") {
+                m_server->get_workspace_manager()->focus_prev_view();
+            } else if (action == "prev_ws" || action == "prev_workspace") {
+                m_server->get_workspace_manager()->prev_workspace();
+            } else if (action == "next_ws" || action == "next_workspace") {
+                m_server->get_workspace_manager()->next_workspace();
+            } else if (action.rfind("ws_", 0) == 0) {
+                try {
+                    size_t ws_id = std::stoul(action.substr(3));
+                    m_server->get_workspace_manager()->switch_to_workspace(ws_id);
+                } catch (...) {}
+            } else if (action.rfind("move_ws_", 0) == 0) {
+                try {
+                    size_t ws_id = std::stoul(action.substr(8));
+                    View* focused = m_server->get_focused_view();
+                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+                } catch (...) {}
+            } else if (action == "exit" || action == "quit") {
+                m_server->terminate();
+            } else {
+                spawn_command(action.c_str());
+            }
+            return true;
+        }
     }
 
     return false;
@@ -160,7 +199,7 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
 void InputManager::process_cursor_motion(uint32_t time) {
     double sx, sy;
     struct wlr_surface* surface = nullptr;
-    m_server->view_at(m_cursor->x, m_cursor->y, &surface, &sx, &sy);
+    View* view = m_server->view_at(m_cursor->x, m_cursor->y, &surface, &sx, &sy);
 
     if (!surface) {
         wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
@@ -169,6 +208,13 @@ void InputManager::process_cursor_motion(uint32_t time) {
     if (surface) {
         wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
+
+        // Hover to focus: if cursor hovers over a view and menu is not open, focus it!
+        if (view && view != m_server->get_focused_view()) {
+            if (!m_server->get_menu() || !m_server->get_menu()->is_visible()) {
+                view->focus();
+            }
+        }
     } else {
         wlr_seat_pointer_clear_focus(m_seat);
     }
@@ -181,7 +227,24 @@ void InputManager::handle_new_input(struct wl_listener* listener, void* data) {
     if (device->type == WLR_INPUT_DEVICE_KEYBOARD) {
         manager->m_keyboards.emplace_back(std::make_unique<Keyboard>(manager->m_server, device));
     } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
+        if (wlr_input_device_is_libinput(device)) {
+            struct libinput_device* libinput_dev = wlr_libinput_get_device_handle(device);
+            if (libinput_dev) {
+                // Hardcode Tap-To-Click and Tap Drag enabled by default
+                if (libinput_device_config_tap_get_finger_count(libinput_dev) > 0) {
+                    libinput_device_config_tap_set_enabled(libinput_dev, LIBINPUT_CONFIG_TAP_ENABLED);
+                    libinput_device_config_tap_set_drag_enabled(libinput_dev, LIBINPUT_CONFIG_DRAG_ENABLED);
+                }
+
+                // Configure Natural Scroll if supported
+                if (libinput_device_config_scroll_has_natural_scroll(libinput_dev)) {
+                    bool natural_scroll = Config::get().is_natural_scroll_enabled();
+                    libinput_device_config_scroll_set_natural_scroll_enabled(libinput_dev, natural_scroll ? 1 : 0);
+                }
+            }
+        }
         wlr_cursor_attach_input_device(manager->m_cursor, device);
+        manager->m_pointers.push_back(device);
     }
 
     uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
@@ -196,6 +259,9 @@ void InputManager::handle_cursor_motion(struct wl_listener* listener, void* data
     auto* event = static_cast<struct wlr_pointer_motion_event*>(data);
 
     wlr_cursor_move(manager->m_cursor, &event->pointer->base, event->delta_x, event->delta_y);
+    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
+        manager->m_server->get_menu()->handle_mouse_move(manager->m_cursor->x, manager->m_cursor->y);
+    }
     manager->process_cursor_motion(event->time_msec);
 }
 
@@ -204,6 +270,9 @@ void InputManager::handle_cursor_motion_absolute(struct wl_listener* listener, v
     auto* event = static_cast<struct wlr_pointer_motion_absolute_event*>(data);
 
     wlr_cursor_warp_absolute(manager->m_cursor, &event->pointer->base, event->x, event->y);
+    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
+        manager->m_server->get_menu()->handle_mouse_move(manager->m_cursor->x, manager->m_cursor->y);
+    }
     manager->process_cursor_motion(event->time_msec);
 }
 
@@ -211,8 +280,15 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
     InputManager* manager = wl_container_of(listener, manager, m_cursor_button_listener);
     auto* event = static_cast<struct wlr_pointer_button_event*>(data);
 
-    // Check if clicked on built-in bar first
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        // If Menu is open, route click to Menu first
+        if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
+            if (manager->m_server->get_menu()->handle_mouse_click(manager->m_cursor->x, manager->m_cursor->y)) {
+                return;
+            }
+        }
+
+        // Check if clicked on built-in bar
         if (manager->m_server->get_bar() && manager->m_server->get_bar()->handle_click(manager->m_cursor->x, manager->m_cursor->y)) {
             return;
         }
@@ -232,6 +308,11 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
 void InputManager::handle_cursor_axis(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_axis_listener);
     auto* event = static_cast<struct wlr_pointer_axis_event*>(data);
+
+    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
+        manager->m_server->get_menu()->handle_scroll(event->delta);
+        return;
+    }
 
     wlr_seat_pointer_notify_axis(manager->m_seat, event->time_msec, event->orientation,
         event->delta, event->delta_discrete, event->source, event->relative_direction);

@@ -20,6 +20,7 @@ public:
     void spawn_command(const char* cmd);
 
     void remove_keyboard(Keyboard* kb);
+    void reapply_device_config();
 
 private:
     static void handle_new_input(struct wl_listener* listener, void* data);
@@ -43,6 +44,7 @@ private:
     struct wlr_xcursor_manager* m_cursor_mgr = nullptr;
 
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
+    std::vector<struct wlr_input_device*> m_pointers;
 
     // Gesture tracking state
     double m_swipe_dx = 0.0;

@@ -39,7 +39,23 @@ void Wallpaper::render(int width, int height) {
     cairo_paint(cr);
 
     std::string path = Config::get().get_wallpaper_path();
-    if (!path.empty()) {
+    if (path.empty() || !std::filesystem::exists(path)) {
+        // Fallbacks: system installed wallpaper, then local asset
+        const std::vector<std::string> fallbacks = {
+            "/usr/share/backgrounds/biway/wallpaper.png",
+            "/usr/share/biway/wallpaper.png",
+            "/usr/local/share/backgrounds/biway/wallpaper.png",
+            "assets/wallpaper.png"
+        };
+        for (const auto& fb : fallbacks) {
+            if (std::filesystem::exists(fb)) {
+                path = fb;
+                break;
+            }
+        }
+    }
+
+    if (!path.empty() && std::filesystem::exists(path)) {
         GError* error = nullptr;
         GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file_at_scale(path.c_str(), width, height, FALSE, &error);
         if (pixbuf) {

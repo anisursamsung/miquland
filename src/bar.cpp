@@ -7,7 +7,18 @@
 #include <iomanip>
 #include <sstream>
 
+#include "menu.hpp"
+
 namespace biway {
+
+static void draw_rounded_rect(cairo_t* cr, double x, double y, double w, double h, double r) {
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, x + w - r, y + r, r, -M_PI / 2.0, 0);
+    cairo_arc(cr, x + w - r, y + h - r, r, 0, M_PI / 2.0);
+    cairo_arc(cr, x + r, y + h - r, r, M_PI / 2.0, M_PI);
+    cairo_arc(cr, x + r, y + r, r, M_PI, 3.0 * M_PI / 2.0);
+    cairo_close_path(cr);
+}
 
 Bar::Bar(Server* server)
     : m_server(server)
@@ -67,6 +78,16 @@ bool Bar::handle_click(double lx, double ly) {
         return false;
     }
 
+    // 1. Check Menu Button Click
+    if (lx >= m_menu_btn.x && lx <= m_menu_btn.x + m_menu_btn.width &&
+        ly >= m_menu_btn.y && ly <= m_menu_btn.y + m_menu_btn.height) {
+        if (m_server->get_menu()) {
+            m_server->get_menu()->toggle();
+        }
+        return true;
+    }
+
+    // 2. Check Workspace Buttons
     for (const auto& btn : m_buttons) {
         if (lx >= btn.x && lx <= btn.x + btn.width &&
             ly >= btn.y && ly <= btn.y + btn.height) {
@@ -110,45 +131,72 @@ void Bar::render(int width) {
     pango_layout_set_font_description(layout, font_desc);
     pango_font_description_free(font_desc);
 
-    // 2. Left: Workspace Badges
-    size_t active_ws = m_server->get_workspace_manager()->get_active_workspace_id();
-    int current_x = 8;
     int btn_height = m_height - 8;
     int btn_y = 4;
 
-    for (size_t id = 1; id <= 6; ++id) {
+    // 2. Left: [ ☰ Menu ] Button
+    pango_layout_set_text(layout, "☰ Menu", -1);
+    int menu_text_w, menu_text_h;
+    pango_layout_get_pixel_size(layout, &menu_text_w, &menu_text_h);
+
+    int menu_btn_w = menu_text_w + 18;
+    int menu_btn_x = 8;
+
+    cairo_set_source_rgb(cr, 0.18, 0.19, 0.28); // #2e3046
+    draw_rounded_rect(cr, menu_btn_x, btn_y, menu_btn_w, btn_height, 4.0);
+    cairo_fill(cr);
+
+    cairo_set_source_rgb(cr, 0.35, 0.38, 0.52);
+    cairo_set_line_width(cr, 1.0);
+    draw_rounded_rect(cr, menu_btn_x, btn_y, menu_btn_w, btn_height, 4.0);
+    cairo_stroke(cr);
+
+    cairo_set_source_rgb(cr, 0.89, 0.91, 0.98);
+    cairo_move_to(cr, menu_btn_x + (menu_btn_w - menu_text_w) / 2, btn_y + (btn_height - menu_text_h) / 2);
+    pango_cairo_show_layout(cr, layout);
+
+    m_menu_btn = { menu_btn_x, btn_y, menu_btn_w, btn_height };
+
+    // 3. Center: Centered Workspaces (1..6)
+    size_t active_ws = m_server->get_workspace_manager()->get_active_workspace_id();
+    const size_t num_ws = 6;
+    const int ws_btn_w = 28;
+    const int ws_spacing = 6;
+    int total_ws_w = static_cast<int>(num_ws * ws_btn_w + (num_ws - 1) * ws_spacing);
+    int start_ws_x = (m_width - total_ws_w) / 2;
+
+    int current_ws_x = start_ws_x;
+    for (size_t id = 1; id <= num_ws; ++id) {
         std::string ws_label = std::to_string(id);
         pango_layout_set_text(layout, ws_label.c_str(), -1);
 
         int text_w, text_h;
         pango_layout_get_pixel_size(layout, &text_w, &text_h);
 
-        int btn_w = std::max(26, text_w + 14);
-
         if (id == active_ws) {
-            // Active badge (highlighted)
+            // Active badge
             cairo_set_source_rgb(cr, 0.54, 0.71, 0.98); // #89b4fa
-            cairo_rectangle(cr, current_x, btn_y, btn_w, btn_height);
+            draw_rounded_rect(cr, current_ws_x, btn_y, ws_btn_w, btn_height, 4.0);
             cairo_fill(cr);
 
             cairo_set_source_rgb(cr, 0.07, 0.07, 0.11); // Dark text
         } else {
             // Inactive badge
             cairo_set_source_rgb(cr, 0.16, 0.16, 0.23); // #29293a
-            cairo_rectangle(cr, current_x, btn_y, btn_w, btn_height);
+            draw_rounded_rect(cr, current_ws_x, btn_y, ws_btn_w, btn_height, 4.0);
             cairo_fill(cr);
 
             cairo_set_source_rgb(cr, 0.75, 0.78, 0.90); // Light text
         }
 
-        cairo_move_to(cr, current_x + (btn_w - text_w) / 2, btn_y + (btn_height - text_h) / 2);
+        cairo_move_to(cr, current_ws_x + (ws_btn_w - text_w) / 2, btn_y + (btn_height - text_h) / 2);
         pango_cairo_show_layout(cr, layout);
 
-        m_buttons.push_back({ current_x, btn_y, btn_w, btn_height, id });
-        current_x += btn_w + 6;
+        m_buttons.push_back({ current_ws_x, btn_y, ws_btn_w, btn_height, id });
+        current_ws_x += ws_btn_w + ws_spacing;
     }
 
-    // 3. Right: Clock & Date
+    // 4. Right: Clock & Date
     time_t rawtime;
     time(&rawtime);
     struct tm timeinfo = {};
@@ -166,27 +214,27 @@ void Bar::render(int width) {
     cairo_move_to(cr, clock_x, (m_height - clock_h) / 2);
     pango_cairo_show_layout(cr, layout);
 
-    // 4. Center: Active Window Title
+    // 5. Left of Workspaces: Active Window Title
     View* focused = m_server->get_focused_view();
-    std::string title = "biway";
+    std::string title = "";
     if (focused && focused->get_xdg_toplevel() && focused->get_xdg_toplevel()->title) {
         title = focused->get_xdg_toplevel()->title;
     }
 
-    // Truncate long titles
-    if (title.length() > 60) {
-        title = title.substr(0, 57) + "...";
-    }
+    if (!title.empty()) {
+        int avail_title_w = start_ws_x - (menu_btn_x + menu_btn_w + 24);
+        if (avail_title_w > 60) {
+            pango_layout_set_width(layout, avail_title_w * PANGO_SCALE);
+            pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
+            pango_layout_set_text(layout, title.c_str(), -1);
 
-    pango_layout_set_text(layout, title.c_str(), -1);
-    int title_w, title_h;
-    pango_layout_get_pixel_size(layout, &title_w, &title_h);
+            int tw, th;
+            pango_layout_get_pixel_size(layout, &tw, &th);
 
-    int title_x = std::max(current_x + 10, (m_width - title_w) / 2);
-    if (title_x + title_w < clock_x - 10) {
-        cairo_set_source_rgb(cr, 0.80, 0.84, 0.96);
-        cairo_move_to(cr, title_x, (m_height - title_h) / 2);
-        pango_cairo_show_layout(cr, layout);
+            cairo_set_source_rgb(cr, 0.80, 0.84, 0.96);
+            cairo_move_to(cr, menu_btn_x + menu_btn_w + 14, (m_height - th) / 2);
+            pango_cairo_show_layout(cr, layout);
+        }
     }
 
     g_object_unref(layout);

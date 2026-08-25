@@ -12,6 +12,7 @@ class WorkspaceManager;
 class InputManager;
 class Wallpaper;
 class Bar;
+class Menu;
 class View;
 
 class Server {
@@ -41,6 +42,7 @@ public:
     InputManager* get_input_manager() const { return m_input_manager.get(); }
     Wallpaper* get_wallpaper() const { return m_wallpaper.get(); }
     Bar* get_bar() const { return m_bar.get(); }
+    Menu* get_menu() const { return m_menu.get(); }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
@@ -49,8 +51,12 @@ public:
     void set_focused_view(View* view);
     View* get_focused_view() const { return m_focused_view; }
 
+    void reload_config();
+
 private:
     static void handle_new_xdg_toplevel(struct wl_listener* listener, void* data);
+    static int handle_config_inotify(int fd, uint32_t mask, void* data);
+    void setup_config_watcher();
 
     struct wl_display* m_wl_display = nullptr;
     struct wl_event_loop* m_wl_event_loop = nullptr;
@@ -71,11 +77,16 @@ private:
     const char* m_socket_name = nullptr;
     std::string m_startup_cmd;
 
+    int m_inotify_fd = -1;
+    int m_inotify_wd = -1;
+    struct wl_event_source* m_config_event_source = nullptr;
+
     std::unique_ptr<OutputManager> m_output_manager;
     std::unique_ptr<WorkspaceManager> m_workspace_manager;
     std::unique_ptr<InputManager> m_input_manager;
     std::unique_ptr<Wallpaper> m_wallpaper;
     std::unique_ptr<Bar> m_bar;
+    std::unique_ptr<Menu> m_menu;
 
     std::vector<std::unique_ptr<View>> m_views;
     View* m_focused_view = nullptr;

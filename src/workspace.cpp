@@ -62,12 +62,21 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
         // 1 Window: takes 100% full usable screen
         m_views[0]->set_geometry(usable_box.x, usable_box.y, usable_box.width, usable_box.height);
     } else if (m_views.size() == 2) {
-        // 2 Windows: horizontally split 50% left, 50% right
-        int half_w = usable_box.width / 2;
-        int rest_w = usable_box.width - half_w;
+        if (m_split_mode == SplitMode::Horizontal) {
+            // Horizontal split: 50% left, 50% right
+            int half_w = usable_box.width / 2;
+            int rest_w = usable_box.width - half_w;
 
-        m_views[0]->set_geometry(usable_box.x, usable_box.y, half_w, usable_box.height);
-        m_views[1]->set_geometry(usable_box.x + half_w, usable_box.y, rest_w, usable_box.height);
+            m_views[0]->set_geometry(usable_box.x, usable_box.y, half_w, usable_box.height);
+            m_views[1]->set_geometry(usable_box.x + half_w, usable_box.y, rest_w, usable_box.height);
+        } else {
+            // Vertical split: 50% top, 50% bottom
+            int half_h = usable_box.height / 2;
+            int rest_h = usable_box.height - half_h;
+
+            m_views[0]->set_geometry(usable_box.x, usable_box.y, usable_box.width, half_h);
+            m_views[1]->set_geometry(usable_box.x, usable_box.y + half_h, usable_box.width, rest_h);
+        }
     }
 }
 
@@ -130,6 +139,16 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
     if (m_server->get_bar()) {
         m_server->get_bar()->schedule_redraw();
     }
+}
+
+void WorkspaceManager::prev_workspace() {
+    if (m_active_workspace_id > 1) {
+        switch_to_workspace(m_active_workspace_id - 1);
+    }
+}
+
+void WorkspaceManager::next_workspace() {
+    switch_to_workspace(m_active_workspace_id + 1);
 }
 
 void WorkspaceManager::add_view_auto(View* view) {
@@ -200,6 +219,24 @@ void WorkspaceManager::focus_next_view() {
 
 void WorkspaceManager::focus_prev_view() {
     focus_next_view();
+}
+
+void WorkspaceManager::focus_window_index(size_t index) {
+    Workspace* ws = get_active_workspace();
+    if (ws && index < ws->view_count()) {
+        View* v = ws->get_view(index);
+        if (v) {
+            v->focus();
+        }
+    }
+}
+
+void WorkspaceManager::toggle_active_split() {
+    Workspace* ws = get_active_workspace();
+    if (ws) {
+        ws->toggle_split_mode();
+        recalculate_layout();
+    }
 }
 
 void WorkspaceManager::recalculate_layout() {

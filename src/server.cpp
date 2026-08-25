@@ -4,15 +4,32 @@
 #include "input.hpp"
 #include "wallpaper.hpp"
 #include "bar.hpp"
+#include "menu.hpp"
 #include "view.hpp"
+#include "config.hpp"
 #include <algorithm>
+#include <sys/inotify.h>
+#include <unistd.h>
 
 namespace biway {
 
 Server::Server() = default;
 
 Server::~Server() {
+    if (m_config_event_source) {
+        wl_event_source_remove(m_config_event_source);
+        m_config_event_source = nullptr;
+    }
+    if (m_inotify_fd >= 0) {
+        if (m_inotify_wd >= 0) {
+            inotify_rm_watch(m_inotify_fd, m_inotify_wd);
+        }
+        close(m_inotify_fd);
+        m_inotify_fd = -1;
+    }
+
     m_views.clear();
+    m_menu.reset();
     m_bar.reset();
     m_wallpaper.reset();
     m_input_manager.reset();
@@ -79,6 +96,7 @@ bool Server::init() {
     m_input_manager = std::make_unique<InputManager>(this);
     m_wallpaper = std::make_unique<Wallpaper>(this);
     m_bar = std::make_unique<Bar>(this);
+    m_menu = std::make_unique<Menu>(this);
 
     m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 3);
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
@@ -93,7 +111,85 @@ bool Server::init() {
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     log_info("biway Wayland compositor started on WAYLAND_DISPLAY=" + std::string(m_socket_name));
 
+    setup_config_watcher();
+
     return true;
+}
+
+void Server::setup_config_watcher() {
+    std::string config_dir = Config::get_config_dir_path();
+    std::error_code ec;
+    std::filesystem::create_directories(config_dir, ec);
+
+    m_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (m_inotify_fd < 0) {
+        log_error("Failed to initialize inotify for configuration auto-reload");
+        return;
+    }
+
+    m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(),
+                                     IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
+    if (m_inotify_wd < 0) {
+        log_error("Failed to add inotify watch on: " + config_dir);
+        close(m_inotify_fd);
+        m_inotify_fd = -1;
+        return;
+    }
+
+    m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd,
+                                                 WL_EVENT_READABLE, handle_config_inotify, this);
+    log_info("Live config auto-reload active on " + config_dir);
+}
+
+int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
+    auto* server = static_cast<Server*>(data);
+
+    char buffer[4096];
+    bool should_reload = false;
+    while (read(fd, buffer, sizeof(buffer)) > 0) {
+        should_reload = true;
+    }
+
+    if (should_reload) {
+        server->reload_config();
+    }
+    return 0;
+}
+
+void Server::reload_config() {
+    log_info("Configuration file change detected! Auto-reloading settings...");
+    Config::get().load();
+
+    // 1. Live reload wallpaper
+    if (m_output_manager && m_wallpaper) {
+        struct wlr_box box = m_output_manager->get_primary_geometry();
+        if (box.width > 0 && box.height > 0) {
+            m_wallpaper->render(box.width, box.height);
+        }
+    }
+
+    // 2. Live reload bar
+    if (m_bar) {
+        m_bar->set_visible(Config::get().is_bar_visible());
+        m_bar->schedule_redraw();
+    }
+
+    // 3. Live reload menu applications & icon theme
+    if (m_menu) {
+        m_menu->reload_applications();
+    }
+
+    // 4. Recalculate layout
+    if (m_workspace_manager) {
+        m_workspace_manager->recalculate_layout();
+    }
+
+    // 5. Live reload input device settings (natural scroll)
+    if (m_input_manager) {
+        m_input_manager->reapply_device_config();
+    }
+
+    log_info("Live configuration auto-reload complete!");
 }
 
 void Server::run() {
