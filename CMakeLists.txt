@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.20)
+project(biway LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_package(PkgConfig REQUIRED)
+
+# Check for wlroots (checks in order: wlroots-0.20, wlroots-0.19, wlroots-0.18, wlroots)
+pkg_search_module(WLROOTS REQUIRED IMPORTED_TARGET wlroots-0.20 wlroots-0.19 wlroots-0.18 wlroots)
+pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
+pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols>=1.24)
+pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
+pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+
+add_definitions(-DWLR_USE_UNSTABLE)
+
+add_executable(biway
+    src/main.cpp
+    src/server.cpp
+    src/workspace.cpp
+    src/view.cpp
+    src/output.cpp
+    src/input.cpp
+)
+
+target_include_directories(biway PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${WLROOTS_INCLUDE_DIRS}
+    ${WAYLAND_SERVER_INCLUDE_DIRS}
+    ${XKBCOMMON_INCLUDE_DIRS}
+    ${PIXMAN_INCLUDE_DIRS}
+)
+
+target_link_libraries(biway PRIVATE
+    PkgConfig::WLROOTS
+    PkgConfig::WAYLAND_SERVER
+    PkgConfig::XKBCOMMON
+    PkgConfig::PIXMAN
+)
+
+target_compile_options(biway PRIVATE
+    -Wall -Wextra -Wpedantic
+    -Wno-unused-parameter
+)
+
+install(TARGETS biway RUNTIME DESTINATION bin)
