@@ -155,6 +155,37 @@ bool Config::parse_binding_combo(const std::string& combo, uint32_t& out_modifie
     return (out_keysym != XKB_KEY_NoSymbol);
 }
 
+bool Config::parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a) {
+    std::string s = hex;
+    if (!s.empty() && s[0] == '#') {
+        s = s.substr(1);
+    }
+    if (s.length() == 6) {
+        try {
+            unsigned long val = std::stoul(s, nullptr, 16);
+            r = ((val >> 16) & 0xFF) / 255.0f;
+            g = ((val >> 8) & 0xFF) / 255.0f;
+            b = (val & 0xFF) / 255.0f;
+            a = 1.0f;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    } else if (s.length() == 8) {
+        try {
+            unsigned long val = std::stoul(s, nullptr, 16);
+            r = ((val >> 24) & 0xFF) / 255.0f;
+            g = ((val >> 16) & 0xFF) / 255.0f;
+            b = ((val >> 8) & 0xFF) / 255.0f;
+            a = (val & 0xFF) / 255.0f;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+    return false;
+}
+
 std::string Config::get_config_dir_path() {
     const char* xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && *xdg) {
@@ -217,7 +248,7 @@ void Config::load() {
     std::string line;
     while (std::getline(file, line)) {
         std::string trimmed = trim(line);
-        if (trimmed.empty() || trimmed[0] == '#') {
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == '[') {
             continue;
         }
 
@@ -239,6 +270,10 @@ void Config::load() {
             try {
                 m_bar_height = std::stoi(value);
             } catch (...) {}
+        } else if (key == "tap_to_click") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_tap_to_click = (lower == "true" || lower == "1" || lower == "yes");
         } else if (key == "natural_scroll") {
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -247,6 +282,26 @@ void Config::load() {
             m_icon_theme = value;
         } else if (key == "terminal") {
             m_terminal = value;
+        } else if (key == "window_border_width" || key == "border_width") {
+            try {
+                m_window_border_width = std::max(0, std::stoi(value));
+            } catch (...) {}
+        } else if (key == "window_border_radius" || key == "border_radius") {
+            try {
+                m_window_border_radius = std::max(0, std::stoi(value));
+            } catch (...) {}
+        } else if (key == "window_border_color_active" || key == "border_color_active") {
+            m_window_border_color_active = value;
+        } else if (key == "window_border_color_inactive" || key == "border_color_inactive") {
+            m_window_border_color_inactive = value;
+        } else if (key == "space_between_windows" || key == "window_spacing" || key == "inner_gap") {
+            try {
+                m_space_between_windows = std::max(0, std::stoi(value));
+            } catch (...) {}
+        } else if (key == "screen_edge_padding" || key == "screen_padding" || key == "outer_gap") {
+            try {
+                m_screen_edge_padding = std::max(0, std::stoi(value));
+            } catch (...) {}
         } else if (key == "bind") {
             // Format: bind = Super+F, firefox or bind = Super, K, kitty
             size_t comma = value.rfind(',');
@@ -284,17 +339,29 @@ void Config::save() {
     }
 
     file << "# biway configuration file\n\n";
-    file << "# Visual & Behavior Settings\n";
+    file << "[appearance]\n";
     file << "wallpaper = " << m_wallpaper_path << "\n";
     file << "show_bar = " << (m_show_bar ? "true" : "false") << "\n";
     file << "bar_height = " << m_bar_height << "\n";
+    file << "icon_theme = " << m_icon_theme << "\n\n";
+
+    file << "[input]\n";
     file << "tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";
-    file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n";
-    file << "icon_theme = " << m_icon_theme << "\n";
+    file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n\n";
+
+    file << "[windows]\n";
+    file << "window_border_width = " << m_window_border_width << "\n";
+    file << "window_border_radius = " << m_window_border_radius << "\n";
+    file << "window_border_color_active = " << m_window_border_color_active << "\n";
+    file << "window_border_color_inactive = " << m_window_border_color_inactive << "\n";
+    file << "space_between_windows = " << m_space_between_windows << "\n";
+    file << "screen_edge_padding = " << m_screen_edge_padding << "\n\n";
+
+    file << "[applications]\n";
     file << "terminal = " << m_terminal << "\n\n";
 
-    file << "# Keybindings (Super+Key is sufficient, user can configure any combo)\n";
-    file << "# Reserved system bindings: Super+Q (Exit), Super+T (Terminal)\n";
+    file << "[keybindings]\n";
+    file << "# Keybindings format: bind = Combo, command_or_action\n";
     for (const auto& kb : m_keybindings) {
         file << "bind = " << kb.combo_str << ", " << kb.action << "\n";
     }

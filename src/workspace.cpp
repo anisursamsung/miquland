@@ -3,6 +3,7 @@
 #include "view.hpp"
 #include "output.hpp"
 #include "bar.hpp"
+#include "config.hpp"
 #include <algorithm>
 
 namespace biway {
@@ -58,24 +59,34 @@ View* Workspace::get_view(size_t index) const {
 void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     if (m_views.empty()) return;
 
+    int pad = Config::get().get_screen_edge_padding();
+    int gap = Config::get().get_space_between_windows();
+
+    int base_x = usable_box.x + pad;
+    int base_y = usable_box.y + pad;
+    int base_w = std::max(50, usable_box.width - 2 * pad);
+    int base_h = std::max(50, usable_box.height - 2 * pad);
+
     if (m_views.size() == 1) {
-        // 1 Window: takes 100% full usable screen
-        m_views[0]->set_geometry(usable_box.x, usable_box.y, usable_box.width, usable_box.height);
+        // 1 Window: takes 100% padded usable screen
+        m_views[0]->set_geometry(base_x, base_y, base_w, base_h);
     } else if (m_views.size() == 2) {
         if (m_split_mode == SplitMode::Horizontal) {
-            // Horizontal split: 50% left, 50% right
-            int half_w = usable_box.width / 2;
-            int rest_w = usable_box.width - half_w;
+            // Horizontal split: 50% left, 50% right with gap between windows
+            int total_w = std::max(50, base_w - gap);
+            int half_w = total_w / 2;
+            int rest_w = total_w - half_w;
 
-            m_views[0]->set_geometry(usable_box.x, usable_box.y, half_w, usable_box.height);
-            m_views[1]->set_geometry(usable_box.x + half_w, usable_box.y, rest_w, usable_box.height);
+            m_views[0]->set_geometry(base_x, base_y, half_w, base_h);
+            m_views[1]->set_geometry(base_x + half_w + gap, base_y, rest_w, base_h);
         } else {
-            // Vertical split: 50% top, 50% bottom
-            int half_h = usable_box.height / 2;
-            int rest_h = usable_box.height - half_h;
+            // Vertical split: 50% top, 50% bottom with gap between windows
+            int total_h = std::max(50, base_h - gap);
+            int half_h = total_h / 2;
+            int rest_h = total_h - half_h;
 
-            m_views[0]->set_geometry(usable_box.x, usable_box.y, usable_box.width, half_h);
-            m_views[1]->set_geometry(usable_box.x, usable_box.y + half_h, usable_box.width, rest_h);
+            m_views[0]->set_geometry(base_x, base_y, base_w, half_h);
+            m_views[1]->set_geometry(base_x, base_y + half_h + gap, base_w, rest_h);
         }
     }
 }

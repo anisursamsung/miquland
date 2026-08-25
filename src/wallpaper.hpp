@@ -16,6 +16,7 @@ public:
 
     void render(int width, int height);
     void set_wallpaper(const std::string& path);
+    cairo_surface_t* get_surface() const { return m_buffer ? m_buffer->get_surface() : nullptr; }
 
 private:
     Server* m_server = nullptr;

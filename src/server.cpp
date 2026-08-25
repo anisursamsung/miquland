@@ -179,9 +179,12 @@ void Server::reload_config() {
         m_menu->reload_applications();
     }
 
-    // 4. Recalculate layout
+    // 4. Recalculate layout and borders
     if (m_workspace_manager) {
         m_workspace_manager->recalculate_layout();
+    }
+    for (auto& view : m_views) {
+        view->update_border();
     }
 
     // 5. Live reload input device settings (natural scroll)
@@ -215,7 +218,6 @@ void Server::terminate() {
 
 void Server::add_view(std::unique_ptr<View> view) {
     m_views.push_back(std::move(view));
-    if (m_bar) m_bar->schedule_redraw();
 }
 
 void Server::remove_view(View* view) {
@@ -233,7 +235,11 @@ void Server::remove_view(View* view) {
 }
 
 void Server::set_focused_view(View* view) {
+    if (m_focused_view == view) return;
+    View* prev = m_focused_view;
     m_focused_view = view;
+    if (prev) prev->update_border();
+    if (m_focused_view) m_focused_view->update_border();
     if (m_bar) m_bar->schedule_redraw();
 }
 
@@ -245,11 +251,11 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
 
     auto* scene_buffer = wlr_scene_buffer_from_node(node);
     auto* scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer);
-    if (!scene_surface) {
-        return nullptr;
+    if (scene_surface) {
+        *surface = scene_surface->surface;
+    } else {
+        *surface = nullptr;
     }
-
-    *surface = scene_surface->surface;
 
     // Find the View associated with this scene node hierarchy
     struct wlr_scene_tree* tree = node->parent;
@@ -259,7 +265,6 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
         }
         tree = tree->node.parent;
     }
-
     return nullptr;
 }
 

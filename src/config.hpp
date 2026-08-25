@@ -42,6 +42,26 @@ public:
     const std::string& get_terminal() const { return m_terminal; }
     void set_terminal(const std::string& term) { m_terminal = term; }
 
+    int get_window_border_width() const { return m_window_border_width; }
+    void set_window_border_width(int w) { m_window_border_width = w; }
+
+    int get_window_border_radius() const { return m_window_border_radius; }
+    void set_window_border_radius(int r) { m_window_border_radius = r; }
+
+    const std::string& get_window_border_color_active() const { return m_window_border_color_active; }
+    void set_window_border_color_active(const std::string& color) { m_window_border_color_active = color; }
+
+    const std::string& get_window_border_color_inactive() const { return m_window_border_color_inactive; }
+    void set_window_border_color_inactive(const std::string& color) { m_window_border_color_inactive = color; }
+
+    int get_space_between_windows() const { return m_space_between_windows; }
+    void set_space_between_windows(int space) { m_space_between_windows = space; }
+
+    int get_screen_edge_padding() const { return m_screen_edge_padding; }
+    void set_screen_edge_padding(int pad) { m_screen_edge_padding = pad; }
+
+    static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
+
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
 
     static std::string get_config_file_path();
@@ -61,6 +81,13 @@ private:
     bool m_natural_scroll = true;
     std::string m_icon_theme = "hicolor";
     std::string m_terminal = "foot";
+
+    int m_window_border_width = 2;
+    int m_window_border_radius = 8;
+    std::string m_window_border_color_active = "#00d2ff";
+    std::string m_window_border_color_inactive = "#2a2a36";
+    int m_space_between_windows = 8;
+    int m_screen_edge_padding = 10;
 
     std::vector<KeyBinding> m_keybindings;
 };

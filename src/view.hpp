@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util.hpp"
+#include "cairo_buffer.hpp"
 
 namespace biway {
 
@@ -18,6 +19,9 @@ public:
     void set_geometry(int x, int y, int width, int height);
     void focus();
     void close();
+
+    void update_border();
+    bool is_focused() const;
 
     struct wlr_xdg_toplevel* get_xdg_toplevel() const { return m_xdg_toplevel; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
@@ -39,7 +43,11 @@ private:
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
     struct wlr_xdg_toplevel* m_xdg_toplevel = nullptr;
+
     struct wlr_scene_tree* m_scene_tree = nullptr;
+    struct wlr_scene_buffer* m_border_scene_buffer = nullptr;
+    struct wlr_scene_tree* m_xdg_scene_tree = nullptr;
+    std::unique_ptr<CairoBuffer> m_border_buffer;
 
     bool m_mapped = false;
     int m_x = 0;
