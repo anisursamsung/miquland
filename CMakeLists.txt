@@ -22,18 +22,22 @@ add_definitions(-DWLR_USE_UNSTABLE)
 
 add_executable(biway
     src/main.cpp
-    src/server.cpp
-    src/workspace.cpp
-    src/view.cpp
-    src/output.cpp
-    src/input.cpp
-    src/config.cpp
-    src/cairo_buffer.cpp
-    src/wallpaper.cpp
-    src/bar.cpp
-    src/menu.cpp
-    src/palette/list_item_view.cpp
-    src/palette/list_view.cpp
+    src/core/server.cpp
+    src/core/workspace.cpp
+    src/core/view.cpp
+    src/core/output.cpp
+    src/input/input.cpp
+    src/config/config.cpp
+    src/render/cairo_buffer.cpp
+    src/ui/wallpaper/wallpaper.cpp
+    src/ui/bar/bar.cpp
+    src/ui/menu/menu.cpp
+    src/ui/widgets/text_view.cpp
+    src/ui/widgets/card_view.cpp
+    src/ui/widgets/image_view.cpp
+    src/ui/widgets/text_input_view.cpp
+    src/ui/widgets/cell_item_view.cpp
+    src/ui/widgets/table_view.cpp
 )
 
 target_include_directories(biway PRIVATE

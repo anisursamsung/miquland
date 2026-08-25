@@ -1,5 +1,5 @@
-#include "server.hpp"
-#include "config.hpp"
+#include "core/server.hpp"
+#include "config/config.hpp"
 #include <csignal>
 #include <iostream>
 #include <string>
