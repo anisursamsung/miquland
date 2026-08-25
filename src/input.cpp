@@ -3,6 +3,7 @@
 #include "workspace.hpp"
 #include "view.hpp"
 #include "output.hpp"
+#include "bar.hpp"
 #include <unistd.h>
 #include <cstdlib>
 
@@ -37,6 +38,16 @@ InputManager::InputManager(Server* server)
 
     m_request_set_cursor_listener.notify = handle_request_set_cursor;
     wl_signal_add(&m_seat->events.request_set_cursor, &m_request_set_cursor_listener);
+
+    // Touchpad swipe gesture listeners
+    m_cursor_swipe_begin_listener.notify = handle_cursor_swipe_begin;
+    wl_signal_add(&m_cursor->events.swipe_begin, &m_cursor_swipe_begin_listener);
+
+    m_cursor_swipe_update_listener.notify = handle_cursor_swipe_update;
+    wl_signal_add(&m_cursor->events.swipe_update, &m_cursor_swipe_update_listener);
+
+    m_cursor_swipe_end_listener.notify = handle_cursor_swipe_end;
+    wl_signal_add(&m_cursor->events.swipe_end, &m_cursor_swipe_end_listener);
 }
 
 InputManager::~InputManager() {
@@ -47,6 +58,10 @@ InputManager::~InputManager() {
     wl_list_remove(&m_cursor_axis_listener.link);
     wl_list_remove(&m_cursor_frame_listener.link);
     wl_list_remove(&m_request_set_cursor_listener.link);
+
+    wl_list_remove(&m_cursor_swipe_begin_listener.link);
+    wl_list_remove(&m_cursor_swipe_update_listener.link);
+    wl_list_remove(&m_cursor_swipe_end_listener.link);
 
     if (m_cursor_mgr) wlr_xcursor_manager_destroy(m_cursor_mgr);
     if (m_cursor) wlr_cursor_destroy(m_cursor);
@@ -89,6 +104,14 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     // App launcher: Super + D or Super + Space
     if (keysym == XKB_KEY_d || keysym == XKB_KEY_space) {
         spawn_command("fuzzel || wofi --show drun || bemenu-run || dmenu_run");
+        return true;
+    }
+
+    // Toggle menu bar: Super + B
+    if (keysym == XKB_KEY_b || keysym == XKB_KEY_B) {
+        if (m_server->get_bar()) {
+            m_server->get_bar()->toggle_visibility();
+        }
         return true;
     }
 
@@ -188,6 +211,13 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
     InputManager* manager = wl_container_of(listener, manager, m_cursor_button_listener);
     auto* event = static_cast<struct wlr_pointer_button_event*>(data);
 
+    // Check if clicked on built-in bar first
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        if (manager->m_server->get_bar() && manager->m_server->get_bar()->handle_click(manager->m_cursor->x, manager->m_cursor->y)) {
+            return;
+        }
+    }
+
     double sx, sy;
     struct wlr_surface* surface = nullptr;
     View* view = manager->m_server->view_at(manager->m_cursor->x, manager->m_cursor->y, &surface, &sx, &sy);
@@ -220,6 +250,42 @@ void InputManager::handle_request_set_cursor(struct wl_listener* listener, void*
     if (focused_client == event->seat_client) {
         wlr_cursor_set_surface(manager->m_cursor, event->surface, event->hotspot_x, event->hotspot_y);
     }
+}
+
+void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_begin_listener);
+    manager->m_swipe_dx = 0.0;
+    manager->m_swipe_triggered = false;
+}
+
+void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_update_listener);
+    auto* event = static_cast<struct wlr_pointer_swipe_update_event*>(data);
+
+    if (event->fingers == 3 && !manager->m_swipe_triggered) {
+        manager->m_swipe_dx += event->dx;
+        const double threshold = 50.0;
+
+        if (manager->m_swipe_dx > threshold) {
+            // Swiped Right -> Switch to previous workspace
+            size_t current = manager->m_server->get_workspace_manager()->get_active_workspace_id();
+            if (current > 1) {
+                manager->m_server->get_workspace_manager()->switch_to_workspace(current - 1);
+            }
+            manager->m_swipe_triggered = true;
+        } else if (manager->m_swipe_dx < -threshold) {
+            // Swiped Left -> Switch to next workspace
+            size_t current = manager->m_server->get_workspace_manager()->get_active_workspace_id();
+            manager->m_server->get_workspace_manager()->switch_to_workspace(current + 1);
+            manager->m_swipe_triggered = true;
+        }
+    }
+}
+
+void InputManager::handle_cursor_swipe_end(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_end_listener);
+    manager->m_swipe_dx = 0.0;
+    manager->m_swipe_triggered = false;
 }
 
 Keyboard::Keyboard(Server* server, struct wlr_input_device* device)

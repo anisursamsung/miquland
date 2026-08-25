@@ -1,6 +1,8 @@
 #include "output.hpp"
 #include "server.hpp"
 #include "workspace.hpp"
+#include "wallpaper.hpp"
+#include "bar.hpp"
 #include <ctime>
 
 namespace biway {
@@ -86,6 +88,11 @@ struct wlr_box OutputManager::get_primary_geometry() const {
 
 void OutputManager::add_output(Output* output) {
     m_outputs.emplace_back(output);
+    struct wlr_box box = get_primary_geometry();
+    if (box.width > 0 && box.height > 0) {
+        if (m_server->get_wallpaper()) m_server->get_wallpaper()->render(box.width, box.height);
+        if (m_server->get_bar()) m_server->get_bar()->render(box.width);
+    }
     m_server->get_workspace_manager()->recalculate_layout();
 }
 

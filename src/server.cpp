@@ -2,6 +2,8 @@
 #include "output.hpp"
 #include "workspace.hpp"
 #include "input.hpp"
+#include "wallpaper.hpp"
+#include "bar.hpp"
 #include "view.hpp"
 #include <algorithm>
 
@@ -11,6 +13,8 @@ Server::Server() = default;
 
 Server::~Server() {
     m_views.clear();
+    m_bar.reset();
+    m_wallpaper.reset();
     m_input_manager.reset();
     m_workspace_manager.reset();
     m_output_manager.reset();
@@ -65,9 +69,16 @@ bool Server::init() {
         return false;
     }
 
+    // Layered scene tree hierarchy
+    m_bg_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_workspaces_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_bar_tree = wlr_scene_tree_create(&m_scene->tree);
+
     m_output_manager = std::make_unique<OutputManager>(this);
     m_workspace_manager = std::make_unique<WorkspaceManager>(this);
     m_input_manager = std::make_unique<InputManager>(this);
+    m_wallpaper = std::make_unique<Wallpaper>(this);
+    m_bar = std::make_unique<Bar>(this);
 
     m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 3);
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
@@ -108,6 +119,7 @@ void Server::terminate() {
 
 void Server::add_view(std::unique_ptr<View> view) {
     m_views.push_back(std::move(view));
+    if (m_bar) m_bar->schedule_redraw();
 }
 
 void Server::remove_view(View* view) {
@@ -121,10 +133,12 @@ void Server::remove_view(View* view) {
             break;
         }
     }
+    if (m_bar) m_bar->schedule_redraw();
 }
 
 void Server::set_focused_view(View* view) {
     m_focused_view = view;
+    if (m_bar) m_bar->schedule_redraw();
 }
 
 View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy) {

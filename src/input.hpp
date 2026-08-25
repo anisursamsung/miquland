@@ -30,6 +30,11 @@ private:
     static void handle_cursor_frame(struct wl_listener* listener, void* data);
     static void handle_request_set_cursor(struct wl_listener* listener, void* data);
 
+    // Touchpad swipe gesture handlers
+    static void handle_cursor_swipe_begin(struct wl_listener* listener, void* data);
+    static void handle_cursor_swipe_update(struct wl_listener* listener, void* data);
+    static void handle_cursor_swipe_end(struct wl_listener* listener, void* data);
+
     void process_cursor_motion(uint32_t time);
 
     Server* m_server = nullptr;
@@ -39,6 +44,10 @@ private:
 
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
 
+    // Gesture tracking state
+    double m_swipe_dx = 0.0;
+    bool m_swipe_triggered = false;
+
     struct wl_listener m_new_input_listener;
     struct wl_listener m_cursor_motion_listener;
     struct wl_listener m_cursor_motion_absolute_listener;
@@ -46,6 +55,10 @@ private:
     struct wl_listener m_cursor_axis_listener;
     struct wl_listener m_cursor_frame_listener;
     struct wl_listener m_request_set_cursor_listener;
+
+    struct wl_listener m_cursor_swipe_begin_listener;
+    struct wl_listener m_cursor_swipe_update_listener;
+    struct wl_listener m_cursor_swipe_end_listener;
 };
 
 class Keyboard {

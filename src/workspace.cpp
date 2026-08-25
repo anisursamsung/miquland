@@ -2,6 +2,7 @@
 #include "server.hpp"
 #include "view.hpp"
 #include "output.hpp"
+#include "bar.hpp"
 #include <algorithm>
 
 namespace biway {
@@ -9,7 +10,7 @@ namespace biway {
 Workspace::Workspace(Server* server, size_t id)
     : m_server(server), m_id(id)
 {
-    m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
+    m_scene_tree = wlr_scene_tree_create(server->get_workspaces_tree());
     set_visible(false);
 }
 
@@ -58,7 +59,7 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     if (m_views.empty()) return;
 
     if (m_views.size() == 1) {
-        // 1 Window: takes 100% full screen
+        // 1 Window: takes 100% full usable screen
         m_views[0]->set_geometry(usable_box.x, usable_box.y, usable_box.width, usable_box.height);
     } else if (m_views.size() == 2) {
         // 2 Windows: horizontally split 50% left, 50% right
@@ -107,7 +108,7 @@ Workspace* WorkspaceManager::get_active_workspace() {
 }
 
 void WorkspaceManager::switch_to_workspace(size_t id) {
-    if (id == m_active_workspace_id) return;
+    if (id == m_active_workspace_id || id == 0) return;
 
     Workspace* current = get_workspace(m_active_workspace_id);
     if (current) {
@@ -124,6 +125,10 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
         next->get_view(0)->focus();
     } else {
         m_server->set_focused_view(nullptr);
+    }
+
+    if (m_server->get_bar()) {
+        m_server->get_bar()->schedule_redraw();
     }
 }
 
@@ -161,6 +166,7 @@ void WorkspaceManager::remove_view(View* view) {
 }
 
 void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
+    if (target_ws_id == 0) return;
     Workspace* current = view->get_workspace();
     if (!current || current->get_id() == target_ws_id) return;
 
@@ -202,9 +208,19 @@ void WorkspaceManager::recalculate_layout() {
         geom = { .x = 0, .y = 0, .width = 1920, .height = 1080 };
     }
 
+    if (m_server->get_bar() && m_server->get_bar()->is_visible()) {
+        int bar_h = m_server->get_bar()->get_height();
+        geom.y += bar_h;
+        geom.height -= bar_h;
+    }
+
     Workspace* active_ws = get_active_workspace();
     if (active_ws) {
         active_ws->recalculate_layout(geom);
+    }
+
+    if (m_server->get_bar()) {
+        m_server->get_bar()->schedule_redraw();
     }
 }
 

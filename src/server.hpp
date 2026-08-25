@@ -10,6 +10,8 @@ namespace biway {
 class OutputManager;
 class WorkspaceManager;
 class InputManager;
+class Wallpaper;
+class Bar;
 class View;
 
 class Server {
@@ -24,14 +26,21 @@ public:
     void set_startup_command(const std::string& cmd) { m_startup_cmd = cmd; }
 
     struct wl_display* get_display() const { return m_wl_display; }
+    struct wl_event_loop* get_event_loop() const { return m_wl_event_loop; }
     struct wlr_backend* get_backend() const { return m_wlr_backend; }
     struct wlr_renderer* get_renderer() const { return m_wlr_renderer; }
     struct wlr_allocator* get_allocator() const { return m_wlr_allocator; }
     struct wlr_scene* get_scene() const { return m_scene; }
 
+    struct wlr_scene_tree* get_bg_tree() const { return m_bg_tree; }
+    struct wlr_scene_tree* get_workspaces_tree() const { return m_workspaces_tree; }
+    struct wlr_scene_tree* get_bar_tree() const { return m_bar_tree; }
+
     OutputManager* get_output_manager() const { return m_output_manager.get(); }
     WorkspaceManager* get_workspace_manager() const { return m_workspace_manager.get(); }
     InputManager* get_input_manager() const { return m_input_manager.get(); }
+    Wallpaper* get_wallpaper() const { return m_wallpaper.get(); }
+    Bar* get_bar() const { return m_bar.get(); }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
@@ -52,6 +61,11 @@ private:
     struct wlr_subcompositor* m_wlr_subcompositor = nullptr;
     struct wlr_data_device_manager* m_wlr_data_device_manager = nullptr;
     struct wlr_scene* m_scene = nullptr;
+
+    struct wlr_scene_tree* m_bg_tree = nullptr;
+    struct wlr_scene_tree* m_workspaces_tree = nullptr;
+    struct wlr_scene_tree* m_bar_tree = nullptr;
+
     struct wlr_xdg_shell* m_xdg_shell = nullptr;
 
     const char* m_socket_name = nullptr;
@@ -60,6 +74,8 @@ private:
     std::unique_ptr<OutputManager> m_output_manager;
     std::unique_ptr<WorkspaceManager> m_workspace_manager;
     std::unique_ptr<InputManager> m_input_manager;
+    std::unique_ptr<Wallpaper> m_wallpaper;
+    std::unique_ptr<Bar> m_bar;
 
     std::vector<std::unique_ptr<View>> m_views;
     View* m_focused_view = nullptr;

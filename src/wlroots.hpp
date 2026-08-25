@@ -1,5 +1,6 @@
 #pragma once
 
+// Include all standard C++ library headers FIRST
 #include <iostream>
 #include <string>
 #include <vector>
@@ -16,10 +17,15 @@
 #include <cstddef>
 #include <cstring>
 #include <cassert>
+#include <filesystem>
 
 #include <wayland-server-core.h>
 #include <pixman.h>
 #include <xkbcommon/xkbcommon.h>
+#include <cairo.h>
+#include <pango/pangocairo.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <drm_fourcc.h>
 
 #ifdef __cplusplus
 #define static
@@ -43,6 +49,8 @@ extern "C" {
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_input_device.h>
+#include <wlr/types/wlr_buffer.h>
+#include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/util/log.h>
 #include <wlr/util/box.h>
 
