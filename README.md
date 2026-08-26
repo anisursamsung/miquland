@@ -20,7 +20,7 @@ A lightweight binary-tiling Wayland compositor and window manager built in Moder
 
 ## ✨ Key Features
 
-- **🖼️ Built-in Wallpaper Engine**: Native background layer supporting PNG, JPG, JPEG, and BMP files with automatic fallback to `/usr/share/backgrounds/biway/wallpaper.png`.
+- **🖼️ Built-in Wallpaper Engine**: Native background layer supporting PNG, JPG, JPEG, and BMP files with theme-based wallpapers configured directly in `light.conf` and `dark.conf`.
 - **🪟 Configurable Window Styling**:
   - Rounded window borders (`window_border_radius`) with exterior corner masking against the wallpaper (eliminates sharp client protrusions).
   - Configurable active & inactive border colors (`window_border_color_active`, `window_border_color_inactive`).
@@ -71,9 +71,9 @@ sudo ./make.sh
 This automatically configures:
 - **Executable**: `/usr/bin/biway`
 - **Wayland Session**: `/usr/share/wayland-sessions/biway.desktop` (selectable in GDM, SDDM, LightDM, greetd)
-- **System Config Template**: `/usr/share/biway/biway.conf`
-- **Default Wallpaper**: `/usr/share/backgrounds/biway/wallpaper.png`
-- **User Config**: Automatically creates `~/.config/biway/biway.conf` with proper non-root user permissions if it does not already exist.
+- **System Config & Theme Templates**: `/usr/share/biway/biway.conf`, `light.conf`, `dark.conf`
+- **Default Wallpapers**: `/usr/share/backgrounds/biway/lightwallpaper.png`, `/usr/share/backgrounds/biway/darkwallpaper.jpg`
+- **User Config**: Automatically creates `~/.config/biway/biway.conf`, `light.conf`, and `dark.conf` with proper non-root user permissions if they do not already exist.
 
 ---
 
@@ -88,10 +88,19 @@ This automatically configures:
 # ==========================================
 # Appearance & Bar Settings
 # ==========================================
-wallpaper = /usr/share/backgrounds/biway/wallpaper.png
 show_bar = true
 bar_height = 30
-icon_theme = hicolor
+# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)
+icon_theme = Papirus
+
+# ==========================================
+# Theme & Colors Configuration
+# ==========================================
+# Source an external theme file (e.g. light.conf or dark.conf)
+[theme]
+source = ~/.config/biway/light.conf
+
+# You can customize individual theme colors in ~/.config/biway/light.conf and dark.conf!
 
 # ==========================================
 # Input Settings
@@ -104,8 +113,6 @@ natural_scroll = false
 [windows]
 window_border_width = 2
 window_border_radius = 8
-window_border_color_active = #00d2ff
-window_border_color_inactive = #2a2a36
 space_between_windows = 8
 screen_edge_padding = 10
 
@@ -218,7 +225,6 @@ To run `biway` in a window inside your current Wayland or X11 session:
 ```bash
 ./build/biway --help
 ```
-- `--setwallpaper <path>`: Update wallpaper path in `~/.config/biway/biway.conf`.
 - `--no-bar`: Start with the top status bar hidden.
 - `-s, --startup <cmd>`: Run a custom command upon compositor initialization.
 - `-h, --help`: Display command usage and keybindings.

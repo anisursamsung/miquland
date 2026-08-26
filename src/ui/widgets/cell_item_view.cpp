@@ -22,16 +22,24 @@ void CellItemView::render_grid_tile(cairo_t* cr, const CellItemModel& item, int 
     // 1. Draw card background for hover or selection
     if (is_selected) {
         CardView card;
-        card.set_bg_color(0.20f, 0.28f, 0.40f, 0.95f);
-        float r = 0.0f, g = 0.82f, b = 1.0f, a = 1.0f;
-        Config::parse_hex_color(Config::get().get_window_border_color_active(), r, g, b, a);
+        float bgr = 0.20f, bgg = 0.28f, bgb = 0.40f, bga = 0.95f;
+        Config::parse_hex_color(Config::get().get_color_primary_container(), bgr, bgg, bgb, bga);
+        card.set_bg_color(bgr, bgg, bgb, bga);
+
+        float r = 0.54f, g = 0.71f, b = 0.98f, a = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_primary(), r, g, b, a);
         card.set_border(2, r, g, b, a);
         card.set_corner_radius(8);
         card.render(cr, x, y, width, height);
     } else if (is_hovered) {
         CardView card;
-        card.set_bg_color(0.18f, 0.18f, 0.26f, 0.80f);
-        card.set_border(1, 0.35f, 0.35f, 0.48f, 0.6f);
+        float bgr = 0.18f, bgg = 0.18f, bgb = 0.26f, bga = 0.80f;
+        Config::parse_hex_color(Config::get().get_color_surface_variant(), bgr, bgg, bgb, bga);
+        card.set_bg_color(bgr, bgg, bgb, bga);
+
+        float r = 0.35f, g = 0.35f, b = 0.48f, a = 0.6f;
+        Config::parse_hex_color(Config::get().get_color_outline(), r, g, b, a);
+        card.set_border(1, r, g, b, a);
         card.set_corner_radius(8);
         card.render(cr, x, y, width, height);
     }
@@ -50,9 +58,13 @@ void CellItemView::render_grid_tile(cairo_t* cr, const CellItemModel& item, int 
     title.set_alignment(TextAlignment::Center);
     title.set_max_width(width - 12);
     if (is_selected) {
-        title.set_color(1.0f, 1.0f, 1.0f, 1.0f);
+        float tr = 1.0f, tg = 1.0f, tb = 1.0f, ta = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_on_primary_container(), tr, tg, tb, ta);
+        title.set_color(tr, tg, tb, ta);
     } else {
-        title.set_color(0.85f, 0.85f, 0.95f, 1.0f);
+        float tr = 0.85f, tg = 0.85f, tb = 0.95f, ta = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_on_surface(), tr, tg, tb, ta);
+        title.set_color(tr, tg, tb, ta);
     }
     title.render(cr, x + 6, y + 54, width - 12, height - 58);
 }
@@ -62,15 +74,20 @@ void CellItemView::render_list_row(cairo_t* cr, const CellItemModel& item, int x
     // 1. Background highlight
     if (is_selected) {
         CardView card;
-        card.set_bg_color(0.20f, 0.28f, 0.40f, 0.95f);
-        float r = 0.0f, g = 0.82f, b = 1.0f, a = 1.0f;
-        Config::parse_hex_color(Config::get().get_window_border_color_active(), r, g, b, a);
+        float bgr = 0.20f, bgg = 0.28f, bgb = 0.40f, bga = 0.95f;
+        Config::parse_hex_color(Config::get().get_color_primary_container(), bgr, bgg, bgb, bga);
+        card.set_bg_color(bgr, bgg, bgb, bga);
+
+        float r = 0.54f, g = 0.71f, b = 0.98f, a = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_primary(), r, g, b, a);
         card.set_border(1, r, g, b, a);
         card.set_corner_radius(6);
         card.render(cr, x, y, width, height);
     } else if (is_hovered) {
         CardView card;
-        card.set_bg_color(0.18f, 0.18f, 0.26f, 0.70f);
+        float bgr = 0.18f, bgg = 0.18f, bgb = 0.26f, bga = 0.70f;
+        Config::parse_hex_color(Config::get().get_color_surface_variant(), bgr, bgg, bgb, bga);
+        card.set_bg_color(bgr, bgg, bgb, bga);
         card.set_border(0, 0, 0, 0, 0);
         card.set_corner_radius(6);
         card.render(cr, x, y, width, height);
@@ -91,14 +108,24 @@ void CellItemView::render_list_row(cairo_t* cr, const CellItemModel& item, int x
     title.set_font_size(11);
     title.set_bold(true);
     title.set_max_width(text_w);
-    title.set_color(is_selected ? 1.0f : 0.92f, is_selected ? 1.0f : 0.92f, 1.0f, 1.0f);
+    if (is_selected) {
+        float tr = 1.0f, tg = 1.0f, tb = 1.0f, ta = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_on_primary_container(), tr, tg, tb, ta);
+        title.set_color(tr, tg, tb, ta);
+    } else {
+        float tr = 0.92f, tg = 0.92f, tb = 1.0f, ta = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_on_surface(), tr, tg, tb, ta);
+        title.set_color(tr, tg, tb, ta);
+    }
     title.render(cr, text_x, y + 6, text_w, 20);
 
     if (!item.get_subtitle().empty()) {
         TextView sub(item.get_subtitle());
         sub.set_font_size(9);
         sub.set_max_width(text_w);
-        sub.set_color(0.6f, 0.6f, 0.7f, 0.9f);
+        float sr = 0.6f, sg = 0.6f, sb = 0.7f, sa = 0.9f;
+        Config::parse_hex_color(Config::get().get_color_on_surface_variant(), sr, sg, sb, sa);
+        sub.set_color(sr, sg, sb, sa);
         sub.render(cr, text_x, y + 26, text_w, 18);
     }
 }

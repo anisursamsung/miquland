@@ -27,8 +27,13 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <drm_fourcc.h>
 
+#ifndef WLR_USE_UNSTABLE
+#define WLR_USE_UNSTABLE
+#endif
+
 #ifdef __cplusplus
 #define static
+#define namespace _namespace
 extern "C" {
 #endif
 
@@ -45,6 +50,8 @@ extern "C" {
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
@@ -58,5 +65,6 @@ extern "C" {
 
 #ifdef __cplusplus
 }
+#undef namespace
 #undef static
 #endif

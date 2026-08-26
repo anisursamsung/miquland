@@ -59,6 +59,27 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
 
     m_request_maximize_listener.notify = handle_request_maximize;
     wl_signal_add(&toplevel->events.request_maximize, &m_request_maximize_listener);
+
+    m_set_title_listener.notify = handle_set_title;
+    wl_signal_add(&toplevel->events.set_title, &m_set_title_listener);
+
+    m_set_app_id_listener.notify = handle_set_app_id;
+    wl_signal_add(&toplevel->events.set_app_id, &m_set_app_id_listener);
+
+    // Create foreign toplevel handle for taskbars and notification daemons
+    if (server->get_foreign_toplevel_manager()) {
+        m_foreign_toplevel = wlr_foreign_toplevel_handle_v1_create(server->get_foreign_toplevel_manager());
+        if (m_foreign_toplevel) {
+            if (toplevel->title) wlr_foreign_toplevel_handle_v1_set_title(m_foreign_toplevel, toplevel->title);
+            if (toplevel->app_id) wlr_foreign_toplevel_handle_v1_set_app_id(m_foreign_toplevel, toplevel->app_id);
+
+            m_foreign_request_activate_listener.notify = handle_foreign_request_activate;
+            wl_signal_add(&m_foreign_toplevel->events.request_activate, &m_foreign_request_activate_listener);
+
+            m_foreign_request_close_listener.notify = handle_foreign_request_close;
+            wl_signal_add(&m_foreign_toplevel->events.request_close, &m_foreign_request_close_listener);
+        }
+    }
 }
 
 View::~View() {
@@ -68,6 +89,15 @@ View::~View() {
     wl_list_remove(&m_commit_listener.link);
     wl_list_remove(&m_request_fullscreen_listener.link);
     wl_list_remove(&m_request_maximize_listener.link);
+    wl_list_remove(&m_set_title_listener.link);
+    wl_list_remove(&m_set_app_id_listener.link);
+
+    if (m_foreign_toplevel) {
+        wl_list_remove(&m_foreign_request_activate_listener.link);
+        wl_list_remove(&m_foreign_request_close_listener.link);
+        wlr_foreign_toplevel_handle_v1_destroy(m_foreign_toplevel);
+        m_foreign_toplevel = nullptr;
+    }
 
     if (m_scene_tree) {
         wlr_scene_node_destroy(&m_scene_tree->node);
@@ -197,14 +227,22 @@ void View::focus() {
 
     // Deactivate currently focused view
     View* prev = m_server->get_focused_view();
-    if (prev && prev != this && prev->get_xdg_toplevel()) {
-        wlr_xdg_toplevel_set_activated(prev->get_xdg_toplevel(), false);
+    if (prev && prev != this) {
+        if (prev->get_xdg_toplevel()) {
+            wlr_xdg_toplevel_set_activated(prev->get_xdg_toplevel(), false);
+        }
+        if (prev->m_foreign_toplevel) {
+            wlr_foreign_toplevel_handle_v1_set_activated(prev->m_foreign_toplevel, false);
+        }
     }
 
     if (m_scene_tree) {
         wlr_scene_node_raise_to_top(&m_scene_tree->node);
     }
     wlr_xdg_toplevel_set_activated(m_xdg_toplevel, true);
+    if (m_foreign_toplevel) {
+        wlr_foreign_toplevel_handle_v1_set_activated(m_foreign_toplevel, true);
+    }
     m_server->set_focused_view(this);
 
     if (prev && prev != this) {
@@ -268,6 +306,30 @@ void View::handle_request_maximize(struct wl_listener* listener, void* data) {
     if (view->m_xdg_toplevel->base->surface->mapped) {
         wlr_xdg_toplevel_set_maximized(view->m_xdg_toplevel, false);
     }
+}
+
+void View::handle_set_title(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_set_title_listener);
+    if (view->m_foreign_toplevel && view->m_xdg_toplevel->title) {
+        wlr_foreign_toplevel_handle_v1_set_title(view->m_foreign_toplevel, view->m_xdg_toplevel->title);
+    }
+}
+
+void View::handle_set_app_id(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_set_app_id_listener);
+    if (view->m_foreign_toplevel && view->m_xdg_toplevel->app_id) {
+        wlr_foreign_toplevel_handle_v1_set_app_id(view->m_foreign_toplevel, view->m_xdg_toplevel->app_id);
+    }
+}
+
+void View::handle_foreign_request_activate(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_foreign_request_activate_listener);
+    view->focus();
+}
+
+void View::handle_foreign_request_close(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_foreign_request_close_listener);
+    view->close();
 }
 
 } // namespace biway

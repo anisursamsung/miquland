@@ -204,6 +204,7 @@ void Menu::scan_desktop_files() {
 }
 
 void Menu::reload_applications() {
+    ImageView::clear_cache();
     scan_desktop_files();
     if (m_visible) {
         schedule_redraw();
@@ -354,8 +355,13 @@ void Menu::render(int screen_width, int screen_height) {
 
     // 2. Centered Modal Card Container
     CardView modal_card;
-    modal_card.set_bg_color(0.11f, 0.11f, 0.16f, 0.98f);
-    modal_card.set_border(1, 0.35f, 0.38f, 0.55f, 0.8f);
+    float bg_r = 0.11f, bg_g = 0.11f, bg_b = 0.16f, bg_a = 0.98f;
+    Config::parse_hex_color(Config::get().get_color_surface(), bg_r, bg_g, bg_b, bg_a);
+    modal_card.set_bg_color(bg_r, bg_g, bg_b, bg_a);
+
+    float br_r = 0.35f, br_g = 0.38f, br_b = 0.55f, br_a = 0.8f;
+    Config::parse_hex_color(Config::get().get_color_outline(), br_r, br_g, br_b, br_a);
+    modal_card.set_border(1, br_r, br_g, br_b, br_a);
     modal_card.set_corner_radius(12);
     modal_card.render(cr, m_modal_x, m_modal_y, m_modal_width, m_modal_height);
 

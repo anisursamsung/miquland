@@ -113,13 +113,21 @@ void Bar::render(int width) {
     cairo_t* cr = m_buffer->get_cairo();
     m_buttons.clear();
 
+    auto set_cairo_hex = [&](const std::string& hex, float default_r, float default_g, float default_b, float default_a = 1.0f) {
+        float r = default_r, g = default_g, b = default_b, a = default_a;
+        if (!Config::parse_hex_color(hex, r, g, b, a)) {
+            r = default_r; g = default_g; b = default_b; a = default_a;
+        }
+        cairo_set_source_rgba(cr, r, g, b, a);
+    };
+
     // 1. Draw Bar Background
-    cairo_set_source_rgb(cr, 0.08, 0.08, 0.12); // #14141e
+    set_cairo_hex(Config::get().get_color_background(), 0.08f, 0.08f, 0.12f);
     cairo_rectangle(cr, 0, 0, m_width, m_height);
     cairo_fill(cr);
 
     // Subtle bottom border
-    cairo_set_source_rgb(cr, 0.22, 0.22, 0.30);
+    set_cairo_hex(Config::get().get_color_outline_variant(), 0.16f, 0.16f, 0.22f);
     cairo_set_line_width(cr, 1.0);
     cairo_move_to(cr, 0, m_height - 0.5);
     cairo_line_to(cr, m_width, m_height - 0.5);
@@ -141,16 +149,16 @@ void Bar::render(int width) {
     int menu_btn_w = menu_text_w + 18;
     int menu_btn_x = 8;
 
-    cairo_set_source_rgb(cr, 0.18, 0.19, 0.28); // #2e3046
+    set_cairo_hex(Config::get().get_color_secondary(), 0.18f, 0.19f, 0.28f);
     draw_rounded_rect(cr, menu_btn_x, btn_y, menu_btn_w, btn_height, 4.0);
     cairo_fill(cr);
 
-    cairo_set_source_rgb(cr, 0.35, 0.38, 0.52);
+    set_cairo_hex(Config::get().get_color_outline(), 0.25f, 0.27f, 0.38f);
     cairo_set_line_width(cr, 1.0);
     draw_rounded_rect(cr, menu_btn_x, btn_y, menu_btn_w, btn_height, 4.0);
     cairo_stroke(cr);
 
-    cairo_set_source_rgb(cr, 0.89, 0.91, 0.98);
+    set_cairo_hex(Config::get().get_color_on_secondary(), 0.89f, 0.91f, 0.98f);
     cairo_move_to(cr, menu_btn_x + (menu_btn_w - menu_text_w) / 2, btn_y + (btn_height - menu_text_h) / 2);
     pango_cairo_show_layout(cr, layout);
 
@@ -174,18 +182,18 @@ void Bar::render(int width) {
 
         if (id == active_ws) {
             // Active badge
-            cairo_set_source_rgb(cr, 0.54, 0.71, 0.98); // #89b4fa
+            set_cairo_hex(Config::get().get_color_primary(), 0.54f, 0.71f, 0.98f);
             draw_rounded_rect(cr, current_ws_x, btn_y, ws_btn_w, btn_height, 4.0);
             cairo_fill(cr);
 
-            cairo_set_source_rgb(cr, 0.07, 0.07, 0.11); // Dark text
+            set_cairo_hex(Config::get().get_color_on_primary(), 0.07f, 0.07f, 0.11f);
         } else {
             // Inactive badge
-            cairo_set_source_rgb(cr, 0.16, 0.16, 0.23); // #29293a
+            set_cairo_hex(Config::get().get_color_surface_variant(), 0.16f, 0.16f, 0.23f);
             draw_rounded_rect(cr, current_ws_x, btn_y, ws_btn_w, btn_height, 4.0);
             cairo_fill(cr);
 
-            cairo_set_source_rgb(cr, 0.75, 0.78, 0.90); // Light text
+            set_cairo_hex(Config::get().get_color_on_surface_variant(), 0.65f, 0.68f, 0.80f);
         }
 
         cairo_move_to(cr, current_ws_x + (ws_btn_w - text_w) / 2, btn_y + (btn_height - text_h) / 2);
@@ -209,7 +217,7 @@ void Bar::render(int width) {
     pango_layout_get_pixel_size(layout, &clock_w, &clock_h);
 
     int clock_x = m_width - clock_w - 14;
-    cairo_set_source_rgb(cr, 0.90, 0.93, 0.98);
+    set_cairo_hex(Config::get().get_color_on_surface(), 0.90f, 0.93f, 0.98f);
     cairo_move_to(cr, clock_x, (m_height - clock_h) / 2);
     pango_cairo_show_layout(cr, layout);
 
@@ -230,7 +238,7 @@ void Bar::render(int width) {
             int tw, th;
             pango_layout_get_pixel_size(layout, &tw, &th);
 
-            cairo_set_source_rgb(cr, 0.80, 0.84, 0.96);
+            set_cairo_hex(Config::get().get_color_on_surface(), 0.80f, 0.84f, 0.96f);
             cairo_move_to(cr, menu_btn_x + menu_btn_w + 14, (m_height - th) / 2);
             pango_cairo_show_layout(cr, layout);
         }

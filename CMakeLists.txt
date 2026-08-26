@@ -18,11 +18,39 @@ pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
 pkg_check_modules(GDK_PIXBUF REQUIRED IMPORTED_TARGET gdk-pixbuf-2.0)
 pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
 
-add_definitions(-DWLR_USE_UNSTABLE)
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+set(XDG_SHELL_XML "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+
+# Generate xdg-shell protocol
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
+    COMMAND ${WAYLAND_SCANNER} server-header ${XDG_SHELL_XML} ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
+    DEPENDS ${XDG_SHELL_XML}
+)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
+    COMMAND ${WAYLAND_SCANNER} private-code ${XDG_SHELL_XML} ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
+    DEPENDS ${XDG_SHELL_XML}
+)
+
+# Generate wlr-layer-shell protocol
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
+    COMMAND ${WAYLAND_SCANNER} server-header ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-layer-shell-unstable-v1.xml ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-layer-shell-unstable-v1.xml
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.c
+    COMMAND ${WAYLAND_SCANNER} private-code ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-layer-shell-unstable-v1.xml ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.c
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-layer-shell-unstable-v1.xml
+)
 
 add_executable(biway
     src/main.cpp
     src/core/server.cpp
+    src/core/layer_surface.cpp
     src/core/workspace.cpp
     src/core/view.cpp
     src/core/output.cpp
@@ -38,10 +66,15 @@ add_executable(biway
     src/ui/widgets/text_input_view.cpp
     src/ui/widgets/cell_item_view.cpp
     src/ui/widgets/table_view.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
+    ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
+    ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
+    ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.c
 )
 
 target_include_directories(biway PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${WLROOTS_INCLUDE_DIRS}
     ${WAYLAND_SERVER_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
@@ -71,7 +104,7 @@ target_compile_options(biway PRIVATE
 # Installation targets
 include(GNUInstallDirs)
 install(TARGETS biway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES assets/biway.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
-install(FILES assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/biway)
-install(FILES assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+install(FILES assets/biway.conf assets/light.conf assets/dark.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+install(FILES assets/lightwallpaper.png assets/darkwallpaper.jpg DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/biway)
+install(FILES assets/lightwallpaper.png assets/darkwallpaper.jpg DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
 install(FILES assets/biway.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)

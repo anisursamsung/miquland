@@ -1,5 +1,6 @@
 #include "ui/widgets/table_view.hpp"
 #include "ui/widgets/text_view.hpp"
+#include "config/config.hpp"
 #include <xkbcommon/xkbcommon-keysyms.h>
 #include <algorithm>
 #include <cmath>
@@ -209,7 +210,9 @@ void TableView::render(cairo_t* cr, int x, int y, int width, int height) {
         TextView empty_msg("No matching applications");
         empty_msg.set_font_size(12);
         empty_msg.set_alignment(TextAlignment::Center);
-        empty_msg.set_color(0.55f, 0.55f, 0.65f, 0.9f);
+        float r = 0.55f, g = 0.55f, b = 0.65f, a = 0.9f;
+        Config::parse_hex_color(Config::get().get_color_on_surface_variant(), r, g, b, a);
+        empty_msg.set_color(r, g, b, a);
         empty_msg.render(cr, x, y + height / 2 - 15, width, 30);
         return;
     }

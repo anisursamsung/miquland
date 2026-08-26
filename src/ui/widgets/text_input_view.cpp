@@ -90,14 +90,19 @@ void TextInputView::render(cairo_t* cr, int x, int y, int width, int height, boo
 
     // 1. Draw input box background & border
     CardView bg_card;
-    bg_card.set_bg_color(0.10f, 0.10f, 0.15f, 0.95f);
+    float bg_r = 0.10f, bg_g = 0.10f, bg_b = 0.15f, bg_a = 0.95f;
+    Config::parse_hex_color(Config::get().get_color_surface_variant(), bg_r, bg_g, bg_b, bg_a);
+    bg_card.set_bg_color(bg_r, bg_g, bg_b, bg_a);
     bg_card.set_corner_radius(8);
+
     if (is_focused) {
-        float r = 0.0f, g = 0.82f, b = 1.0f, a = 1.0f;
-        Config::parse_hex_color(Config::get().get_window_border_color_active(), r, g, b, a);
+        float r = 0.54f, g = 0.71f, b = 0.98f, a = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_primary(), r, g, b, a);
         bg_card.set_border(2, r, g, b, a);
     } else {
-        bg_card.set_border(1, 0.25f, 0.25f, 0.35f, 0.8f);
+        float r = 0.25f, g = 0.25f, b = 0.35f, a = 0.8f;
+        Config::parse_hex_color(Config::get().get_color_outline(), r, g, b, a);
+        bg_card.set_border(1, r, g, b, a);
     }
     bg_card.render(cr, x, y, width, height);
 
@@ -122,9 +127,13 @@ void TextInputView::render(cairo_t* cr, int x, int y, int width, int height, boo
     double draw_y = y + (height - text_h) / 2.0;
 
     if (is_empty) {
-        cairo_set_source_rgba(cr, 0.5f, 0.5f, 0.6f, 0.7f);
+        float pr = 0.5f, pg = 0.5f, pb = 0.6f, pa = 0.7f;
+        Config::parse_hex_color(Config::get().get_color_on_surface_variant(), pr, pg, pb, pa);
+        cairo_set_source_rgba(cr, pr, pg, pb, pa);
     } else {
-        cairo_set_source_rgba(cr, 0.95f, 0.95f, 1.0f, 1.0f);
+        float tr = 0.95f, tg = 0.95f, tb = 1.0f, ta = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_on_surface(), tr, tg, tb, ta);
+        cairo_set_source_rgba(cr, tr, tg, tb, ta);
     }
 
     cairo_move_to(cr, x + pad_x, draw_y);
@@ -146,8 +155,8 @@ void TextInputView::render(cairo_t* cr, int x, int y, int width, int height, boo
             if (cursor_h <= 0) cursor_h = text_h;
         }
 
-        float r = 0.0f, g = 0.82f, b = 1.0f, a = 1.0f;
-        Config::parse_hex_color(Config::get().get_window_border_color_active(), r, g, b, a);
+        float r = 0.54f, g = 0.71f, b = 0.98f, a = 1.0f;
+        Config::parse_hex_color(Config::get().get_color_primary(), r, g, b, a);
         cairo_set_source_rgba(cr, r, g, b, a);
         cairo_rectangle(cr, cursor_x, cursor_y, 2.0, cursor_h);
         cairo_fill(cr);

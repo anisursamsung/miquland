@@ -25,6 +25,7 @@ public:
 
     struct wlr_xdg_toplevel* get_xdg_toplevel() const { return m_xdg_toplevel; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
+    struct wlr_foreign_toplevel_handle_v1* get_foreign_toplevel() const { return m_foreign_toplevel; }
     bool is_mapped() const { return m_mapped; }
 
     int get_x() const { return m_x; }
@@ -39,10 +40,15 @@ private:
     static void handle_commit(struct wl_listener* listener, void* data);
     static void handle_request_fullscreen(struct wl_listener* listener, void* data);
     static void handle_request_maximize(struct wl_listener* listener, void* data);
+    static void handle_set_title(struct wl_listener* listener, void* data);
+    static void handle_set_app_id(struct wl_listener* listener, void* data);
+    static void handle_foreign_request_activate(struct wl_listener* listener, void* data);
+    static void handle_foreign_request_close(struct wl_listener* listener, void* data);
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
     struct wlr_xdg_toplevel* m_xdg_toplevel = nullptr;
+    struct wlr_foreign_toplevel_handle_v1* m_foreign_toplevel = nullptr;
 
     struct wlr_scene_tree* m_scene_tree = nullptr;
     struct wlr_scene_buffer* m_border_scene_buffer = nullptr;
@@ -61,6 +67,10 @@ private:
     struct wl_listener m_commit_listener;
     struct wl_listener m_request_fullscreen_listener;
     struct wl_listener m_request_maximize_listener;
+    struct wl_listener m_set_title_listener;
+    struct wl_listener m_set_app_id_listener;
+    struct wl_listener m_foreign_request_activate_listener;
+    struct wl_listener m_foreign_request_close_listener;
 };
 
 } // namespace biway

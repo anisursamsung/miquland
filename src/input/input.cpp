@@ -127,6 +127,15 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
         return m_server->get_menu()->handle_key(modifiers, keysym);
     }
 
+    // 2. If an exclusive Layer Surface is focused (e.g. rofi, swaylock), forward keys directly to it
+    if (m_server->get_focused_layer_surface()) {
+        if (mod && shift && norm_sym == XKB_KEY_q) {
+            m_server->terminate();
+            return true;
+        }
+        return false;
+    }
+
     uint32_t active_mods = 0;
     if (mod) active_mods |= WLR_MODIFIER_LOGO;
     if (shift) active_mods |= WLR_MODIFIER_SHIFT;

@@ -37,6 +37,11 @@ public:
     struct wlr_output_layout* get_layout() const { return m_output_layout; }
     struct wlr_box get_primary_geometry() const;
 
+    Output* get_primary_output() const {
+        return m_outputs.empty() ? nullptr : m_outputs.front().get();
+    }
+    const std::vector<std::unique_ptr<Output>>& get_outputs() const { return m_outputs; }
+
     void add_output(Output* output);
     void remove_output(Output* output);
 

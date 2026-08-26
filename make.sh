@@ -22,13 +22,14 @@ if [ "${EUID}" -eq 0 ]; then
         USER_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
         if [ -n "$USER_HOME" ]; then
             CONFIG_DIR="$USER_HOME/.config/biway"
-            CONFIG_FILE="$CONFIG_DIR/biway.conf"
-            if [ ! -f "$CONFIG_FILE" ]; then
-                echo "==> Setting up default user configuration at $CONFIG_FILE..."
-                mkdir -p "$CONFIG_DIR"
-                cp "assets/biway.conf" "$CONFIG_FILE"
-                chown -R "$TARGET_USER:$(id -gn "$TARGET_USER")" "$CONFIG_DIR"
-            fi
+            mkdir -p "$CONFIG_DIR"
+            for f in "biway.conf" "light.conf" "dark.conf"; do
+                if [ ! -f "$CONFIG_DIR/$f" ] && [ -f "assets/$f" ]; then
+                    echo "==> Setting up default user configuration file at $CONFIG_DIR/$f..."
+                    cp "assets/$f" "$CONFIG_DIR/$f"
+                fi
+            done
+            chown -R "$TARGET_USER:$(id -gn "$TARGET_USER")" "$CONFIG_DIR"
         fi
     fi
 

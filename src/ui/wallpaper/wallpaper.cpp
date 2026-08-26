@@ -39,12 +39,24 @@ void Wallpaper::render(int width, int height) {
     cairo_paint(cr);
 
     std::string path = Config::get().get_wallpaper_path();
+    if (!path.empty() && path[0] == '~') {
+        const char* home = getenv("HOME");
+        if (home) {
+            path = std::string(home) + path.substr(1);
+        }
+    }
+
     if (path.empty() || !std::filesystem::exists(path)) {
-        // Fallbacks: system installed wallpaper, then local asset
+        // Fallbacks: system installed wallpapers, then local assets
         const std::vector<std::string> fallbacks = {
+            "/usr/share/backgrounds/biway/lightwallpaper.png",
+            "/usr/share/backgrounds/biway/darkwallpaper.jpg",
+            "/usr/share/biway/lightwallpaper.png",
+            "/usr/share/biway/darkwallpaper.jpg",
             "/usr/share/backgrounds/biway/wallpaper.png",
             "/usr/share/biway/wallpaper.png",
-            "/usr/local/share/backgrounds/biway/wallpaper.png",
+            "assets/lightwallpaper.png",
+            "assets/darkwallpaper.jpg",
             "assets/wallpaper.png"
         };
         for (const auto& fb : fallbacks) {

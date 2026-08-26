@@ -6,6 +6,7 @@
 #include "ui/bar/bar.hpp"
 #include "ui/menu/menu.hpp"
 #include "core/view.hpp"
+#include "core/layer_surface.hpp"
 #include "config/config.hpp"
 #include <algorithm>
 #include <sys/inotify.h>
@@ -29,6 +30,7 @@ Server::~Server() {
     }
 
     m_views.clear();
+    m_layer_surfaces.clear();
     m_menu.reset();
     m_bar.reset();
     m_wallpaper.reset();
@@ -36,6 +38,9 @@ Server::~Server() {
     m_workspace_manager.reset();
     m_output_manager.reset();
 
+    if (m_layer_shell) {
+        wl_list_remove(&m_new_layer_shell_surface_listener.link);
+    }
     if (m_xdg_shell) {
         wl_list_remove(&m_new_xdg_toplevel_listener.link);
     }
@@ -86,10 +91,15 @@ bool Server::init() {
         return false;
     }
 
-    // Layered scene tree hierarchy
+    // Layered scene tree hierarchy:
+    // Background -> Wallpaper -> Bottom -> Workspaces (Tiled Apps) -> Top -> Native Bar -> Overlay
+    m_layer_background_tree = wlr_scene_tree_create(&m_scene->tree);
     m_bg_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_layer_bottom_tree = wlr_scene_tree_create(&m_scene->tree);
     m_workspaces_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_layer_top_tree = wlr_scene_tree_create(&m_scene->tree);
     m_bar_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_layer_overlay_tree = wlr_scene_tree_create(&m_scene->tree);
 
     m_output_manager = std::make_unique<OutputManager>(this);
     m_workspace_manager = std::make_unique<WorkspaceManager>(this);
@@ -101,6 +111,12 @@ bool Server::init() {
     m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 3);
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
     wl_signal_add(&m_xdg_shell->events.new_toplevel, &m_new_xdg_toplevel_listener);
+
+    m_layer_shell = wlr_layer_shell_v1_create(m_wl_display, 4);
+    m_new_layer_shell_surface_listener.notify = handle_new_layer_shell_surface;
+    wl_signal_add(&m_layer_shell->events.new_surface, &m_new_layer_shell_surface_listener);
+
+    m_foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(m_wl_display);
 
     m_socket_name = wl_display_add_socket_auto(m_wl_display);
     if (!m_socket_name) {
@@ -274,6 +290,93 @@ void Server::handle_new_xdg_toplevel(struct wl_listener* listener, void* data) {
 
     auto view = std::make_unique<View>(server, toplevel);
     server->add_view(std::move(view));
+}
+
+struct wlr_scene_tree* Server::get_layer_tree(enum zwlr_layer_shell_v1_layer layer) const {
+    switch (layer) {
+        case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+            return m_layer_background_tree;
+        case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+            return m_layer_bottom_tree;
+        case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+            return m_layer_top_tree;
+        case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+        default:
+            return m_layer_overlay_tree;
+    }
+}
+
+void Server::add_layer_surface(std::unique_ptr<LayerSurface> surface) {
+    m_layer_surfaces.push_back(std::move(surface));
+}
+
+void Server::remove_layer_surface(LayerSurface* surface) {
+    if (m_focused_layer_surface == surface) {
+        m_focused_layer_surface = nullptr;
+        if (m_focused_view) {
+            m_focused_view->focus();
+        }
+    }
+
+    for (auto it = m_layer_surfaces.begin(); it != m_layer_surfaces.end(); ++it) {
+        if (it->get() == surface) {
+            m_layer_surfaces.erase(it);
+            break;
+        }
+    }
+}
+
+void Server::focus_layer_surface(LayerSurface* surface) {
+    if (surface && surface->get_wlr_layer_surface()) {
+        m_focused_layer_surface = surface;
+        struct wlr_surface* wlr_surf = surface->get_wlr_layer_surface()->surface;
+        struct wlr_seat* seat = m_input_manager->get_seat();
+        struct wlr_keyboard* kb = wlr_seat_get_keyboard(seat);
+        if (kb && wlr_surf) {
+            wlr_seat_keyboard_notify_enter(seat, wlr_surf, kb->keycodes, kb->num_keycodes, &kb->modifiers);
+        }
+    } else {
+        m_focused_layer_surface = nullptr;
+        if (m_focused_view) {
+            m_focused_view->focus();
+        }
+    }
+}
+
+void Server::arrange_layers(struct wlr_output* output) {
+    if (!output) return;
+
+    struct wlr_box full_area = {
+        .x = 0,
+        .y = 0,
+        .width = output->width,
+        .height = output->height
+    };
+    struct wlr_box usable_area = full_area;
+
+    // Order of arrangement: OVERLAY, TOP, BOTTOM, BACKGROUND
+    const enum zwlr_layer_shell_v1_layer layers_order[] = {
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
+        ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+        ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM,
+        ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND
+    };
+
+    for (auto layer : layers_order) {
+        for (auto& l_surf : m_layer_surfaces) {
+            if (l_surf->get_layer() == layer && l_surf->get_wlr_layer_surface()->output == output) {
+                l_surf->configure(&full_area, &usable_area);
+            }
+        }
+    }
+}
+
+void Server::handle_new_layer_shell_surface(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_new_layer_shell_surface_listener);
+    auto* wlr_layer_surface = static_cast<struct wlr_layer_surface_v1*>(data);
+
+    auto layer_surface = std::make_unique<LayerSurface>(server, wlr_layer_surface);
+    server->add_layer_surface(std::move(layer_surface));
 }
 
 } // namespace biway

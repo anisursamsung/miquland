@@ -38,6 +38,22 @@ void Config::set_defaults() {
     std::string term = (env_term && *env_term) ? env_term : "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
     m_terminal = term;
 
+    // Material Design 3 Neon Light Theme Color Defaults
+    m_theme_source = "~/.config/biway/light.conf";
+    m_color_primary = "#0066ff";
+    m_color_on_primary = "#ffffff";
+    m_color_primary_container = "#cce5ff";
+    m_color_on_primary_container = "#002b66";
+    m_color_secondary = "#e6f0fa";
+    m_color_on_secondary = "#0f172a";
+    m_color_background = "#f4f8fc";
+    m_color_surface = "#ffffff";
+    m_color_surface_variant = "#e6eff8";
+    m_color_on_surface = "#0f172a";
+    m_color_on_surface_variant = "#475569";
+    m_color_outline = "#99c2ff";
+    m_color_outline_variant = "#dbeafe";
+
     // Application Launchers
     m_keybindings.push_back({ mod, XKB_KEY_space, "menu", "Super+Space" });
     m_keybindings.push_back({ mod, XKB_KEY_f, "firefox", "Super+F" });
@@ -156,10 +172,27 @@ bool Config::parse_binding_combo(const std::string& combo, uint32_t& out_modifie
 }
 
 bool Config::parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a) {
+    if (hex.empty()) return false;
     std::string s = hex;
-    if (!s.empty() && s[0] == '#') {
+    // Strip surrounding whitespace and quotes
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '"' || s.front() == '\'')) {
+        s.erase(0, 1);
+    }
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '"' || s.back() == '\'')) {
+        s.pop_back();
+    }
+    // Strip trailing comment if present
+    size_t comment = s.find('#', 1);
+    if (comment != std::string::npos) {
+        s = s.substr(0, comment);
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+    }
+
+    if (s.empty()) return false;
+    if (s[0] == '#') {
         s = s.substr(1);
     }
+
     if (s.length() == 6) {
         try {
             unsigned long val = std::stoul(s, nullptr, 16);
@@ -178,6 +211,28 @@ bool Config::parse_hex_color(const std::string& hex, float& r, float& g, float& 
             g = ((val >> 16) & 0xFF) / 255.0f;
             b = ((val >> 8) & 0xFF) / 255.0f;
             a = (val & 0xFF) / 255.0f;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    } else if (s.length() == 3) {
+        try {
+            unsigned long val = std::stoul(s, nullptr, 16);
+            r = (((val >> 8) & 0xF) * 17) / 255.0f;
+            g = (((val >> 4) & 0xF) * 17) / 255.0f;
+            b = ((val & 0xF) * 17) / 255.0f;
+            a = 1.0f;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    } else if (s.length() == 4) {
+        try {
+            unsigned long val = std::stoul(s, nullptr, 16);
+            r = (((val >> 12) & 0xF) * 17) / 255.0f;
+            g = (((val >> 8) & 0xF) * 17) / 255.0f;
+            b = (((val >> 4) & 0xF) * 17) / 255.0f;
+            a = ((val & 0xF) * 17) / 255.0f;
             return true;
         } catch (...) {
             return false;
@@ -202,48 +257,124 @@ std::string Config::get_config_file_path() {
     return get_config_dir_path() + "/biway.conf";
 }
 
-void Config::load() {
+std::string Config::resolve_path(const std::string& path) const {
+    if (path.empty()) return "";
+    std::string p = path;
+
+    // Expand ~ home directory
+    if (p[0] == '~') {
+        const char* home = getenv("HOME");
+        if (home) {
+            p = std::string(home) + p.substr(1);
+        }
+    } else if (p[0] != '/') {
+        // Relative path -> relative to config directory
+        p = get_config_dir_path() + "/" + p;
+    }
+    return p;
+}
+
+void Config::ensure_default_files() {
     std::string dir = get_config_dir_path();
-    std::string path = get_config_file_path();
+    std::error_code ec;
+    fs::create_directories(dir, ec);
 
-    if (!fs::exists(path)) {
-        log_info("Configuration file not found at " + path + ". Checking asset templates...");
-        std::error_code ec;
-        fs::create_directories(dir, ec);
-
-        // Check for template asset files in system and local assets
-        const std::vector<std::string> template_candidates = {
-            "/usr/share/biway/biway.conf",
-            "/usr/local/share/biway/biway.conf",
-            "/etc/biway/biway.conf",
-            "assets/biway.conf"
-        };
-
+    // 1. light.conf
+    std::string light_path = dir + "/light.conf";
+    if (!fs::exists(light_path)) {
         bool copied = false;
-        for (const auto& candidate : template_candidates) {
-            if (fs::exists(candidate)) {
-                fs::copy_file(candidate, path, fs::copy_options::overwrite_existing, ec);
-                if (!ec) {
-                    log_info("Copied default configuration asset from " + candidate + " to " + path);
-                    copied = true;
-                    break;
-                }
+        for (const char* t_dir : {"assets", "/usr/share/biway", "/usr/local/share/biway", "/etc/biway"}) {
+            std::string cand = std::string(t_dir) + "/light.conf";
+            if (fs::exists(cand)) {
+                fs::copy_file(cand, light_path, fs::copy_options::overwrite_existing, ec);
+                if (!ec) { copied = true; break; }
             }
         }
+        if (!copied) {
+            std::ofstream f(light_path);
+            if (f.is_open()) {
+                f << "# biway Material Neon Light Theme (light.conf)\n\n"
+                  << "wallpaper = /usr/share/backgrounds/biway/lightwallpaper.png\n\n"
+                  << "[colors]\n"
+                  << "color_primary              = #0066ff\n"
+                  << "color_on_primary           = #ffffff\n"
+                  << "color_primary_container    = #cce5ff\n"
+                  << "color_on_primary_container = #002b66\n"
+                  << "color_secondary            = #e6f0fa\n"
+                  << "color_on_secondary         = #0f172a\n"
+                  << "color_background           = #f4f8fc\n"
+                  << "color_surface              = #ffffff\n"
+                  << "color_surface_variant      = #e6eff8\n"
+                  << "color_on_surface           = #0f172a\n"
+                  << "color_on_surface_variant   = #475569\n"
+                  << "color_outline              = #99c2ff\n"
+                  << "color_outline_variant      = #dbeafe\n";
+            }
+        }
+    }
 
+    // 2. dark.conf
+    std::string dark_path = dir + "/dark.conf";
+    if (!fs::exists(dark_path)) {
+        bool copied = false;
+        for (const char* t_dir : {"assets", "/usr/share/biway", "/usr/local/share/biway", "/etc/biway"}) {
+            std::string cand = std::string(t_dir) + "/dark.conf";
+            if (fs::exists(cand)) {
+                fs::copy_file(cand, dark_path, fs::copy_options::overwrite_existing, ec);
+                if (!ec) { copied = true; break; }
+            }
+        }
+        if (!copied) {
+            std::ofstream f(dark_path);
+            if (f.is_open()) {
+                f << "# biway Material Neon Dark Theme (dark.conf)\n\n"
+                  << "wallpaper = /usr/share/backgrounds/biway/darkwallpaper.jpg\n\n"
+                  << "[colors]\n"
+                  << "color_primary              = #00f0ff\n"
+                  << "color_on_primary           = #050510\n"
+                  << "color_primary_container    = #003b4d\n"
+                  << "color_on_primary_container = #b3f7ff\n"
+                  << "color_secondary            = #1b1f38\n"
+                  << "color_on_secondary         = #e2e8f0\n"
+                  << "color_background           = #090a10\n"
+                  << "color_surface              = #10121d\n"
+                  << "color_surface_variant      = #1a1d2e\n"
+                  << "color_on_surface           = #f1f5f9\n"
+                  << "color_on_surface_variant   = #818cf8\n"
+                  << "color_outline              = #2e3856\n"
+                  << "color_outline_variant      = #1e2238\n";
+            }
+        }
+    }
+
+    // 3. biway.conf
+    std::string config_path = get_config_file_path();
+    if (!fs::exists(config_path)) {
+        bool copied = false;
+        for (const char* t_dir : {"assets", "/usr/share/biway", "/usr/local/share/biway", "/etc/biway"}) {
+            std::string cand = std::string(t_dir) + "/biway.conf";
+            if (fs::exists(cand)) {
+                fs::copy_file(cand, config_path, fs::copy_options::overwrite_existing, ec);
+                if (!ec) { copied = true; break; }
+            }
+        }
         if (!copied) {
             save();
         }
     }
+}
 
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        log_info("No configuration file found at " + path + ", using defaults");
+void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file, int depth) {
+    if (depth > 5) {
+        log_error("Maximum config include depth exceeded for " + path);
         return;
     }
 
-    bool has_bindings_in_file = false;
-    std::vector<KeyBinding> file_bindings;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        log_error("Could not open config file: " + path);
+        return;
+    }
 
     std::string line;
     while (std::getline(file, line)) {
@@ -260,7 +391,32 @@ void Config::load() {
         std::string key = trim(trimmed.substr(0, eq_pos));
         std::string value = trim(trimmed.substr(eq_pos + 1));
 
-        if (key == "wallpaper") {
+        if (key != "bind") {
+            size_t comment_pos = std::string::npos;
+            if (!value.empty() && value[0] == '#') {
+                size_t space_pos = value.find_first_of(" \t");
+                if (space_pos != std::string::npos) {
+                    comment_pos = value.find('#', space_pos);
+                }
+            } else {
+                comment_pos = value.find('#');
+            }
+
+            if (comment_pos != std::string::npos) {
+                value = trim(value.substr(0, comment_pos));
+            }
+        }
+
+        if (key == "source" || key == "include") {
+            m_theme_source = value;
+            std::string resolved = resolve_path(value);
+            if (!resolved.empty() && fs::exists(resolved)) {
+                log_info("Sourcing configuration from " + resolved);
+                load_file(resolved, file_bindings, has_bindings_in_file, depth + 1);
+            } else {
+                log_error("Config source file not found: " + value + " (resolved to " + resolved + ")");
+            }
+        } else if (key == "wallpaper") {
             m_wallpaper_path = value;
         } else if (key == "show_bar") {
             std::string lower = value;
@@ -278,7 +434,9 @@ void Config::load() {
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
             m_natural_scroll = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "icon_theme") {
+        } else if (key == "icon_theme" || key == "icon-theme" || key == "icons_theme" ||
+                   key == "icons-theme" || key == "icontheme" || key == "theme_icons" ||
+                   key == "icon" || key == "icons") {
             m_icon_theme = value;
         } else if (key == "terminal") {
             m_terminal = value;
@@ -290,10 +448,34 @@ void Config::load() {
             try {
                 m_window_border_radius = std::max(0, std::stoi(value));
             } catch (...) {}
-        } else if (key == "window_border_color_active" || key == "border_color_active") {
-            m_window_border_color_active = value;
-        } else if (key == "window_border_color_inactive" || key == "border_color_inactive") {
-            m_window_border_color_inactive = value;
+        } else if (key == "color_primary" || key == "primary" || key == "accent" ||
+                   key == "window_border_color_active" || key == "border_color_active") {
+            m_color_primary = value;
+        } else if (key == "color_on_primary" || key == "on_primary") {
+            m_color_on_primary = value;
+        } else if (key == "color_primary_container" || key == "primary_container") {
+            m_color_primary_container = value;
+        } else if (key == "color_on_primary_container" || key == "on_primary_container") {
+            m_color_on_primary_container = value;
+        } else if (key == "color_secondary" || key == "secondary") {
+            m_color_secondary = value;
+        } else if (key == "color_on_secondary" || key == "on_secondary") {
+            m_color_on_secondary = value;
+        } else if (key == "color_background" || key == "background" || key == "bg_color") {
+            m_color_background = value;
+        } else if (key == "color_surface" || key == "surface" || key == "menu_bg") {
+            m_color_surface = value;
+        } else if (key == "color_surface_variant" || key == "surface_variant") {
+            m_color_surface_variant = value;
+        } else if (key == "color_on_surface" || key == "on_surface" || key == "text_color" || key == "text") {
+            m_color_on_surface = value;
+        } else if (key == "color_on_surface_variant" || key == "on_surface_variant" || key == "text_muted") {
+            m_color_on_surface_variant = value;
+        } else if (key == "color_outline" || key == "outline" || key == "border" ||
+                   key == "window_border_color_inactive" || key == "border_color_inactive") {
+            m_color_outline = value;
+        } else if (key == "color_outline_variant" || key == "outline_variant") {
+            m_color_outline_variant = value;
         } else if (key == "space_between_windows" || key == "window_spacing" || key == "inner_gap") {
             try {
                 m_space_between_windows = std::max(0, std::stoi(value));
@@ -318,6 +500,16 @@ void Config::load() {
             }
         }
     }
+}
+
+void Config::load() {
+    ensure_default_files();
+
+    std::string path = get_config_file_path();
+    bool has_bindings_in_file = false;
+    std::vector<KeyBinding> file_bindings;
+
+    load_file(path, file_bindings, has_bindings_in_file, 0);
 
     if (has_bindings_in_file) {
         m_keybindings = std::move(file_bindings);
@@ -340,10 +532,14 @@ void Config::save() {
 
     file << "# biway configuration file\n\n";
     file << "[appearance]\n";
-    file << "wallpaper = " << m_wallpaper_path << "\n";
     file << "show_bar = " << (m_show_bar ? "true" : "false") << "\n";
     file << "bar_height = " << m_bar_height << "\n";
+    file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
     file << "icon_theme = " << m_icon_theme << "\n\n";
+
+    file << "[theme]\n";
+    file << "# Source a color theme file (e.g. source = light.conf, dark.conf, or absolute path)\n";
+    file << "source = " << m_theme_source << "\n\n";
 
     file << "[input]\n";
     file << "tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";
@@ -352,8 +548,6 @@ void Config::save() {
     file << "[windows]\n";
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
-    file << "window_border_color_active = " << m_window_border_color_active << "\n";
-    file << "window_border_color_inactive = " << m_window_border_color_inactive << "\n";
     file << "space_between_windows = " << m_space_between_windows << "\n";
     file << "screen_edge_padding = " << m_screen_edge_padding << "\n\n";
 
@@ -367,11 +561,6 @@ void Config::save() {
     }
 
     log_info("Saved configuration to " + path);
-}
-
-void Config::set_wallpaper_path(const std::string& path) {
-    m_wallpaper_path = path;
-    save();
 }
 
 } // namespace biway
