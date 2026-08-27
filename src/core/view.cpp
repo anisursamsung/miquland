@@ -1,4 +1,5 @@
 #include "core/view.hpp"
+#include "core/popup.hpp"
 #include "core/server.hpp"
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
@@ -178,6 +179,8 @@ View::~View() {
         wlr_foreign_toplevel_handle_v1_destroy(m_foreign_toplevel);
         m_foreign_toplevel = nullptr;
     }
+
+    m_popups.clear();
 
     if (m_scene_tree) {
         wlr_scene_node_destroy(&m_scene_tree->node);
@@ -517,11 +520,18 @@ void View::handle_new_popup(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_new_popup_listener);
     auto* popup = static_cast<struct wlr_xdg_popup*>(data);
 
-    struct wlr_scene_tree* parent_tree = view->get_scene_tree();
+    struct wlr_scene_tree* parent_tree = view->m_surface_scene_tree ? view->m_surface_scene_tree : view->get_scene_tree();
     if (!parent_tree) return;
 
-    wlr_scene_xdg_surface_create(parent_tree, popup->base);
-    wlr_xdg_surface_schedule_configure(popup->base);
+    auto p = std::make_unique<Popup>(popup, parent_tree, view, [view](Popup* target) {
+        for (auto it = view->m_popups.begin(); it != view->m_popups.end(); ++it) {
+            if (it->get() == target) {
+                view->m_popups.erase(it);
+                break;
+            }
+        }
+    });
+    view->m_popups.push_back(std::move(p));
 }
 
 // XWayland Event Handlers

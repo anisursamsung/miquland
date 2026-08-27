@@ -1,4 +1,5 @@
 #include "core/layer_surface.hpp"
+#include "core/popup.hpp"
 #include "core/server.hpp"
 #include "core/output.hpp"
 #include "core/input/input.hpp"
@@ -41,6 +42,7 @@ LayerSurface::LayerSurface(Server* server, struct wlr_layer_surface_v1* layer_su
 }
 
 LayerSurface::~LayerSurface() {
+    m_popups.clear();
     wl_list_remove(&m_map_listener.link);
     wl_list_remove(&m_unmap_listener.link);
     wl_list_remove(&m_destroy_listener.link);
@@ -118,7 +120,18 @@ void LayerSurface::handle_surface_commit(struct wl_listener* listener, void* dat
 void LayerSurface::handle_new_popup(struct wl_listener* listener, void* data) {
     LayerSurface* surface = wl_container_of(listener, surface, m_new_popup_listener);
     auto* popup = static_cast<struct wlr_xdg_popup*>(data);
-    wlr_scene_xdg_surface_create(surface->m_scene_layer_surface->tree, popup->base);
+
+    if (!surface->m_scene_layer_surface) return;
+
+    auto p = std::make_unique<Popup>(popup, surface->m_scene_layer_surface->tree, surface, [surface](Popup* target) {
+        for (auto it = surface->m_popups.begin(); it != surface->m_popups.end(); ++it) {
+            if (it->get() == target) {
+                surface->m_popups.erase(it);
+                break;
+            }
+        }
+    });
+    surface->m_popups.push_back(std::move(p));
 }
 
 } // namespace biway

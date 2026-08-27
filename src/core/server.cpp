@@ -294,6 +294,14 @@ void Server::remove_view(View* view) {
     if (m_bar) m_bar->schedule_redraw();
 }
 
+bool Server::is_valid_view(View* view) const {
+    if (!view) return false;
+    for (const auto& v : m_views) {
+        if (v.get() == view) return true;
+    }
+    return false;
+}
+
 void Server::set_focused_view(View* view) {
     if (m_focused_view == view) return;
     View* prev = m_focused_view;
@@ -321,7 +329,10 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
     struct wlr_scene_tree* tree = node->parent;
     while (tree != nullptr) {
         if (tree->node.data != nullptr) {
-            return static_cast<View*>(tree->node.data);
+            auto* possible_view = static_cast<View*>(tree->node.data);
+            if (is_valid_view(possible_view)) {
+                return possible_view;
+            }
         }
         tree = tree->node.parent;
     }

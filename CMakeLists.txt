@@ -56,6 +56,7 @@ add_executable(biway
     src/core/layer_surface.cpp
     src/core/workspace.cpp
     src/core/view.cpp
+    src/core/popup.cpp
     src/core/output.cpp
     src/core/input/input.cpp
     src/core/config/config.cpp

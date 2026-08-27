@@ -3,6 +3,8 @@
 #include "core/common/util.hpp"
 #include "toolkit/render/cairo_buffer.hpp"
 #include <string>
+#include <vector>
+#include <memory>
 
 struct wlr_xwayland_surface;
 
@@ -10,6 +12,7 @@ namespace biway {
 
 class Server;
 class Workspace;
+class Popup;
 
 enum class ViewType {
     Xdg,
@@ -22,6 +25,7 @@ public:
     View(Server* server, struct wlr_xwayland_surface* xsurface);
     ~View();
 
+    Server* get_server() const { return m_server; }
     ViewType get_type() const { return m_type; }
 
     void set_workspace(Workspace* ws);
@@ -116,6 +120,8 @@ private:
     struct wl_listener m_set_class_listener;
     struct wl_listener m_set_parent_listener;
     struct wl_listener m_set_override_redirect_listener;
+
+    std::vector<std::unique_ptr<Popup>> m_popups;
 };
 
 } // namespace biway

@@ -53,6 +53,8 @@ public:
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
+    bool is_valid_view(View* view) const;
+    const std::vector<std::unique_ptr<View>>& get_views() const { return m_views; }
     View* view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy);
 
     void add_layer_surface(std::unique_ptr<LayerSurface> surface);

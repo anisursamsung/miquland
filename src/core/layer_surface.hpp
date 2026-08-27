@@ -1,10 +1,13 @@
 #pragma once
 
 #include "core/common/util.hpp"
+#include <vector>
+#include <memory>
 
 namespace biway {
 
 class Server;
+class Popup;
 
 class LayerSurface {
 public:
@@ -37,6 +40,8 @@ private:
     struct wl_listener m_destroy_listener;
     struct wl_listener m_surface_commit_listener;
     struct wl_listener m_new_popup_listener;
+
+    std::vector<std::unique_ptr<Popup>> m_popups;
 };
 
 } // namespace biway
