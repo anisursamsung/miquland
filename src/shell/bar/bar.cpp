@@ -179,8 +179,8 @@ void Bar::render(int width) {
     // Active Window Title
     View* focused = m_server->get_focused_view();
     std::string title = "";
-    if (focused && focused->get_xdg_toplevel() && focused->get_xdg_toplevel()->title) {
-        title = focused->get_xdg_toplevel()->title;
+    if (focused) {
+        title = focused->get_title();
     }
     m_title_view->set_text(title);
     m_title_view->set_color_hex(Config::get().get_color_on_surface());

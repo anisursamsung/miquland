@@ -38,6 +38,12 @@ Server::~Server() {
     m_workspace_manager.reset();
     m_output_manager.reset();
 
+    if (m_xwayland) {
+        wl_list_remove(&m_xwayland_ready_listener.link);
+        wl_list_remove(&m_xwayland_new_surface_listener.link);
+        wlr_xwayland_destroy(m_xwayland);
+        m_xwayland = nullptr;
+    }
     if (m_layer_shell) {
         wl_list_remove(&m_new_layer_shell_surface_listener.link);
     }
@@ -129,6 +135,25 @@ bool Server::init() {
 
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     log_info("biway Wayland compositor started on WAYLAND_DISPLAY=" + std::string(m_socket_name));
+
+    // Initialize Xwayland support
+    m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
+    if (m_xwayland) {
+        wlr_xwayland_set_seat(m_xwayland, m_input_manager->get_seat());
+
+        m_xwayland_ready_listener.notify = handle_xwayland_ready;
+        wl_signal_add(&m_xwayland->events.ready, &m_xwayland_ready_listener);
+
+        m_xwayland_new_surface_listener.notify = handle_xwayland_new_surface;
+        wl_signal_add(&m_xwayland->events.new_surface, &m_xwayland_new_surface_listener);
+
+        if (m_xwayland->display_name) {
+            setenv("DISPLAY", m_xwayland->display_name, 1);
+            log_info("biway Xwayland initialized on DISPLAY=" + std::string(m_xwayland->display_name));
+        }
+    } else {
+        log_warn("Failed to initialize Xwayland server");
+    }
 
     // Import key session environment variables into the systemd user daemon.
     // This is required so that user services with ConditionEnvironment=XDG_SESSION_CLASS=user
@@ -396,6 +421,23 @@ void Server::handle_new_layer_shell_surface(struct wl_listener* listener, void* 
 
     auto layer_surface = std::make_unique<LayerSurface>(server, wlr_layer_surface);
     server->add_layer_surface(std::move(layer_surface));
+}
+
+void Server::handle_xwayland_ready(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_xwayland_ready_listener);
+    if (server->m_xwayland && server->m_xwayland->display_name) {
+        setenv("DISPLAY", server->m_xwayland->display_name, 1);
+        log_info("Xwayland server is ready on DISPLAY=" + std::string(server->m_xwayland->display_name));
+        system("systemctl --user import-environment DISPLAY 2>/dev/null");
+    }
+}
+
+void Server::handle_xwayland_new_surface(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_xwayland_new_surface_listener);
+    auto* xsurface = static_cast<struct wlr_xwayland_surface*>(data);
+
+    auto view = std::make_unique<View>(server, xsurface);
+    server->add_view(std::move(view));
 }
 
 } // namespace biway

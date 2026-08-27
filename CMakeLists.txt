@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+add_compile_definitions(WLR_USE_UNSTABLE)
+
 find_package(PkgConfig REQUIRED)
 
 # Dependencies
@@ -17,6 +19,7 @@ pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
 pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
 pkg_check_modules(GDK_PIXBUF REQUIRED IMPORTED_TARGET gdk-pixbuf-2.0)
 pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
+pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb xcb-icccm xcb-ewmh)
 
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
@@ -89,6 +92,7 @@ target_include_directories(biway PRIVATE
     ${PANGOCAIRO_INCLUDE_DIRS}
     ${GDK_PIXBUF_INCLUDE_DIRS}
     ${LIBINPUT_INCLUDE_DIRS}
+    ${XCB_INCLUDE_DIRS}
 )
 
 target_link_libraries(biway PRIVATE
@@ -100,6 +104,7 @@ target_link_libraries(biway PRIVATE
     PkgConfig::PANGOCAIRO
     PkgConfig::GDK_PIXBUF
     PkgConfig::LIBINPUT
+    PkgConfig::XCB
 )
 
 target_compile_options(biway PRIVATE

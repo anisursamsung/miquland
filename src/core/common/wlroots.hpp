@@ -34,6 +34,7 @@
 #ifdef __cplusplus
 #define static
 #define namespace _namespace
+#define class _class
 extern "C" {
 #endif
 
@@ -63,11 +64,13 @@ extern "C" {
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/interfaces/wlr_buffer.h>
+#include <wlr/xwayland.h>
 #include <wlr/util/log.h>
 #include <wlr/util/box.h>
 
 #ifdef __cplusplus
 }
+#undef class
 #undef namespace
 #undef static
 #endif

@@ -62,6 +62,7 @@ public:
     LayerSurface* get_focused_layer_surface() const { return m_focused_layer_surface; }
     const std::vector<std::unique_ptr<LayerSurface>>& get_layer_surfaces() const { return m_layer_surfaces; }
     struct wlr_foreign_toplevel_manager_v1* get_foreign_toplevel_manager() const { return m_foreign_toplevel_manager; }
+    struct wlr_xwayland* get_xwayland() const { return m_xwayland; }
 
     void set_focused_view(View* view);
     View* get_focused_view() const { return m_focused_view; }
@@ -71,6 +72,8 @@ public:
 private:
     static void handle_new_xdg_toplevel(struct wl_listener* listener, void* data);
     static void handle_new_layer_shell_surface(struct wl_listener* listener, void* data);
+    static void handle_xwayland_ready(struct wl_listener* listener, void* data);
+    static void handle_xwayland_new_surface(struct wl_listener* listener, void* data);
     static int handle_config_inotify(int fd, uint32_t mask, void* data);
     void setup_config_watcher();
 
@@ -95,6 +98,7 @@ private:
     struct wlr_xdg_shell* m_xdg_shell = nullptr;
     struct wlr_layer_shell_v1* m_layer_shell = nullptr;
     struct wlr_foreign_toplevel_manager_v1* m_foreign_toplevel_manager = nullptr;
+    struct wlr_xwayland* m_xwayland = nullptr;
 
     const char* m_socket_name = nullptr;
     std::string m_startup_cmd;
@@ -118,6 +122,8 @@ private:
 
     struct wl_listener m_new_xdg_toplevel_listener;
     struct wl_listener m_new_layer_shell_surface_listener;
+    struct wl_listener m_xwayland_ready_listener;
+    struct wl_listener m_xwayland_new_surface_listener;
 };
 
 } // namespace biway
