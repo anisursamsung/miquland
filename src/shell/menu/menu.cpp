@@ -16,17 +16,58 @@ namespace fs = std::filesystem;
 
 static std::string clean_exec(const std::string& raw) {
     std::string result;
-    std::stringstream ss(raw);
-    std::string token;
-    while (ss >> token) {
-        if (token.size() >= 2 && token[0] == '%' && (token[1] == 'u' || token[1] == 'U' ||
-            token[1] == 'f' || token[1] == 'F' || token[1] == 'i' || token[1] == 'c' ||
-            token[1] == 'k' || token[1] == 'v' || token[1] == 'm')) {
+    result.reserve(raw.size());
+
+    size_t i = 0;
+    while (i < raw.size()) {
+        // Handle escaped %%
+        if (raw[i] == '%' && i + 1 < raw.size() && raw[i + 1] == '%') {
+            result += '%';
+            i += 2;
             continue;
         }
-        if (!result.empty()) result += " ";
-        result += token;
+
+        // Check for field code: % followed by a field code character
+        if (raw[i] == '%' && i + 1 < raw.size()) {
+            char code = raw[i + 1];
+            if (code == 'f' || code == 'F' || code == 'u' || code == 'U' ||
+                code == 'd' || code == 'D' || code == 'n' || code == 'N' ||
+                code == 'i' || code == 'c' || code == 'k' || code == 'v' ||
+                code == 'm') {
+                
+                // If it was preceded by a space and followed by space/quote/end, trim the preceding space
+                if (!result.empty() && result.back() == ' ') {
+                    if (i + 2 == raw.size() || raw[i + 2] == ' ' || raw[i + 2] == '"' || raw[i + 2] == '\'') {
+                        result.pop_back();
+                    }
+                }
+                
+                // Check if this was a standalone quoted field code like "%u" or '%u'
+                if (result.size() >= 1 && (result.back() == '"' || result.back() == '\'')) {
+                    char quote = result.back();
+                    if (i + 2 < raw.size() && raw[i + 2] == quote) {
+                        result.pop_back(); // Remove opening quote
+                        if (!result.empty() && result.back() == ' ') {
+                            result.pop_back();
+                        }
+                        i += 3; // Skip % + code + closing quote
+                        continue;
+                    }
+                }
+
+                i += 2; // Skip % + code
+                continue;
+            }
+        }
+
+        result += raw[i++];
     }
+
+    // Trim trailing whitespace if any
+    while (!result.empty() && (result.back() == ' ' || result.back() == '\t')) {
+        result.pop_back();
+    }
+
     return result;
 }
 
