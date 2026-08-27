@@ -248,7 +248,7 @@ void InputManager::process_cursor_motion(uint32_t time) {
         }
 
         // Hover to focus: if cursor hovers over a view and menu is not open, focus it!
-        if (target_view && target_view != m_server->get_focused_view()) {
+        if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
             if (!m_server->get_menu() || !m_server->get_menu()->is_visible()) {
                 target_view->focus();
             }
@@ -346,7 +346,7 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
         }
     }
 
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && target_view) {
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && target_view && !target_view->is_override_redirect()) {
         target_view->focus();
     }
 

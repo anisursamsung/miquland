@@ -55,7 +55,12 @@ public:
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
     struct wlr_foreign_toplevel_handle_v1* get_foreign_toplevel() const { return m_foreign_toplevel; }
     bool is_mapped() const { return m_mapped; }
-    bool is_override_redirect() const { return m_is_override_redirect; }
+    bool is_override_redirect() const {
+        if (m_type == ViewType::XWayland && m_xwayland_surface) {
+            return m_xwayland_surface->override_redirect;
+        }
+        return m_is_override_redirect;
+    }
 
     int get_x() const { return m_x; }
     int get_y() const { return m_y; }

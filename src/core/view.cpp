@@ -374,12 +374,29 @@ void View::update_border() {
 void View::focus() {
     if (!m_mapped) return;
 
+    if (is_override_redirect()) {
+        if (m_scene_tree) {
+            wlr_scene_node_raise_to_top(&m_scene_tree->node);
+        }
+        if (m_xwayland_surface && m_xwayland_surface->surface) {
+            struct wlr_seat* seat = m_server->get_input_manager()->get_seat();
+            struct wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat);
+            if (keyboard) {
+                wlr_seat_keyboard_notify_enter(seat, m_xwayland_surface->surface,
+                    keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+            }
+        }
+        return;
+    }
+
     View* prev = m_server->get_focused_view();
     if (prev && prev != this) {
         if (prev->m_type == ViewType::Xdg && prev->m_xdg_toplevel) {
             wlr_xdg_toplevel_set_activated(prev->m_xdg_toplevel, false);
         } else if (prev->m_type == ViewType::XWayland && prev->m_xwayland_surface) {
-            wlr_xwayland_surface_activate(prev->m_xwayland_surface, false);
+            if (!prev->is_override_redirect()) {
+                wlr_xwayland_surface_activate(prev->m_xwayland_surface, false);
+            }
         }
         if (prev->m_foreign_toplevel) {
             wlr_foreign_toplevel_handle_v1_set_activated(prev->m_foreign_toplevel, false);
@@ -400,8 +417,10 @@ void View::focus() {
         wlr_xdg_toplevel_set_activated(m_xdg_toplevel, true);
         target_surface = m_xdg_toplevel->base->surface;
     } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
-        wlr_xwayland_surface_activate(m_xwayland_surface, true);
-        wlr_xwayland_surface_restack(m_xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
+        if (!is_override_redirect()) {
+            wlr_xwayland_surface_activate(m_xwayland_surface, true);
+            wlr_xwayland_surface_restack(m_xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
+        }
         target_surface = m_xwayland_surface->surface;
     }
 
@@ -429,7 +448,9 @@ void View::close() {
     if (m_type == ViewType::Xdg && m_xdg_toplevel) {
         wlr_xdg_toplevel_send_close(m_xdg_toplevel);
     } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
-        wlr_xwayland_surface_close(m_xwayland_surface);
+        if (!is_override_redirect()) {
+            wlr_xwayland_surface_close(m_xwayland_surface);
+        }
     }
 }
 
@@ -445,10 +466,16 @@ void View::handle_map(struct wl_listener* listener, void* data) {
             view->m_xwayland_surface->surface->data = view->m_surface_scene_tree;
         }
 
-        if (view->m_is_override_redirect) {
+        if (view->is_override_redirect()) {
             wlr_scene_node_set_position(&view->m_scene_tree->node, view->m_xwayland_surface->x, view->m_xwayland_surface->y);
+            wlr_scene_node_raise_to_top(&view->m_scene_tree->node);
             if (wlr_xwayland_surface_override_redirect_wants_focus(view->m_xwayland_surface)) {
-                view->focus();
+                struct wlr_seat* seat = view->m_server->get_input_manager()->get_seat();
+                struct wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat);
+                if (keyboard && view->m_xwayland_surface->surface) {
+                    wlr_seat_keyboard_notify_enter(seat, view->m_xwayland_surface->surface,
+                        keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+                }
             }
             return;
         }
@@ -462,13 +489,33 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_unmap_listener);
     view->m_mapped = false;
 
-    if (!view->m_is_override_redirect) {
+    if (!view->is_override_redirect()) {
         view->m_server->get_workspace_manager()->remove_view(view);
     }
 
     if (view->m_type == ViewType::XWayland && view->m_surface_scene_tree) {
         wlr_scene_node_destroy(&view->m_surface_scene_tree->node);
         view->m_surface_scene_tree = nullptr;
+    }
+
+    if (view->is_override_redirect()) {
+        View* focused = view->m_server->get_focused_view();
+        if (focused && focused->is_mapped()) {
+            struct wlr_surface* target_surface = nullptr;
+            if (focused->get_type() == ViewType::Xdg && focused->get_xdg_toplevel()) {
+                target_surface = focused->get_xdg_toplevel()->base->surface;
+            } else if (focused->get_type() == ViewType::XWayland && focused->get_xwayland_surface()) {
+                target_surface = focused->get_xwayland_surface()->surface;
+            }
+            if (target_surface) {
+                struct wlr_seat* seat = view->m_server->get_input_manager()->get_seat();
+                struct wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat);
+                if (keyboard) {
+                    wlr_seat_keyboard_notify_enter(seat, target_surface,
+                        keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+                }
+            }
+        }
     }
 }
 
@@ -494,7 +541,9 @@ void View::handle_request_fullscreen(struct wl_listener* listener, void* data) {
             wlr_xdg_toplevel_set_fullscreen(view->m_xdg_toplevel, false);
         }
     } else if (view->m_type == ViewType::XWayland && view->m_xwayland_surface) {
-        wlr_xwayland_surface_set_fullscreen(view->m_xwayland_surface, false);
+        if (!view->is_override_redirect()) {
+            wlr_xwayland_surface_set_fullscreen(view->m_xwayland_surface, false);
+        }
     }
 }
 
@@ -505,7 +554,9 @@ void View::handle_request_maximize(struct wl_listener* listener, void* data) {
             wlr_xdg_toplevel_set_maximized(view->m_xdg_toplevel, false);
         }
     } else if (view->m_type == ViewType::XWayland && view->m_xwayland_surface) {
-        wlr_xwayland_surface_set_maximized(view->m_xwayland_surface, false, false);
+        if (!view->is_override_redirect()) {
+            wlr_xwayland_surface_set_maximized(view->m_xwayland_surface, false, false);
+        }
     }
 }
 
@@ -578,7 +629,7 @@ void View::handle_xwayland_request_configure(struct wl_listener* listener, void*
     View* view = wl_container_of(listener, view, m_request_configure_listener);
     auto* ev = static_cast<struct wlr_xwayland_surface_configure_event*>(data);
 
-    if (view->m_mapped && !view->m_is_override_redirect) {
+    if (view->m_mapped && !view->is_override_redirect()) {
         int bw = Config::get().get_window_border_width();
         int client_w = std::max(1, view->m_width - 2 * bw);
         int client_h = std::max(1, view->m_height - 2 * bw);
@@ -597,12 +648,13 @@ void View::handle_xwayland_request_configure(struct wl_listener* listener, void*
 
 void View::handle_xwayland_request_activate(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_request_activate_listener);
+    if (view->is_override_redirect()) return;
     view->focus();
 }
 
 void View::handle_xwayland_set_geometry(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_set_geometry_listener);
-    if (view->m_is_override_redirect && view->m_scene_tree && view->m_xwayland_surface) {
+    if (view->is_override_redirect() && view->m_scene_tree && view->m_xwayland_surface) {
         view->m_x = view->m_xwayland_surface->x;
         view->m_y = view->m_xwayland_surface->y;
         view->m_width = view->m_xwayland_surface->width;
@@ -629,14 +681,31 @@ void View::handle_xwayland_set_parent(struct wl_listener* listener, void* data) 
     view->update_parent_relationship();
     // If needed, restack relative to parent
     if (view->m_xwayland_surface && view->m_xwayland_surface->parent) {
-        wlr_xwayland_surface_restack(view->m_xwayland_surface, view->m_xwayland_surface->parent, XCB_STACK_MODE_ABOVE);
+        if (!view->is_override_redirect() && !view->m_xwayland_surface->parent->override_redirect) {
+            wlr_xwayland_surface_restack(view->m_xwayland_surface, view->m_xwayland_surface->parent, XCB_STACK_MODE_ABOVE);
+        }
     }
 }
 
 void View::handle_xwayland_set_override_redirect(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_set_override_redirect_listener);
     if (!view->m_xwayland_surface) return;
+    bool old_val = view->m_is_override_redirect;
     view->m_is_override_redirect = view->m_xwayland_surface->override_redirect;
+
+    if (view->m_mapped && old_val != view->m_is_override_redirect) {
+        if (view->m_is_override_redirect) {
+            view->m_server->get_workspace_manager()->remove_view(view);
+            if (view->m_border_scene_buffer) {
+                wlr_scene_node_set_enabled(&view->m_border_scene_buffer->node, false);
+            }
+        } else {
+            view->m_server->get_workspace_manager()->add_view_auto(view);
+            if (view->m_border_scene_buffer) {
+                wlr_scene_node_set_enabled(&view->m_border_scene_buffer->node, true);
+            }
+        }
+    }
 }
 
 void View::set_parent_view(View* parent) {
