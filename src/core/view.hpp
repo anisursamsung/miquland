@@ -41,6 +41,15 @@ public:
     std::string get_title() const;
     std::string get_app_id() const;
 
+    bool is_dialog() const { return m_is_dialog; }
+    View* get_parent_view() const { return m_parent_view; }
+    void set_parent_view(View* parent);
+    void update_parent_relationship();
+    void update_child_dialog_geometries();
+    bool has_child_dialogs() const;
+    View* get_top_dialog() const;
+    const std::vector<View*>& get_child_dialogs() const { return m_child_dialogs; }
+
     struct wlr_xdg_toplevel* get_xdg_toplevel() const { return m_xdg_toplevel; }
     struct wlr_xwayland_surface* get_xwayland_surface() const { return m_xwayland_surface; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
@@ -63,6 +72,7 @@ private:
     static void handle_request_maximize(struct wl_listener* listener, void* data);
     static void handle_set_title(struct wl_listener* listener, void* data);
     static void handle_set_app_id(struct wl_listener* listener, void* data);
+    static void handle_set_parent(struct wl_listener* listener, void* data);
     static void handle_foreign_request_activate(struct wl_listener* listener, void* data);
     static void handle_foreign_request_close(struct wl_listener* listener, void* data);
     static void handle_new_popup(struct wl_listener* listener, void* data);
@@ -107,6 +117,7 @@ private:
     struct wl_listener m_request_maximize_listener;
     struct wl_listener m_set_title_listener;
     struct wl_listener m_set_app_id_listener;
+    struct wl_listener m_set_parent_listener;
     struct wl_listener m_foreign_request_activate_listener;
     struct wl_listener m_foreign_request_close_listener;
     struct wl_listener m_new_popup_listener;
@@ -118,9 +129,11 @@ private:
     struct wl_listener m_request_activate_listener;
     struct wl_listener m_set_geometry_listener;
     struct wl_listener m_set_class_listener;
-    struct wl_listener m_set_parent_listener;
     struct wl_listener m_set_override_redirect_listener;
 
+    View* m_parent_view = nullptr;
+    bool m_is_dialog = false;
+    std::vector<View*> m_child_dialogs;
     std::vector<std::unique_ptr<Popup>> m_popups;
 };
 

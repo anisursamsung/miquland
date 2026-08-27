@@ -22,9 +22,11 @@ public:
     size_t get_id() const { return m_id; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
 
-    bool can_accept_view() const { return m_views.size() < 2; }
-    size_t view_count() const { return m_views.size(); }
-    const std::vector<View*>& get_views() const { return m_views; }
+    bool can_accept_view() const { return m_tiled_views.size() < 2; }
+    size_t view_count() const { return m_tiled_views.size(); }
+    const std::vector<View*>& get_views() const { return m_tiled_views; }
+    const std::vector<View*>& get_tiled_views() const { return m_tiled_views; }
+    const std::vector<View*>& get_floating_views() const { return m_floating_views; }
 
     bool add_view(View* view);
     bool remove_view(View* view);
@@ -47,7 +49,8 @@ private:
     Server* m_server = nullptr;
     size_t m_id = 1;
     struct wlr_scene_tree* m_scene_tree = nullptr;
-    std::vector<View*> m_views;
+    std::vector<View*> m_tiled_views;
+    std::vector<View*> m_floating_views;
     bool m_visible = false;
     SplitMode m_split_mode = SplitMode::Horizontal;
 };

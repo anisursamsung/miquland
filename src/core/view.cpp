@@ -68,10 +68,14 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     m_set_app_id_listener.notify = handle_set_app_id;
     wl_signal_add(&toplevel->events.set_app_id, &m_set_app_id_listener);
 
+    m_set_parent_listener.notify = handle_set_parent;
+    wl_signal_add(&toplevel->events.set_parent, &m_set_parent_listener);
+
     // Wire up XDG popup listener for context menus and dropdowns
     m_new_popup_listener.notify = handle_new_popup;
     wl_signal_add(&toplevel->base->events.new_popup, &m_new_popup_listener);
 
+    update_parent_relationship();
     setup_foreign_toplevel();
 }
 
@@ -152,6 +156,7 @@ View::~View() {
         wl_list_remove(&m_request_maximize_listener.link);
         wl_list_remove(&m_set_title_listener.link);
         wl_list_remove(&m_set_app_id_listener.link);
+        wl_list_remove(&m_set_parent_listener.link);
         wl_list_remove(&m_new_popup_listener.link);
     } else {
         wl_list_remove(&m_associate_listener.link);
@@ -172,6 +177,16 @@ View::~View() {
             wl_list_remove(&m_unmap_listener.link);
         }
     }
+
+    if (m_parent_view) {
+        auto& children = m_parent_view->m_child_dialogs;
+        children.erase(std::remove(children.begin(), children.end(), this), children.end());
+        m_parent_view = nullptr;
+    }
+    for (auto* child : m_child_dialogs) {
+        if (child) child->m_parent_view = nullptr;
+    }
+    m_child_dialogs.clear();
 
     if (m_foreign_toplevel) {
         wl_list_remove(&m_foreign_request_activate_listener.link);
@@ -272,6 +287,7 @@ void View::set_geometry(int x, int y, int width, int height) {
     }
 
     update_border();
+    update_child_dialog_geometries();
 }
 
 void View::update_border() {
@@ -372,6 +388,11 @@ void View::focus() {
 
     if (m_scene_tree) {
         wlr_scene_node_raise_to_top(&m_scene_tree->node);
+        for (auto* dialog : m_child_dialogs) {
+            if (dialog && dialog->is_mapped() && dialog->get_scene_tree()) {
+                wlr_scene_node_raise_to_top(&dialog->get_scene_tree()->node);
+            }
+        }
     }
 
     struct wlr_surface* target_surface = nullptr;
@@ -415,6 +436,7 @@ void View::close() {
 void View::handle_map(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_map_listener);
     view->m_mapped = true;
+    view->update_parent_relationship();
 
     if (view->m_type == ViewType::XWayland) {
         if (view->m_xwayland_surface && view->m_xwayland_surface->surface) {
@@ -597,8 +619,14 @@ void View::handle_xwayland_set_class(struct wl_listener* listener, void* data) {
     }
 }
 
+void View::handle_set_parent(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_set_parent_listener);
+    view->update_parent_relationship();
+}
+
 void View::handle_xwayland_set_parent(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_set_parent_listener);
+    view->update_parent_relationship();
     // If needed, restack relative to parent
     if (view->m_xwayland_surface && view->m_xwayland_surface->parent) {
         wlr_xwayland_surface_restack(view->m_xwayland_surface, view->m_xwayland_surface->parent, XCB_STACK_MODE_ABOVE);
@@ -609,6 +637,107 @@ void View::handle_xwayland_set_override_redirect(struct wl_listener* listener, v
     View* view = wl_container_of(listener, view, m_set_override_redirect_listener);
     if (!view->m_xwayland_surface) return;
     view->m_is_override_redirect = view->m_xwayland_surface->override_redirect;
+}
+
+void View::set_parent_view(View* parent) {
+    if (m_parent_view == parent) return;
+    if (m_parent_view) {
+        auto& children = m_parent_view->m_child_dialogs;
+        children.erase(std::remove(children.begin(), children.end(), this), children.end());
+    }
+    m_parent_view = parent;
+    m_is_dialog = (parent != nullptr);
+    if (m_parent_view) {
+        m_parent_view->m_child_dialogs.push_back(this);
+        if (m_parent_view->get_workspace() && m_workspace != m_parent_view->get_workspace()) {
+            if (m_workspace) {
+                m_workspace->remove_view(this);
+            }
+            m_parent_view->get_workspace()->add_view(this);
+        }
+    }
+}
+
+void View::update_parent_relationship() {
+    if (m_type == ViewType::Xdg && m_xdg_toplevel) {
+        if (m_xdg_toplevel->parent) {
+            for (const auto& v : m_server->get_views()) {
+                if (v.get() != this && v->get_type() == ViewType::Xdg && v->get_xdg_toplevel() == m_xdg_toplevel->parent) {
+                    set_parent_view(v.get());
+                    return;
+                }
+            }
+        }
+        // Heuristic fallback for portal / dialog window app_ids
+        std::string app = get_app_id();
+        if (app == "xdg-desktop-portal-gtk" || app == "org.freedesktop.impl.portal.desktop.gtk" || app == "zenity") {
+            if (!m_parent_view && m_server->get_focused_view() && m_server->get_focused_view() != this) {
+                set_parent_view(m_server->get_focused_view());
+                return;
+            }
+        }
+    } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
+        if (m_xwayland_surface->parent) {
+            for (const auto& v : m_server->get_views()) {
+                if (v.get() != this && v->get_type() == ViewType::XWayland && v->get_xwayland_surface() == m_xwayland_surface->parent) {
+                    set_parent_view(v.get());
+                    return;
+                }
+            }
+        }
+    }
+}
+
+void View::update_child_dialog_geometries() {
+    if (m_child_dialogs.empty() || m_width <= 0 || m_height <= 0) return;
+
+    int bw = Config::get().get_window_border_width();
+
+    for (auto* dialog : m_child_dialogs) {
+        if (!dialog || !dialog->is_mapped()) continue;
+
+        int req_w = dialog->get_width() > 0 ? dialog->get_width() : 750;
+        int req_h = dialog->get_height() > 0 ? dialog->get_height() : 500;
+
+        if (dialog->get_type() == ViewType::Xdg && dialog->get_xdg_toplevel()) {
+            auto* xdg_surf = dialog->get_xdg_toplevel()->base;
+            int gw = xdg_surf->current.geometry.width;
+            int gh = xdg_surf->current.geometry.height;
+            if (gw <= 0 && xdg_surf->surface) {
+                gw = xdg_surf->surface->current.width;
+                gh = xdg_surf->surface->current.height;
+            }
+            if (gw > 0) req_w = gw + 2 * bw;
+            if (gh > 0) req_h = gh + 2 * bw;
+        }
+
+        int max_w = std::max(50, m_width - 20);
+        int max_h = std::max(50, m_height - 20);
+
+        int dw = std::min(req_w, max_w);
+        int dh = std::min(req_h, max_h);
+
+        int dx = m_x + (m_width - dw) / 2;
+        int dy = m_y + (m_height - dh) / 2;
+
+        dialog->set_geometry(dx, dy, dw, dh);
+    }
+}
+
+bool View::has_child_dialogs() const {
+    for (auto* d : m_child_dialogs) {
+        if (d && d->is_mapped()) return true;
+    }
+    return false;
+}
+
+View* View::get_top_dialog() const {
+    for (auto it = m_child_dialogs.rbegin(); it != m_child_dialogs.rend(); ++it) {
+        if (*it && (*it)->is_mapped()) {
+            return *it;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace biway

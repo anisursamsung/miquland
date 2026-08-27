@@ -20,26 +20,45 @@ Workspace::~Workspace() {
 }
 
 bool Workspace::add_view(View* view) {
-    if (contains_view(view) || m_views.size() >= 2) {
+    if (contains_view(view)) {
         return false;
     }
-    m_views.push_back(view);
+
+    if (view->is_dialog()) {
+        m_floating_views.push_back(view);
+        view->set_workspace(this);
+        return true;
+    }
+
+    if (m_tiled_views.size() >= 2) {
+        return false;
+    }
+    m_tiled_views.push_back(view);
     view->set_workspace(this);
     return true;
 }
 
 bool Workspace::remove_view(View* view) {
-    auto it = std::find(m_views.begin(), m_views.end(), view);
-    if (it != m_views.end()) {
-        m_views.erase(it);
+    auto it_tile = std::find(m_tiled_views.begin(), m_tiled_views.end(), view);
+    if (it_tile != m_tiled_views.end()) {
+        m_tiled_views.erase(it_tile);
         view->set_workspace(nullptr);
         return true;
     }
+
+    auto it_float = std::find(m_floating_views.begin(), m_floating_views.end(), view);
+    if (it_float != m_floating_views.end()) {
+        m_floating_views.erase(it_float);
+        view->set_workspace(nullptr);
+        return true;
+    }
+
     return false;
 }
 
 bool Workspace::contains_view(View* view) const {
-    return std::find(m_views.begin(), m_views.end(), view) != m_views.end();
+    return std::find(m_tiled_views.begin(), m_tiled_views.end(), view) != m_tiled_views.end() ||
+           std::find(m_floating_views.begin(), m_floating_views.end(), view) != m_floating_views.end();
 }
 
 void Workspace::set_visible(bool visible) {
@@ -50,15 +69,13 @@ void Workspace::set_visible(bool visible) {
 }
 
 View* Workspace::get_view(size_t index) const {
-    if (index < m_views.size()) {
-        return m_views[index];
+    if (index < m_tiled_views.size()) {
+        return m_tiled_views[index];
     }
     return nullptr;
 }
 
 void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
-    if (m_views.empty()) return;
-
     int pad = Config::get().get_screen_edge_padding();
     int gap = Config::get().get_space_between_windows();
 
@@ -67,26 +84,74 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     int base_w = std::max(50, usable_box.width - 2 * pad);
     int base_h = std::max(50, usable_box.height - 2 * pad);
 
-    if (m_views.size() == 1) {
+    if (m_tiled_views.size() == 1) {
         // 1 Window: takes 100% padded usable screen
-        m_views[0]->set_geometry(base_x, base_y, base_w, base_h);
-    } else if (m_views.size() == 2) {
+        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
+    } else if (m_tiled_views.size() == 2) {
         if (m_split_mode == SplitMode::Horizontal) {
             // Horizontal split: 50% left, 50% right with gap between windows
             int total_w = std::max(50, base_w - gap);
             int half_w = total_w / 2;
             int rest_w = total_w - half_w;
 
-            m_views[0]->set_geometry(base_x, base_y, half_w, base_h);
-            m_views[1]->set_geometry(base_x + half_w + gap, base_y, rest_w, base_h);
+            m_tiled_views[0]->set_geometry(base_x, base_y, half_w, base_h);
+            m_tiled_views[1]->set_geometry(base_x + half_w + gap, base_y, rest_w, base_h);
         } else {
             // Vertical split: 50% top, 50% bottom with gap between windows
             int total_h = std::max(50, base_h - gap);
             int half_h = total_h / 2;
             int rest_h = total_h - half_h;
 
-            m_views[0]->set_geometry(base_x, base_y, base_w, half_h);
-            m_views[1]->set_geometry(base_x, base_y + half_h + gap, base_w, rest_h);
+            m_tiled_views[0]->set_geometry(base_x, base_y, base_w, half_h);
+            m_tiled_views[1]->set_geometry(base_x, base_y + half_h + gap, base_w, rest_h);
+        }
+    }
+
+    int bw = Config::get().get_window_border_width();
+
+    // Position floating / dialog windows
+    for (auto* fview : m_floating_views) {
+        if (!fview || !fview->is_mapped()) continue;
+
+        int req_w = fview->get_width() > 0 ? fview->get_width() : 750;
+        int req_h = fview->get_height() > 0 ? fview->get_height() : 500;
+
+        if (fview->get_type() == ViewType::Xdg && fview->get_xdg_toplevel()) {
+            auto* xdg_surf = fview->get_xdg_toplevel()->base;
+            int gw = xdg_surf->current.geometry.width;
+            int gh = xdg_surf->current.geometry.height;
+            if (gw <= 0 && xdg_surf->surface) {
+                gw = xdg_surf->surface->current.width;
+                gh = xdg_surf->surface->current.height;
+            }
+            if (gw > 0) req_w = gw + 2 * bw;
+            if (gh > 0) req_h = gh + 2 * bw;
+        }
+
+        View* parent = fview->get_parent_view();
+        if (parent && parent->is_mapped() && parent->get_width() > 0 && parent->get_height() > 0) {
+            int pw = parent->get_width();
+            int ph = parent->get_height();
+            int px = parent->get_x();
+            int py = parent->get_y();
+
+            int max_w = std::max(50, pw - 20);
+            int max_h = std::max(50, ph - 20);
+
+            int dw = std::min(req_w, max_w);
+            int dh = std::min(req_h, max_h);
+
+            int dx = px + (pw - dw) / 2;
+            int dy = py + (ph - dh) / 2;
+
+            fview->set_geometry(dx, dy, dw, dh);
+        } else {
+            int dw = std::min(req_w, base_w);
+            int dh = std::min(req_h, base_h);
+            int dx = base_x + (base_w - dw) / 2;
+            int dy = base_y + (base_h - dh) / 2;
+
+            fview->set_geometry(dx, dy, dw, dh);
         }
     }
 }
@@ -163,6 +228,18 @@ void WorkspaceManager::next_workspace() {
 }
 
 void WorkspaceManager::add_view_auto(View* view) {
+    if (view->is_dialog()) {
+        View* parent = view->get_parent_view();
+        Workspace* target_ws = (parent && parent->get_workspace()) ? parent->get_workspace() : get_active_workspace();
+        target_ws->add_view(view);
+        if (target_ws != get_active_workspace()) {
+            switch_to_workspace(target_ws->get_id());
+        } else {
+            recalculate_layout();
+        }
+        return;
+    }
+
     Workspace* active_ws = get_active_workspace();
     if (active_ws->can_accept_view()) {
         active_ws->add_view(view);
@@ -185,12 +262,18 @@ void WorkspaceManager::add_view_auto(View* view) {
 
 void WorkspaceManager::remove_view(View* view) {
     Workspace* ws = view->get_workspace();
+    View* parent = view->get_parent_view();
+
     if (ws) {
         ws->remove_view(view);
         recalculate_layout();
 
-        if (ws->is_visible() && ws->view_count() > 0) {
-            ws->get_view(0)->focus();
+        if (ws->is_visible()) {
+            if (parent && parent->is_mapped() && parent->get_workspace() == ws) {
+                parent->focus();
+            } else if (ws->view_count() > 0) {
+                ws->get_view(0)->focus();
+            }
         }
     }
 }

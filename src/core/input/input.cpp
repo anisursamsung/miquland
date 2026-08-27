@@ -239,10 +239,18 @@ void InputManager::process_cursor_motion(uint32_t time) {
         wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
 
+        View* target_view = view;
+        if (target_view && target_view->has_child_dialogs()) {
+            View* top_dialog = target_view->get_top_dialog();
+            if (top_dialog) {
+                target_view = top_dialog;
+            }
+        }
+
         // Hover to focus: if cursor hovers over a view and menu is not open, focus it!
-        if (view && view != m_server->get_focused_view()) {
+        if (target_view && target_view != m_server->get_focused_view()) {
             if (!m_server->get_menu() || !m_server->get_menu()->is_visible()) {
-                view->focus();
+                target_view->focus();
             }
         }
     } else {
@@ -330,8 +338,16 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
     struct wlr_surface* surface = nullptr;
     View* view = manager->m_server->view_at(manager->m_cursor->x, manager->m_cursor->y, &surface, &sx, &sy);
 
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && view) {
-        view->focus();
+    View* target_view = view;
+    if (target_view && target_view->has_child_dialogs()) {
+        View* top_dialog = target_view->get_top_dialog();
+        if (top_dialog) {
+            target_view = top_dialog;
+        }
+    }
+
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && target_view) {
+        target_view->focus();
     }
 
     wlr_seat_pointer_notify_button(manager->m_seat, event->time_msec, event->button, event->state);
