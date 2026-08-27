@@ -1,13 +1,13 @@
 #include "core/server.hpp"
 #include "core/output.hpp"
 #include "core/workspace.hpp"
-#include "input/input.hpp"
-#include "ui/wallpaper/wallpaper.hpp"
-#include "ui/bar/bar.hpp"
-#include "ui/menu/menu.hpp"
+#include "core/input/input.hpp"
+#include "shell/wallpaper/wallpaper.hpp"
+#include "shell/bar/bar.hpp"
+#include "shell/menu/menu.hpp"
 #include "core/view.hpp"
 #include "core/layer_surface.hpp"
-#include "config/config.hpp"
+#include "core/config/config.hpp"
 #include <algorithm>
 #include <sys/inotify.h>
 #include <unistd.h>
@@ -85,6 +85,9 @@ bool Server::init() {
     m_wlr_subcompositor = wlr_subcompositor_create(m_wl_display);
     m_wlr_data_device_manager = wlr_data_device_manager_create(m_wl_display);
 
+    wlr_data_control_manager_v1_create(m_wl_display);
+    wlr_primary_selection_v1_device_manager_create(m_wl_display);
+
     m_scene = wlr_scene_create();
     if (!m_scene) {
         log_error("Failed to create wlr_scene");
@@ -127,6 +130,15 @@ bool Server::init() {
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     log_info("biway Wayland compositor started on WAYLAND_DISPLAY=" + std::string(m_socket_name));
 
+    // Import key session environment variables into the systemd user daemon.
+    // This is required so that user services with ConditionEnvironment=XDG_SESSION_CLASS=user
+    // (such as localsearch-3 / Tracker3 Miner) can activate correctly.
+    // Without this, Nautilus blocks on the org.freedesktop.Tracker3.Miner.Files D-Bus name
+    // and the right-click context menu freezes the file browser window.
+    system("systemctl --user import-environment "
+           "XDG_SESSION_CLASS XDG_SESSION_TYPE XDG_SESSION_ID "
+           "WAYLAND_DISPLAY DISPLAY 2>/dev/null");
+
     setup_config_watcher();
 
     return true;
@@ -134,8 +146,10 @@ bool Server::init() {
 
 void Server::setup_config_watcher() {
     std::string config_dir = Config::get_config_dir_path();
+    std::string theme_dir = config_dir + "/theme";
     std::error_code ec;
     std::filesystem::create_directories(config_dir, ec);
+    std::filesystem::create_directories(theme_dir, ec);
 
     m_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     if (m_inotify_fd < 0) {
@@ -143,18 +157,23 @@ void Server::setup_config_watcher() {
         return;
     }
 
+    // 1. Watch the main biway config directory
     m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(),
                                      IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
     if (m_inotify_wd < 0) {
         log_error("Failed to add inotify watch on: " + config_dir);
-        close(m_inotify_fd);
-        m_inotify_fd = -1;
-        return;
+    }
+
+    // 2. Watch the theme subfolder explicitly
+    int theme_wd = inotify_add_watch(m_inotify_fd, theme_dir.c_str(),
+                                     IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
+    if (theme_wd < 0) {
+        log_error("Failed to add inotify watch on: " + theme_dir);
     }
 
     m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd,
                                                  WL_EVENT_READABLE, handle_config_inotify, this);
-    log_info("Live config auto-reload active on " + config_dir);
+    log_info("Live config auto-reload active on " + config_dir + " and " + theme_dir);
 }
 
 int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {

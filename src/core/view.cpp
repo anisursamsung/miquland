@@ -1,9 +1,9 @@
 #include "core/view.hpp"
 #include "core/server.hpp"
 #include "core/workspace.hpp"
-#include "input/input.hpp"
-#include "config/config.hpp"
-#include "ui/wallpaper/wallpaper.hpp"
+#include "core/input/input.hpp"
+#include "core/config/config.hpp"
+#include "shell/wallpaper/wallpaper.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -66,6 +66,10 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     m_set_app_id_listener.notify = handle_set_app_id;
     wl_signal_add(&toplevel->events.set_app_id, &m_set_app_id_listener);
 
+    // Wire up XDG popup listener for context menus and dropdowns
+    m_new_popup_listener.notify = handle_new_popup;
+    wl_signal_add(&toplevel->base->events.new_popup, &m_new_popup_listener);
+
     // Create foreign toplevel handle for taskbars and notification daemons
     if (server->get_foreign_toplevel_manager()) {
         m_foreign_toplevel = wlr_foreign_toplevel_handle_v1_create(server->get_foreign_toplevel_manager());
@@ -91,6 +95,7 @@ View::~View() {
     wl_list_remove(&m_request_maximize_listener.link);
     wl_list_remove(&m_set_title_listener.link);
     wl_list_remove(&m_set_app_id_listener.link);
+    wl_list_remove(&m_new_popup_listener.link);
 
     if (m_foreign_toplevel) {
         wl_list_remove(&m_foreign_request_activate_listener.link);
@@ -149,7 +154,6 @@ void View::update_border() {
     int bw = Config::get().get_window_border_width();
     int radius = Config::get().get_window_border_radius();
 
-    // If both border width and radius are 0, we can disable the overlay buffer
     if (bw <= 0 && radius <= 0) {
         if (m_border_scene_buffer) {
             wlr_scene_node_set_enabled(&m_border_scene_buffer->node, false);
@@ -170,7 +174,6 @@ void View::update_border() {
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-    // 1. Mask exterior corners if radius > 0 so square client corners don't protrude!
     if (radius > 0) {
         cairo_save(cr);
         cairo_rectangle(cr, 0, 0, m_width, m_height);
@@ -190,7 +193,6 @@ void View::update_border() {
         cairo_restore(cr);
     }
 
-    // 2. Draw border stroke if bw > 0
     if (bw > 0) {
         float r = 0.0f, g = 0.8f, b = 1.0f, a = 1.0f;
         const std::string& color_str = is_focused()
@@ -199,9 +201,9 @@ void View::update_border() {
 
         if (!Config::parse_hex_color(color_str, r, g, b, a)) {
             if (is_focused()) {
-                r = 0.0f; g = 0.82f; b = 1.0f; a = 1.0f; // #00d2ff
+                r = 0.0f; g = 0.82f; b = 1.0f; a = 1.0f;
             } else {
-                r = 0.16f; g = 0.16f; b = 0.21f; a = 1.0f; // #2a2a36
+                r = 0.16f; g = 0.16f; b = 0.21f; a = 1.0f;
             }
         }
 
@@ -225,7 +227,6 @@ void View::update_border() {
 void View::focus() {
     if (!m_mapped || !m_xdg_toplevel) return;
 
-    // Deactivate currently focused view
     View* prev = m_server->get_focused_view();
     if (prev && prev != this) {
         if (prev->get_xdg_toplevel()) {
@@ -250,7 +251,6 @@ void View::focus() {
     }
     update_border();
 
-    // Pass keyboard focus via seat
     struct wlr_seat* seat = m_server->get_input_manager()->get_seat();
     struct wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat);
     if (keyboard) {
@@ -296,7 +296,6 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
 void View::handle_request_fullscreen(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_request_fullscreen_listener);
     if (view->m_xdg_toplevel->base->surface->mapped) {
-        // Keep biway tiling layout
         wlr_xdg_toplevel_set_fullscreen(view->m_xdg_toplevel, false);
     }
 }
@@ -330,6 +329,20 @@ void View::handle_foreign_request_activate(struct wl_listener* listener, void* d
 void View::handle_foreign_request_close(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_foreign_request_close_listener);
     view->close();
+}
+
+void View::handle_new_popup(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_new_popup_listener);
+    auto* popup = static_cast<struct wlr_xdg_popup*>(data);
+    
+    struct wlr_scene_tree* parent_tree = view->get_scene_tree();
+    if (!parent_tree) return;
+
+    // Use wlroots built-in helper to cleanly create the popup node under the parent view
+    wlr_scene_xdg_surface_create(parent_tree, popup->base);
+
+    // Schedule configuration transaction to ensure client event loops unblock properly
+    wlr_xdg_surface_schedule_configure(popup->base);
 }
 
 } // namespace biway

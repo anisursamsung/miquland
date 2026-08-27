@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/util.hpp"
+#include "core/common/util.hpp"
 #include <vector>
 
 namespace biway {

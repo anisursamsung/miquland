@@ -54,18 +54,21 @@ add_executable(biway
     src/core/workspace.cpp
     src/core/view.cpp
     src/core/output.cpp
-    src/input/input.cpp
-    src/config/config.cpp
-    src/render/cairo_buffer.cpp
-    src/ui/wallpaper/wallpaper.cpp
-    src/ui/bar/bar.cpp
-    src/ui/menu/menu.cpp
-    src/ui/widgets/text_view.cpp
-    src/ui/widgets/card_view.cpp
-    src/ui/widgets/image_view.cpp
-    src/ui/widgets/text_input_view.cpp
-    src/ui/widgets/cell_item_view.cpp
-    src/ui/widgets/table_view.cpp
+    src/core/input/input.cpp
+    src/core/config/config.cpp
+    src/toolkit/render/cairo_buffer.cpp
+    src/toolkit/layout/row_view.cpp
+    src/toolkit/layout/column_view.cpp
+    src/toolkit/layout/table_view.cpp
+    src/toolkit/widgets/button_view.cpp
+    src/toolkit/widgets/card_view.cpp
+    src/toolkit/widgets/text_view.cpp
+    src/toolkit/widgets/text_input_view.cpp
+    src/toolkit/widgets/image_view.cpp
+    src/toolkit/widgets/cell_item_view.cpp
+    src/shell/bar/bar.cpp
+    src/shell/menu/menu.cpp
+    src/shell/wallpaper/wallpaper.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
@@ -74,6 +77,9 @@ add_executable(biway
 
 target_include_directories(biway PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/toolkit
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/shell
     ${CMAKE_CURRENT_BINARY_DIR}
     ${WLROOTS_INCLUDE_DIRS}
     ${WAYLAND_SERVER_INCLUDE_DIRS}
@@ -104,7 +110,9 @@ target_compile_options(biway PRIVATE
 # Installation targets
 include(GNUInstallDirs)
 install(TARGETS biway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES assets/biway.conf assets/light.conf assets/dark.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
-install(FILES assets/lightwallpaper.png assets/darkwallpaper.jpg DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/biway)
-install(FILES assets/lightwallpaper.png assets/darkwallpaper.jpg DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+
+
+
+install(FILES assets/biway.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
+install(DIRECTORY assets/theme DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
 install(FILES assets/biway.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)

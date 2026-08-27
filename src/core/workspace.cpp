@@ -2,8 +2,8 @@
 #include "core/server.hpp"
 #include "core/view.hpp"
 #include "core/output.hpp"
-#include "ui/bar/bar.hpp"
-#include "config/config.hpp"
+#include "shell/bar/bar.hpp"
+#include "core/config/config.hpp"
 #include <algorithm>
 
 namespace biway {

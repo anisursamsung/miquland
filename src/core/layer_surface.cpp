@@ -1,7 +1,7 @@
 #include "core/layer_surface.hpp"
 #include "core/server.hpp"
 #include "core/output.hpp"
-#include "input/input.hpp"
+#include "core/input/input.hpp"
 #include <algorithm>
 
 namespace biway {

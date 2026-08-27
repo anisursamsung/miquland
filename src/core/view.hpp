@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/util.hpp"
-#include "render/cairo_buffer.hpp"
+#include "core/common/util.hpp"
+#include "toolkit/render/cairo_buffer.hpp"
 
 namespace biway {
 
@@ -44,6 +44,7 @@ private:
     static void handle_set_app_id(struct wl_listener* listener, void* data);
     static void handle_foreign_request_activate(struct wl_listener* listener, void* data);
     static void handle_foreign_request_close(struct wl_listener* listener, void* data);
+    static void handle_new_popup(struct wl_listener* listener, void* data);
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
@@ -71,6 +72,7 @@ private:
     struct wl_listener m_set_app_id_listener;
     struct wl_listener m_foreign_request_activate_listener;
     struct wl_listener m_foreign_request_close_listener;
+    struct wl_listener m_new_popup_listener;
 };
 
 } // namespace biway

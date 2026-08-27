@@ -1,8 +1,8 @@
 #include "core/output.hpp"
 #include "core/server.hpp"
 #include "core/workspace.hpp"
-#include "ui/wallpaper/wallpaper.hpp"
-#include "ui/bar/bar.hpp"
+#include "shell/wallpaper/wallpaper.hpp"
+#include "shell/bar/bar.hpp"
 #include <ctime>
 
 namespace biway {
