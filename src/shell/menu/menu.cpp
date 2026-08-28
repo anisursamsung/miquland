@@ -98,6 +98,7 @@ Menu::Menu(Server* server)
 Menu::~Menu() = default;
 
 void Menu::open() {
+    scan_desktop_files();
     m_visible = true;
     m_search_query.clear();
     m_search_input.clear();
@@ -154,13 +155,50 @@ void Menu::scan_desktop_files() {
     const char* home = getenv("HOME");
     std::string home_str = home ? home : "";
 
-    std::vector<std::string> dirs = {
-        home_str + "/.local/share/applications",
-        "/usr/share/applications",
-        "/usr/local/share/applications",
-        "/var/lib/flatpak/exports/share/applications"
-    };
+    std::vector<std::string> raw_dirs;
 
+    // 1. User applications ($XDG_DATA_HOME/applications or ~/.local/share/applications)
+    const char* xdg_data_home = getenv("XDG_DATA_HOME");
+    if (xdg_data_home && *xdg_data_home) {
+        raw_dirs.push_back(std::string(xdg_data_home) + "/applications");
+    } else if (!home_str.empty()) {
+        raw_dirs.push_back(home_str + "/.local/share/applications");
+    }
+
+    // 2. User flatpak applications
+    if (!home_str.empty()) {
+        raw_dirs.push_back(home_str + "/.local/share/flatpak/exports/share/applications");
+    }
+
+    // 3. System XDG_DATA_DIRS applications
+    const char* xdg_data_dirs = getenv("XDG_DATA_DIRS");
+    if (xdg_data_dirs && *xdg_data_dirs) {
+        std::stringstream ss(xdg_data_dirs);
+        std::string dir;
+        while (std::getline(ss, dir, ':')) {
+            if (!dir.empty()) {
+                raw_dirs.push_back(dir + "/applications");
+            }
+        }
+    }
+
+    // 4. Standard system fallback locations
+    raw_dirs.push_back("/usr/share/applications");
+    raw_dirs.push_back("/usr/local/share/applications");
+    raw_dirs.push_back("/var/lib/flatpak/exports/share/applications");
+    raw_dirs.push_back("/var/lib/snapd/desktop/applications");
+
+    // Remove duplicates while preserving priority order
+    std::vector<std::string> dirs;
+    std::set<std::string> seen_dirs;
+    for (const auto& d : raw_dirs) {
+        if (!d.empty() && seen_dirs.find(d) == seen_dirs.end()) {
+            seen_dirs.insert(d);
+            dirs.push_back(d);
+        }
+    }
+
+    std::set<std::string> seen_ids;
     std::set<std::string> seen_names;
 
     for (const auto& dir : dirs) {
@@ -168,8 +206,14 @@ void Menu::scan_desktop_files() {
 
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(dir, ec)) {
-            if (!entry.is_regular_file()) continue;
+            if (ec) break;
+            if (!entry.is_regular_file() && !entry.is_symlink()) continue;
             if (entry.path().extension() != ".desktop") continue;
+
+            std::string desktop_id = entry.path().filename().string();
+            if (seen_ids.find(desktop_id) != seen_ids.end()) {
+                continue;
+            }
 
             std::ifstream file(entry.path());
             if (!file.is_open()) continue;
@@ -205,6 +249,9 @@ void Menu::scan_desktop_files() {
                 else if (key == "Terminal" && val == "true") terminal = true;
             }
 
+            // Mark this desktop_id as seen so lower priority dirs don't override or re-add it
+            seen_ids.insert(desktop_id);
+
             if (no_display || name.empty() || exec.empty()) {
                 continue;
             }
@@ -223,7 +270,7 @@ void Menu::scan_desktop_files() {
             std::string subtitle = !generic_name.empty() ? generic_name : comment;
 
             m_all_items.push_back(std::make_shared<CellItemModel>(
-                entry.path().filename().string(),
+                desktop_id,
                 name,
                 subtitle,
                 icon,
