@@ -106,6 +106,8 @@ public:
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
+    const std::vector<std::string>& get_exec_commands() const { return m_exec_commands; }
+    const std::vector<std::string>& get_exec_once_commands() const { return m_exec_once_commands; }
 
     static std::string get_config_file_path();
     static std::string get_config_dir_path();
@@ -117,8 +119,12 @@ private:
     Config();
     void set_defaults();
     void ensure_default_files();
-    void load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file, int depth = 0);
+    void load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
+                   std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth = 0);
     std::string resolve_path(const std::string& path) const;
+
+    std::vector<std::string> m_exec_commands;
+    std::vector<std::string> m_exec_once_commands;
 
     std::string m_wallpaper_path;
     bool m_show_bar = true;

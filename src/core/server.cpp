@@ -252,6 +252,13 @@ void Server::reload_config() {
         m_input_manager->reapply_device_config();
     }
 
+    // 6. Execute reloadable exec commands from active config / sourced theme files
+    if (m_input_manager) {
+        for (const auto& cmd : Config::get().get_exec_commands()) {
+            m_input_manager->spawn_command(cmd.c_str());
+        }
+    }
+
     log_info("Live configuration auto-reload complete!");
 }
 
@@ -261,7 +268,20 @@ void Server::run() {
         return;
     }
 
-    if (!m_startup_cmd.empty()) {
+    if (m_input_manager) {
+        // 1. Run exec-once / autostart commands from config
+        for (const auto& cmd : Config::get().get_exec_once_commands()) {
+            m_input_manager->spawn_command(cmd.c_str());
+        }
+
+        // 2. Run initial exec commands from config (including sourced theme files)
+        for (const auto& cmd : Config::get().get_exec_commands()) {
+            m_input_manager->spawn_command(cmd.c_str());
+        }
+    }
+
+    // 3. Run command line startup command if provided
+    if (!m_startup_cmd.empty() && m_input_manager) {
         m_input_manager->spawn_command(m_startup_cmd.c_str());
     }
 

@@ -283,14 +283,45 @@ void Config::ensure_default_files() {
     fs::create_directories(dir, ec);
     fs::create_directories(theme_dir, ec);
 
-    // 1. Copy theme files
-    std::vector<std::string> theme_files = {"light.conf", "dark.conf", "theme_mode.conf"};
-    for (const auto& file : theme_files) {
+    // 1. Copy theme files (scan theme directories to ensure all files under theme of assets are copied)
+    const std::vector<std::string> theme_source_dirs = {
+        "assets/theme",
+        "/usr/share/biway/theme",
+        "/usr/local/share/biway/theme",
+        "/etc/biway/theme"
+    };
+
+    for (const auto& base_dir : theme_source_dirs) {
+        if (fs::exists(base_dir, ec) && fs::is_directory(base_dir, ec)) {
+            for (const auto& entry : fs::recursive_directory_iterator(base_dir, fs::directory_options::skip_permission_denied, ec)) {
+                if (ec) break;
+                auto rel_path = fs::relative(entry.path(), base_dir, ec);
+                if (ec) continue;
+                auto dest_path = fs::path(theme_dir) / rel_path;
+
+                if (entry.is_directory(ec)) {
+                    fs::create_directories(dest_path, ec);
+                } else if (entry.is_regular_file(ec)) {
+                    if (!fs::exists(dest_path, ec)) {
+                        fs::copy_file(entry.path(), dest_path, fs::copy_options::overwrite_existing, ec);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback check for critical default theme files if directory iteration was unavailable
+    const std::vector<std::string> fallback_theme_files = {
+        "light.conf", "dark.conf", "theme_mode.conf",
+        "darkmodescript.sh", "lightmodescript.sh",
+        "darkwallpaper.jpg", "lightwallpaper.png"
+    };
+    for (const auto& file : fallback_theme_files) {
         std::string dest_path = theme_dir + "/" + file;
-        if (!fs::exists(dest_path)) {
-            for (const char* base_dir : {"assets/theme", "/usr/share/biway/theme", "/usr/local/share/biway/theme", "/etc/biway/theme"}) {
-                std::string src_path = std::string(base_dir) + "/" + file;
-                if (fs::exists(src_path)) {
+        if (!fs::exists(dest_path, ec)) {
+            for (const auto& base_dir : theme_source_dirs) {
+                std::string src_path = base_dir + "/" + file;
+                if (fs::exists(src_path, ec)) {
                     fs::copy_file(src_path, dest_path, fs::copy_options::overwrite_existing, ec);
                     if (!ec) break;
                 }
@@ -314,7 +345,58 @@ void Config::ensure_default_files() {
     }
 }
 
-void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file, int depth) {
+static std::string resolve_exec_command(const std::string& raw_cmd) {
+    std::string cmd = trim(raw_cmd);
+    if (cmd.empty()) return "";
+
+    // Find the first token (binary or script path)
+    size_t space_pos = cmd.find_first_of(" \t");
+    std::string first_token = (space_pos == std::string::npos) ? cmd : cmd.substr(0, space_pos);
+    std::string rest = (space_pos == std::string::npos) ? "" : cmd.substr(space_pos);
+
+    // If first_token is quoted, unquote for path checking
+    bool is_quoted = false;
+    char q = '\0';
+    if (first_token.size() >= 2 && (first_token.front() == '"' || first_token.front() == '\'') && first_token.back() == first_token.front()) {
+        is_quoted = true;
+        q = first_token.front();
+        first_token = first_token.substr(1, first_token.size() - 2);
+    }
+
+    // Check if first_token starts with ~
+    if (first_token[0] == '~') {
+        const char* home = getenv("HOME");
+        if (home) {
+            first_token = std::string(home) + first_token.substr(1);
+        }
+    } else if (first_token[0] != '/') {
+        // Check if it exists relative to the biway config directory
+        std::string config_rel = Config::get_config_dir_path() + "/" + first_token;
+        if (fs::exists(config_rel)) {
+            first_token = config_rel;
+        }
+    }
+
+    // If it is a file on disk, make sure it can be executed
+    if (fs::exists(first_token) && fs::is_regular_file(first_token)) {
+        std::error_code ec;
+        auto perms = fs::status(first_token, ec).permissions();
+        if ((perms & fs::perms::owner_exec) == fs::perms::none &&
+            (perms & fs::perms::group_exec) == fs::perms::none &&
+            (perms & fs::perms::others_exec) == fs::perms::none) {
+            return "sh \"" + first_token + "\"" + rest;
+        }
+        return "\"" + first_token + "\"" + rest;
+    }
+
+    if (is_quoted) {
+        return std::string(1, q) + first_token + std::string(1, q) + rest;
+    }
+    return cmd;
+}
+
+void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
+                       std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth) {
     if (depth > 5) {
         log_error("Maximum config include depth exceeded for " + path);
         return;
@@ -341,7 +423,8 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         std::string key = trim(trimmed.substr(0, eq_pos));
         std::string value = trim(trimmed.substr(eq_pos + 1));
 
-        if (key != "bind") {
+        if (key != "bind" && key != "exec" && key != "exec_once" && key != "exec-once" &&
+            key != "exec_always" && key != "exec-always" && key != "autostart") {
             size_t comment_pos = std::string::npos;
             if (!value.empty() && value[0] == '#') {
                 size_t space_pos = value.find_first_of(" \t");
@@ -362,9 +445,19 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string resolved = resolve_path(value);
             if (!resolved.empty() && fs::exists(resolved)) {
                 log_info("Sourcing configuration from " + resolved);
-                load_file(resolved, file_bindings, has_bindings_in_file, depth + 1);
+                load_file(resolved, file_bindings, has_bindings_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
             } else {
                 log_error("Config source file not found: " + value + " (resolved to " + resolved + ")");
+            }
+        } else if (key == "exec" || key == "exec_always" || key == "exec-always") {
+            std::string resolved_cmd = resolve_exec_command(value);
+            if (!resolved_cmd.empty()) {
+                file_exec_cmds.push_back(resolved_cmd);
+            }
+        } else if (key == "exec_once" || key == "exec-once" || key == "autostart") {
+            std::string resolved_cmd = resolve_exec_command(value);
+            if (!resolved_cmd.empty()) {
+                file_exec_once_cmds.push_back(resolved_cmd);
             }
         } else if (key == "wallpaper") {
             m_wallpaper_path = value;
@@ -458,12 +551,16 @@ void Config::load() {
     std::string path = get_config_file_path();
     bool has_bindings_in_file = false;
     std::vector<KeyBinding> file_bindings;
+    std::vector<std::string> file_exec_cmds;
+    std::vector<std::string> file_exec_once_cmds;
 
-    load_file(path, file_bindings, has_bindings_in_file, 0);
+    load_file(path, file_bindings, has_bindings_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
     if (has_bindings_in_file) {
         m_keybindings = std::move(file_bindings);
     }
+    m_exec_commands = std::move(file_exec_cmds);
+    m_exec_once_commands = std::move(file_exec_once_cmds);
 
     log_info("Loaded configuration from " + path);
 }

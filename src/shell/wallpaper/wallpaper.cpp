@@ -50,16 +50,21 @@ void Wallpaper::render(int width, int height) {
     if (path.empty() || !std::filesystem::exists(path)) {
         // Fallbacks: system installed wallpapers, then local assets
         const std::vector<std::string> fallbacks = {
+            Config::get_config_dir_path() + "/theme/lightwallpaper.png",
+            Config::get_config_dir_path() + "/theme/darkwallpaper.png",
+            "/usr/share/biway/theme/lightwallpaper.png",
+            "/usr/share/biway/theme/darkwallpaper.png",
+            "/usr/local/share/biway/theme/lightwallpaper.png",
+            "/usr/local/share/biway/theme/darkwallpaper.png",
             "/usr/share/backgrounds/biway/lightwallpaper.png",
-            "/usr/share/backgrounds/biway/darkwallpaper.jpg",
+            "/usr/share/backgrounds/biway/darkwallpaper.png",
             "/usr/share/biway/lightwallpaper.png",
-            "/usr/share/biway/darkwallpaper.jpg",
-            "/usr/share/backgrounds/biway/wallpaper.png",
-            "/usr/share/biway/wallpaper.png",
+            "/usr/share/biway/darkwallpaper.png",
+                           "assets/theme/lightwallpaper.png",
+            "assets/theme/darkwallpaper.png",
             "assets/lightwallpaper.png",
-            "assets/darkwallpaper.jpg",
-            "assets/wallpaper.png"
-        };
+            "assets/darkwallpaper.png",
+                    };
         for (const auto& fb : fallbacks) {
             if (std::filesystem::exists(fb)) {
                 path = fb;
