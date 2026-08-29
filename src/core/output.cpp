@@ -3,7 +3,7 @@
 #include "core/workspace.hpp"
 #include <ctime>
 
-namespace biway {
+namespace miquland {
 
 Output::Output(Server* server, struct wlr_output* wlr_output)
     : m_server(server), m_wlr_output(wlr_output)
@@ -134,4 +134,4 @@ void OutputManager::handle_new_output(struct wl_listener* listener, void* data) 
     manager->add_output(output);
 }
 
-} // namespace biway
+} // namespace miquland

@@ -8,7 +8,7 @@
 
 struct wlr_xwayland_surface;
 
-namespace biway {
+namespace miquland {
 
 class Server;
 class Workspace;
@@ -142,4 +142,4 @@ private:
     std::vector<std::unique_ptr<Popup>> m_popups;
 };
 
-} // namespace biway
+} // namespace miquland

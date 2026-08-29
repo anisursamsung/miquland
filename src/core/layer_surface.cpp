@@ -5,7 +5,7 @@
 #include "core/input/input.hpp"
 #include <algorithm>
 
-namespace biway {
+namespace miquland {
 
 LayerSurface::LayerSurface(Server* server, struct wlr_layer_surface_v1* layer_surface)
     : m_server(server), m_wlr_layer_surface(layer_surface)
@@ -134,4 +134,4 @@ void LayerSurface::handle_new_popup(struct wl_listener* listener, void* data) {
     surface->m_popups.push_back(std::move(p));
 }
 
-} // namespace biway
+} // namespace miquland

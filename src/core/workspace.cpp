@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace biway {
+namespace miquland {
 
 Workspace::Workspace(Server* server, size_t id)
     : m_server(server), m_id(id)
@@ -431,4 +431,4 @@ void WorkspaceManager::recalculate_layout() {
     }
 }
 
-} // namespace biway
+} // namespace miquland

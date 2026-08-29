@@ -4,7 +4,7 @@
 #include <vector>
 #include <memory>
 
-namespace biway {
+namespace miquland {
 
 class Server;
 
@@ -62,4 +62,4 @@ private:
     struct wl_listener m_new_output_listener;
 };
 
-} // namespace biway
+} // namespace miquland

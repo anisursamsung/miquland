@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <iostream>
 
-namespace biway {
+namespace miquland {
 
 const struct wlr_buffer_impl CairoBuffer::s_buffer_impl = {
     .destroy = CairoBuffer::buffer_destroy,
@@ -62,4 +62,4 @@ void CairoBuffer::buffer_end_data_ptr_access(struct wlr_buffer* buffer) {
     cairo_surface_mark_dirty(self->m_surface);
 }
 
-} // namespace biway
+} // namespace miquland

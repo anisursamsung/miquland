@@ -6,7 +6,7 @@
 #define DRM_FORMAT_ARGB8888 0x34325241
 #endif
 
-namespace biway {
+namespace miquland {
 
 class CairoBuffer {
 public:
@@ -36,4 +36,4 @@ private:
     static const struct wlr_buffer_impl s_buffer_impl;
 };
 
-} // namespace biway
+} // namespace miquland

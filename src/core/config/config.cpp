@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <algorithm>
 
-namespace biway {
+namespace miquland {
 
 namespace fs = std::filesystem;
 
@@ -247,17 +247,17 @@ bool Config::parse_hex_color(const std::string& hex, float& r, float& g, float& 
 std::string Config::get_config_dir_path() {
     const char* xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && *xdg) {
-        return std::string(xdg) + "/biway";
+        return std::string(xdg) + "/miquland";
     }
     const char* home = getenv("HOME");
     if (home && *home) {
-        return std::string(home) + "/.config/biway";
+        return std::string(home) + "/.config/miquland";
     }
-    return "/tmp/biway";
+    return "/tmp/miquland";
 }
 
 std::string Config::get_config_file_path() {
-    return get_config_dir_path() + "/biway.conf";
+    return get_config_dir_path() + "/miquland.conf";
 }
 
 std::string Config::resolve_path(const std::string& path) const {
@@ -282,16 +282,16 @@ void Config::ensure_default_files() {
     std::string theme_dir = dir + "/theme";
     std::error_code ec;
     
-    // Create ~/.config/biway/ and ~/.config/biway/theme/
+    // Create ~/.config/miquland/ and ~/.config/miquland/theme/
     fs::create_directories(dir, ec);
     fs::create_directories(theme_dir, ec);
 
     // 1. Copy theme files (scan theme directories to ensure all files under theme of assets are copied)
     const std::vector<std::string> theme_source_dirs = {
         "assets/theme",
-        "/usr/share/biway/theme",
-        "/usr/local/share/biway/theme",
-        "/etc/biway/theme"
+        "/usr/share/miquland/theme",
+        "/usr/local/share/miquland/theme",
+        "/etc/miquland/theme"
     };
 
     for (const auto& base_dir : theme_source_dirs) {
@@ -331,12 +331,12 @@ void Config::ensure_default_files() {
         }
     }
 
-    // 2. Copy main biway.conf
+    // 2. Copy main miquland.conf
     std::string config_path = get_config_file_path();
     if (!fs::exists(config_path)) {
         bool copied = false;
-        for (const char* t_dir : {"assets", "/usr/share/biway", "/usr/local/share/biway", "/etc/biway"}) {
-            std::string cand = std::string(t_dir) + "/biway.conf";
+        for (const char* t_dir : {"assets", "/usr/share/miquland", "/usr/local/share/miquland", "/etc/miquland"}) {
+            std::string cand = std::string(t_dir) + "/miquland.conf";
             if (fs::exists(cand)) {
                 fs::copy_file(cand, config_path, fs::copy_options::overwrite_existing, ec);
                 if (!ec) { copied = true; break; }
@@ -372,7 +372,7 @@ static std::string resolve_exec_command(const std::string& raw_cmd) {
             first_token = std::string(home) + first_token.substr(1);
         }
     } else if (first_token[0] != '/') {
-        // Check if it exists relative to the biway config directory
+        // Check if it exists relative to the miquland config directory
         std::string config_rel = Config::get_config_dir_path() + "/" + first_token;
         if (fs::exists(config_rel)) {
             first_token = config_rel;
@@ -577,7 +577,7 @@ void Config::save() {
         return;
     }
 
-    file << "# biway configuration file\n\n";
+    file << "# miquland configuration file\n\n";
     file << "[appearance]\n";
     file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
     file << "icon_theme = " << m_icon_theme << "\n\n";
@@ -609,4 +609,4 @@ void Config::save() {
     log_info("Saved configuration to " + path);
 }
 
-} // namespace biway
+} // namespace miquland

@@ -2,7 +2,7 @@
 #include "core/common/util.hpp"
 #include <vector>
 
-namespace biway {
+namespace miquland {
 
 class Server;
 class Keyboard;
@@ -94,4 +94,4 @@ private:
     struct wl_listener m_destroy_listener;
 };
 
-} // namespace biway
+} // namespace miquland

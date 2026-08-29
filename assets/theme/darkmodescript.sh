@@ -4,7 +4,5 @@ notify-send "Theme" "Dark Mode Active"
 gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark
 gsettings set org.gnome.desktop.interface color-scheme prefer-dark
 
-#  kwriteconfig6 --file ~/.config/dolphinrc --group UiSettings --key ColorScheme BreezeDark
-
-echo "include ~/.config/biway/theme/kitty/kitty_dark.conf" > ~/.config/biway/theme/kitty/kitty_current.conf
+echo "include ~/.config/miquland/theme/kitty/kitty_dark.conf" > ~/.config/miquland/theme/kitty/kitty_current.conf
 pkill -SIGUSR1 kitty || true

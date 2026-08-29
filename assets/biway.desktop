@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=biway
-Comment=A lightweight binary-tiling Wayland compositor
-Exec=biway
-Type=Application
-DesktopNames=biway
-Keywords=wayland;compositor;tiling;wm;windowmanager;

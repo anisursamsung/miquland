@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(biway LANGUAGES C CXX)
+project(miquland LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,7 +48,7 @@ add_custom_command(
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-layer-shell-unstable-v1.xml
 )
 
-add_executable(biway
+add_executable(miquland
     src/main.cpp
     src/core/server.cpp
     src/core/layer_surface.cpp
@@ -65,7 +65,7 @@ add_executable(biway
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.c
 )
 
-target_include_directories(biway PRIVATE
+target_include_directories(miquland PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -78,7 +78,7 @@ target_include_directories(biway PRIVATE
     ${XCB_INCLUDE_DIRS}
 )
 
-target_link_libraries(biway PRIVATE
+target_link_libraries(miquland PRIVATE
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
@@ -88,11 +88,15 @@ target_link_libraries(biway PRIVATE
     PkgConfig::XCB
 )
 
-target_compile_options(biway PRIVATE
+target_compile_options(miquland PRIVATE
     -Wall -Wextra -Wpedantic
     -Wno-unused-parameter
 )
 
 # Installation targets
 include(GNUInstallDirs)
-install(TARGETS biway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS miquland RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Install assets and desktop entry
+install(FILES assets/miquland.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)
+install(DIRECTORY assets/ DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)

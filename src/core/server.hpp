@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace biway {
+namespace miquland {
 
 class OutputManager;
 class WorkspaceManager;
@@ -116,4 +116,4 @@ private:
     struct wl_listener m_xwayland_new_surface_listener;
 };
 
-} // namespace biway
+} // namespace miquland

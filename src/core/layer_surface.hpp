@@ -4,7 +4,7 @@
 #include <vector>
 #include <memory>
 
-namespace biway {
+namespace miquland {
 
 class Server;
 class Popup;
@@ -44,4 +44,4 @@ private:
     std::vector<std::unique_ptr<Popup>> m_popups;
 };
 
-} // namespace biway
+} // namespace miquland

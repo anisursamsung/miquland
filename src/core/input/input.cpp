@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <cstdlib>
 
-namespace biway {
+namespace miquland {
 
 InputManager::InputManager(Server* server)
     : m_server(server)
@@ -131,7 +131,7 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     bool ctrl = (modifiers & WLR_MODIFIER_CTRL) != 0;
     bool alt = (modifiers & WLR_MODIFIER_ALT) != 0;
 
-    // 1. If an exclusive Layer Surface is focused (e.g. rofi, biwaymenu, swaylock), forward keys directly to it
+    // 1. If an exclusive Layer Surface is focused (e.g. rofi, miqulauncher, swaylock), forward keys directly to it
     if (m_server->get_focused_layer_surface()) {
         if (mod && shift && norm_sym == XKB_KEY_q) {
             m_server->terminate();
@@ -172,7 +172,7 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
             log_info("Keybinding matched: " + kb.combo_str + " -> " + action);
 
             if (action == "menu" || action == "app_launcher") {
-                spawn_command("biwaymenu");
+                spawn_command("miqulauncher");
             } else if (action == "close" || action == "close_window") {
                 View* focused = m_server->get_focused_view();
                 if (focused) focused->close();
@@ -467,4 +467,4 @@ void Keyboard::handle_destroy(struct wl_listener* listener, void* data) {
     kb->m_server->get_input_manager()->remove_keyboard(kb);
 }
 
-} // namespace biway
+} // namespace miquland

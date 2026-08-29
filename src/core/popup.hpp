@@ -5,7 +5,7 @@
 #include <memory>
 #include <functional>
 
-namespace biway {
+namespace miquland {
 
 class View;
 class LayerSurface;
@@ -40,4 +40,4 @@ private:
     std::vector<std::unique_ptr<Popup>> m_child_popups;
 };
 
-} // namespace biway
+} // namespace miquland

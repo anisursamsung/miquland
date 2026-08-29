@@ -4,7 +4,7 @@
 #include <map>
 #include <vector>
 
-namespace biway {
+namespace miquland {
 
 class Server;
 class View;
@@ -94,4 +94,4 @@ private:
     size_t m_active_workspace_id = 1;
 };
 
-} // namespace biway
+} // namespace miquland

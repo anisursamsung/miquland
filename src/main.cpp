@@ -4,7 +4,7 @@
 #include <iostream>
 #include <string>
 
-static biway::Server* g_server = nullptr;
+static miquland::Server* g_server = nullptr;
 
 static void handle_signal(int sig) {
     if (g_server) {
@@ -18,7 +18,7 @@ static void print_usage(const char* prog) {
               << "  -s, --startup <cmd>    Execute startup command after compositor initializes\n"
               << "  -h, --help             Show this help message\n\n"
               << "Configuration File:\n"
-              << "  ~/.config/biway/biway.conf\n\n"
+              << "  ~/.config/miquland/miquland.conf\n\n"
               << "Keybindings:\n"
               << "  Super + Space          Spawn application menu launcher\n"
               << "  Super + T              Spawn terminal\n"
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     std::string startup_cmd;
 
     // Load configuration file
-    biway::Config::get().load();
+    miquland::Config::get().load();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    biway::Server server;
+    miquland::Server server;
     g_server = &server;
 
     struct sigaction sa = {};

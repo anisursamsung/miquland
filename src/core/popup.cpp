@@ -5,7 +5,7 @@
 #include "core/output.hpp"
 #include "core/config/config.hpp"
 
-namespace biway {
+namespace miquland {
 
 Popup::Popup(struct wlr_xdg_popup* popup, struct wlr_scene_tree* parent_tree, View* view, std::function<void(Popup*)> on_destroy)
     : m_popup(popup), m_view(view), m_on_destroy(std::move(on_destroy))
@@ -160,4 +160,4 @@ void Popup::handle_new_popup(struct wl_listener* listener, void* data) {
     }
 }
 
-} // namespace biway
+} // namespace miquland

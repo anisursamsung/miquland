@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace biway {
+namespace miquland {
 
 Server::Server() = default;
 
@@ -124,7 +124,7 @@ bool Server::init() {
 
     log_info("Wayland compositor running on WAYLAND_DISPLAY=" + std::string(m_socket_name));
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
-    setenv("XDG_CURRENT_DESKTOP", "biway", 1);
+    setenv("XDG_CURRENT_DESKTOP", "miquland", 1);
     system("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null");
 
     setup_config_watcher();
@@ -223,7 +223,7 @@ void Server::run() {
 }
 
 void Server::terminate() {
-    log_info("Terminating biway compositor");
+    log_info("Terminating miquland compositor");
     if (m_wl_display) {
         wl_display_terminate(m_wl_display);
     }
@@ -409,4 +409,4 @@ void Server::handle_xwayland_new_surface(struct wl_listener* listener, void* dat
     server->add_view(std::move(view));
 }
 
-} // namespace biway
+} // namespace miquland

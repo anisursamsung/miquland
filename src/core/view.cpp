@@ -7,7 +7,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace biway {
+namespace miquland {
 
 static void draw_rounded_rectangle(cairo_t* cr, double x, double y, double w, double h, double r) {
     if (r <= 0.0) {
@@ -787,4 +787,4 @@ View* View::get_top_dialog() const {
     return nullptr;
 }
 
-} // namespace biway
+} // namespace miquland

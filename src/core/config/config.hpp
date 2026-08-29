@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <xkbcommon/xkbcommon.h>
 
-namespace biway {
+namespace miquland {
 
 struct KeyBinding {
     uint32_t modifiers = 0;
@@ -131,7 +131,7 @@ private:
     bool m_natural_scroll = true;
     std::string m_icon_theme = "Papirus";
     std::string m_terminal = "foot";
-    std::string m_theme_source = "~/.config/biway/light.conf";
+    std::string m_theme_source = "~/.config/miquland/light.conf";
 
     int m_window_border_width = 2;
     int m_window_border_radius = 8;
@@ -157,4 +157,4 @@ private:
     std::vector<KeyBinding> m_keybindings;
 };
 
-} // namespace biway
+} // namespace miquland
