@@ -88,6 +88,7 @@ private:
     struct wlr_scene_tree* m_layer_top_tree = nullptr;
     struct wlr_scene_tree* m_layer_overlay_tree = nullptr;
 
+    struct wlr_xdg_output_manager_v1* m_xdg_output_manager = nullptr;
     struct wlr_xdg_shell* m_xdg_shell = nullptr;
     struct wlr_layer_shell_v1* m_layer_shell = nullptr;
     struct wlr_foreign_toplevel_manager_v1* m_foreign_toplevel_manager = nullptr;
