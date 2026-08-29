@@ -3,9 +3,7 @@
 #include "core/workspace.hpp"
 #include "core/view.hpp"
 #include "core/output.hpp"
-#include "shell/bar/bar.hpp"
 #include "core/config/config.hpp"
-#include "shell/menu/menu.hpp"
 #include <unistd.h>
 #include <cstdlib>
 
@@ -133,17 +131,7 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     bool ctrl = (modifiers & WLR_MODIFIER_CTRL) != 0;
     bool alt = (modifiers & WLR_MODIFIER_ALT) != 0;
 
-    // 1. If Menu is open, check if modal consumes the key
-    if (m_server->get_menu() && m_server->get_menu()->is_visible()) {
-        // System Exit: Super + Shift + Q
-        if (mod && shift && norm_sym == XKB_KEY_q) {
-            m_server->terminate();
-            return true;
-        }
-        return m_server->get_menu()->handle_key(modifiers, keysym);
-    }
-
-    // 2. If an exclusive Layer Surface is focused (e.g. rofi, swaylock), forward keys directly to it
+    // 1. If an exclusive Layer Surface is focused (e.g. rofi, biwaymenu, swaylock), forward keys directly to it
     if (m_server->get_focused_layer_surface()) {
         if (mod && shift && norm_sym == XKB_KEY_q) {
             m_server->terminate();
@@ -184,12 +172,14 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
             log_info("Keybinding matched: " + kb.combo_str + " -> " + action);
 
             if (action == "menu" || action == "app_launcher") {
-                if (m_server->get_menu()) m_server->get_menu()->toggle();
+                spawn_command("biwaymenu");
             } else if (action == "close" || action == "close_window") {
                 View* focused = m_server->get_focused_view();
                 if (focused) focused->close();
-            } else if (action == "toggle_bar") {
-                if (m_server->get_bar()) m_server->get_bar()->toggle_visibility();
+            } else if (action == "toggle_layout" || action == "layout_toggle") {
+                m_server->get_workspace_manager()->toggle_layout_mode();
+            } else if (action == "swap_main" || action == "swap_master" || action == "swap_with_main") {
+                m_server->get_workspace_manager()->swap_with_main();
             } else if (action == "toggle_split" || action == "split_toggle") {
                 m_server->get_workspace_manager()->toggle_active_split();
             } else if (action == "focus_win_1" || action == "window_1") {
@@ -233,28 +223,26 @@ void InputManager::process_cursor_motion(uint32_t time) {
 
     if (!surface) {
         wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
+        wlr_seat_pointer_clear_focus(m_seat);
+        return;
     }
 
-    if (surface) {
+    if (m_seat->pointer_state.focused_surface != surface) {
         wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
-        wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
+    }
+    wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
 
-        View* target_view = view;
-        if (target_view && target_view->has_child_dialogs()) {
-            View* top_dialog = target_view->get_top_dialog();
-            if (top_dialog) {
-                target_view = top_dialog;
-            }
+    View* target_view = view;
+    if (target_view && target_view->has_child_dialogs()) {
+        View* top_dialog = target_view->get_top_dialog();
+        if (top_dialog) {
+            target_view = top_dialog;
         }
+    }
 
-        // Hover to focus: if cursor hovers over a view and menu is not open, focus it!
-        if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
-            if (!m_server->get_menu() || !m_server->get_menu()->is_visible()) {
-                target_view->focus();
-            }
-        }
-    } else {
-        wlr_seat_pointer_clear_focus(m_seat);
+    // Hover to focus: if cursor hovers over a view, focus it!
+    if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
+        target_view->focus();
     }
 }
 
@@ -298,10 +286,6 @@ void InputManager::handle_cursor_motion(struct wl_listener* listener, void* data
     auto* event = static_cast<struct wlr_pointer_motion_event*>(data);
 
     wlr_cursor_move(manager->m_cursor, &event->pointer->base, event->delta_x, event->delta_y);
-
-    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
-        manager->m_server->get_menu()->handle_mouse_move(manager->m_cursor->x, manager->m_cursor->y);
-    }
     manager->process_cursor_motion(event->time_msec);
 }
 
@@ -310,29 +294,12 @@ void InputManager::handle_cursor_motion_absolute(struct wl_listener* listener, v
     auto* event = static_cast<struct wlr_pointer_motion_absolute_event*>(data);
 
     wlr_cursor_warp_absolute(manager->m_cursor, &event->pointer->base, event->x, event->y);
-
-    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
-        manager->m_server->get_menu()->handle_mouse_move(manager->m_cursor->x, manager->m_cursor->y);
-    }
     manager->process_cursor_motion(event->time_msec);
 }
 
 void InputManager::handle_cursor_button(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_button_listener);
     auto* event = static_cast<struct wlr_pointer_button_event*>(data);
-
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
-        // If Menu is open, route click to Menu first
-        if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
-            if (manager->m_server->get_menu()->handle_mouse_click(manager->m_cursor->x, manager->m_cursor->y)) {
-                return;
-            }
-        }
-        // Check if clicked on built-in bar
-        if (manager->m_server->get_bar() && manager->m_server->get_bar()->handle_click(manager->m_cursor->x, manager->m_cursor->y)) {
-            return;
-        }
-    }
 
     double sx, sy;
     struct wlr_surface* surface = nullptr;
@@ -356,11 +323,6 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
 void InputManager::handle_cursor_axis(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_axis_listener);
     auto* event = static_cast<struct wlr_pointer_axis_event*>(data);
-
-    if (manager->m_server->get_menu() && manager->m_server->get_menu()->is_visible()) {
-        manager->m_server->get_menu()->handle_scroll(event->delta);
-        return;
-    }
 
     wlr_seat_pointer_notify_axis(manager->m_seat, event->time_msec, event->orientation,
         event->delta, event->delta_discrete, event->source, event->relative_direction);

@@ -1,8 +1,6 @@
 #include "core/output.hpp"
 #include "core/server.hpp"
 #include "core/workspace.hpp"
-#include "shell/wallpaper/wallpaper.hpp"
-#include "shell/bar/bar.hpp"
 #include <ctime>
 
 namespace biway {
@@ -23,6 +21,13 @@ Output::Output(Server* server, struct wlr_output* wlr_output)
 
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
+
+    m_usable_area = {
+        .x = 0,
+        .y = 0,
+        .width = wlr_output->width,
+        .height = wlr_output->height
+    };
 
     m_scene_output = wlr_scene_output_create(server->get_scene(), wlr_output);
     wlr_output_layout_add_auto(server->get_output_manager()->get_layout(), wlr_output);
@@ -86,13 +91,28 @@ struct wlr_box OutputManager::get_primary_geometry() const {
     return box;
 }
 
+struct wlr_box OutputManager::get_primary_usable_geometry() const {
+    auto* primary = get_primary_output();
+    if (primary) {
+        const auto& area = primary->get_usable_area();
+        if (area.width > 0 && area.height > 0) {
+            return area;
+        }
+    }
+    return get_primary_geometry();
+}
+
+Output* OutputManager::find_output(struct wlr_output* wlr_out) const {
+    for (const auto& out : m_outputs) {
+        if (out && out->get_wlr_output() == wlr_out) {
+            return out.get();
+        }
+    }
+    return nullptr;
+}
+
 void OutputManager::add_output(Output* output) {
     m_outputs.emplace_back(output);
-    struct wlr_box box = get_primary_geometry();
-    if (box.width > 0 && box.height > 0) {
-        if (m_server->get_wallpaper()) m_server->get_wallpaper()->render(box.width, box.height);
-        if (m_server->get_bar()) m_server->get_bar()->render(box.width);
-    }
     m_server->get_workspace_manager()->recalculate_layout();
 }
 

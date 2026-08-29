@@ -4,8 +4,6 @@
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
 #include "core/config/config.hpp"
-#include "shell/wallpaper/wallpaper.hpp"
-#include "shell/bar/bar.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -257,6 +255,11 @@ bool View::is_focused() const {
 }
 
 void View::set_geometry(int x, int y, int width, int height) {
+    if (m_x == x && m_y == y && m_width == width && m_height == height && m_mapped) {
+        return;
+    }
+
+    bool size_changed = (m_width != width || m_height != height);
     m_x = x;
     m_y = y;
     m_width = width;
@@ -274,14 +277,14 @@ void View::set_geometry(int x, int y, int width, int height) {
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
-        if (m_xdg_toplevel) {
+        if (m_xdg_toplevel && size_changed) {
             wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
         }
     } else {
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
-        if (m_xwayland_surface) {
+        if (m_xwayland_surface && size_changed) {
             wlr_xwayland_surface_configure(m_xwayland_surface, x + bw, y + bw, client_w, client_h);
         }
     }
@@ -320,25 +323,6 @@ void View::update_border() {
     cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-
-    if (radius > 0) {
-        cairo_save(cr);
-        cairo_rectangle(cr, 0, 0, m_width, m_height);
-        draw_rounded_rectangle(cr, 0, 0, m_width, m_height, radius);
-        cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
-        cairo_clip(cr);
-
-        Wallpaper* wp = m_server->get_wallpaper();
-        cairo_surface_t* wp_surf = wp ? wp->get_surface() : nullptr;
-        if (wp_surf) {
-            cairo_set_source_surface(cr, wp_surf, -m_x, -m_y);
-            cairo_paint(cr);
-        } else {
-            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
-            cairo_paint(cr);
-        }
-        cairo_restore(cr);
-    }
 
     if (bw > 0) {
         float r = 0.0f, g = 0.8f, b = 1.0f, a = 1.0f;
@@ -527,10 +511,7 @@ void View::handle_destroy(struct wl_listener* listener, void* data) {
 void View::handle_commit(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_commit_listener);
     if (view->m_type == ViewType::Xdg && view->m_xdg_toplevel->base->initial_commit) {
-        int bw = Config::get().get_window_border_width();
-        int client_w = std::max(1, view->m_width - 2 * bw);
-        int client_h = std::max(1, view->m_height - 2 * bw);
-        wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, client_w, client_h);
+        wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
     }
 }
 
@@ -565,9 +546,6 @@ void View::handle_set_title(struct wl_listener* listener, void* data) {
     std::string title = view->get_title();
     if (view->m_foreign_toplevel && !title.empty()) {
         wlr_foreign_toplevel_handle_v1_set_title(view->m_foreign_toplevel, title.c_str());
-    }
-    if (view->m_server->get_bar()) {
-        view->m_server->get_bar()->schedule_redraw();
     }
 }
 

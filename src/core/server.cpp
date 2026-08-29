@@ -2,53 +2,37 @@
 #include "core/output.hpp"
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
-#include "shell/wallpaper/wallpaper.hpp"
-#include "shell/bar/bar.hpp"
-#include "shell/menu/menu.hpp"
 #include "core/view.hpp"
 #include "core/layer_surface.hpp"
+#include "core/popup.hpp"
 #include "core/config/config.hpp"
-#include <algorithm>
 #include <sys/inotify.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <algorithm>
+#include <iostream>
 
 namespace biway {
 
 Server::Server() = default;
 
 Server::~Server() {
-    if (m_config_event_source) {
-        wl_event_source_remove(m_config_event_source);
-        m_config_event_source = nullptr;
-    }
-    if (m_inotify_fd >= 0) {
-        if (m_inotify_wd >= 0) {
-            inotify_rm_watch(m_inotify_fd, m_inotify_wd);
-        }
-        close(m_inotify_fd);
-        m_inotify_fd = -1;
-    }
+    if (m_config_event_source) wl_event_source_remove(m_config_event_source);
+    if (m_inotify_wd >= 0 && m_inotify_fd >= 0) inotify_rm_watch(m_inotify_fd, m_inotify_wd);
+    if (m_inotify_fd >= 0) ::close(m_inotify_fd);
 
-    m_views.clear();
     m_layer_surfaces.clear();
-    m_menu.reset();
-    m_bar.reset();
-    m_wallpaper.reset();
+    m_views.clear();
+
     m_input_manager.reset();
     m_workspace_manager.reset();
     m_output_manager.reset();
 
+    if (m_foreign_toplevel_manager) {
+        // Destroyed with display
+    }
     if (m_xwayland) {
-        wl_list_remove(&m_xwayland_ready_listener.link);
-        wl_list_remove(&m_xwayland_new_surface_listener.link);
         wlr_xwayland_destroy(m_xwayland);
-        m_xwayland = nullptr;
-    }
-    if (m_layer_shell) {
-        wl_list_remove(&m_new_layer_shell_surface_listener.link);
-    }
-    if (m_xdg_shell) {
-        wl_list_remove(&m_new_xdg_toplevel_listener.link);
     }
     if (m_wlr_allocator) wlr_allocator_destroy(m_wlr_allocator);
     if (m_wlr_renderer) wlr_renderer_destroy(m_wlr_renderer);
@@ -100,22 +84,17 @@ bool Server::init() {
         return false;
     }
 
-    // Layered scene tree hierarchy:
-    // Background -> Wallpaper -> Bottom -> Workspaces (Tiled Apps) -> Top -> Native Bar -> Overlay
+    // Standard 4-Layer Scene Tree Hierarchy:
+    // Background -> Bottom -> Workspaces (Tiled Apps) -> Top -> Overlay
     m_layer_background_tree = wlr_scene_tree_create(&m_scene->tree);
-    m_bg_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_bottom_tree = wlr_scene_tree_create(&m_scene->tree);
     m_workspaces_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_top_tree = wlr_scene_tree_create(&m_scene->tree);
-    m_bar_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_overlay_tree = wlr_scene_tree_create(&m_scene->tree);
 
     m_output_manager = std::make_unique<OutputManager>(this);
     m_workspace_manager = std::make_unique<WorkspaceManager>(this);
     m_input_manager = std::make_unique<InputManager>(this);
-    m_wallpaper = std::make_unique<Wallpaper>(this);
-    m_bar = std::make_unique<Bar>(this);
-    m_menu = std::make_unique<Menu>(this);
 
     m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 3);
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
@@ -127,160 +106,114 @@ bool Server::init() {
 
     m_foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(m_wl_display);
 
+    m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
+    if (m_xwayland) {
+        m_xwayland_ready_listener.notify = handle_xwayland_ready;
+        wl_signal_add(&m_xwayland->events.ready, &m_xwayland_ready_listener);
+
+        m_xwayland_new_surface_listener.notify = handle_xwayland_new_surface;
+        wl_signal_add(&m_xwayland->events.new_surface, &m_xwayland_new_surface_listener);
+        log_info("Xwayland support initialized");
+    }
+
     m_socket_name = wl_display_add_socket_auto(m_wl_display);
     if (!m_socket_name) {
         log_error("Failed to add Wayland socket");
         return false;
     }
 
+    log_info("Wayland compositor running on WAYLAND_DISPLAY=" + std::string(m_socket_name));
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
-    log_info("biway Wayland compositor started on WAYLAND_DISPLAY=" + std::string(m_socket_name));
-
-    // Initialize Xwayland support
-    m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
-    if (m_xwayland) {
-        wlr_xwayland_set_seat(m_xwayland, m_input_manager->get_seat());
-
-        m_xwayland_ready_listener.notify = handle_xwayland_ready;
-        wl_signal_add(&m_xwayland->events.ready, &m_xwayland_ready_listener);
-
-        m_xwayland_new_surface_listener.notify = handle_xwayland_new_surface;
-        wl_signal_add(&m_xwayland->events.new_surface, &m_xwayland_new_surface_listener);
-
-        if (m_xwayland->display_name) {
-            setenv("DISPLAY", m_xwayland->display_name, 1);
-            log_info("biway Xwayland initialized on DISPLAY=" + std::string(m_xwayland->display_name));
-        }
-    } else {
-        log_warn("Failed to initialize Xwayland server");
-    }
-
-    // Import key session environment variables into the systemd user daemon.
-    // This is required so that user services with ConditionEnvironment=XDG_SESSION_CLASS=user
-    // (such as localsearch-3 / Tracker3 Miner) can activate correctly.
-    // Without this, Nautilus blocks on the org.freedesktop.Tracker3.Miner.Files D-Bus name
-    // and the right-click context menu freezes the file browser window.
-    system("systemctl --user import-environment "
-           "XDG_SESSION_CLASS XDG_SESSION_TYPE XDG_SESSION_ID "
-           "WAYLAND_DISPLAY DISPLAY 2>/dev/null");
+    setenv("XDG_CURRENT_DESKTOP", "biway", 1);
+    system("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null");
 
     setup_config_watcher();
+
+    // Autostart commands from configuration
+    for (const auto& cmd : Config::get().get_exec_once_commands()) {
+        m_input_manager->spawn_command(cmd.c_str());
+    }
+    for (const auto& cmd : Config::get().get_exec_commands()) {
+        m_input_manager->spawn_command(cmd.c_str());
+    }
 
     return true;
 }
 
 void Server::setup_config_watcher() {
-    std::string config_dir = Config::get_config_dir_path();
-    std::string theme_dir = config_dir + "/theme";
-    std::error_code ec;
-    std::filesystem::create_directories(config_dir, ec);
-    std::filesystem::create_directories(theme_dir, ec);
-
     m_inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if (m_inotify_fd < 0) {
-        log_error("Failed to initialize inotify for configuration auto-reload");
-        return;
-    }
+    if (m_inotify_fd < 0) return;
 
-    // 1. Watch the main biway config directory
-    m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(),
-                                     IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
-    if (m_inotify_wd < 0) {
-        log_error("Failed to add inotify watch on: " + config_dir);
-    }
+    std::string config_dir = Config::get_config_dir_path();
+    m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
 
-    // 2. Watch the theme subfolder explicitly
-    int theme_wd = inotify_add_watch(m_inotify_fd, theme_dir.c_str(),
-                                     IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
-    if (theme_wd < 0) {
-        log_error("Failed to add inotify watch on: " + theme_dir);
-    }
+    std::string theme_dir = config_dir + "/theme";
+    inotify_add_watch(m_inotify_fd, theme_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
 
-    m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd,
-                                                 WL_EVENT_READABLE, handle_config_inotify, this);
-    log_info("Live config auto-reload active on " + config_dir + " and " + theme_dir);
+    m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd, WL_EVENT_READABLE, handle_config_inotify, this);
 }
 
 int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
     auto* server = static_cast<Server*>(data);
+    char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+    ssize_t len;
 
-    char buffer[4096];
     bool should_reload = false;
-    while (read(fd, buffer, sizeof(buffer)) > 0) {
-        should_reload = true;
+    while ((len = read(fd, buf, sizeof(buf))) > 0) {
+        const struct inotify_event* event;
+        for (char* ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
+            event = reinterpret_cast<const struct inotify_event*>(ptr);
+            if (event->len > 0) {
+                should_reload = true;
+            }
+        }
     }
 
     if (should_reload) {
+        log_info("Detected theme/config file change, reloading...");
         server->reload_config();
     }
     return 0;
 }
 
 void Server::reload_config() {
-    log_info("Configuration file change detected! Auto-reloading settings...");
     Config::get().load();
 
-    // 1. Live reload wallpaper
-    if (m_output_manager && m_wallpaper) {
-        struct wlr_box box = m_output_manager->get_primary_geometry();
-        if (box.width > 0 && box.height > 0) {
-            m_wallpaper->render(box.width, box.height);
-        }
-    }
-
-    // 2. Live reload bar
-    if (m_bar) {
-        m_bar->set_visible(Config::get().is_bar_visible());
-        m_bar->schedule_redraw();
-    }
-
-    // 3. Live reload menu applications & icon theme
-    if (m_menu) {
-        m_menu->reload_applications();
-    }
-
-    // 4. Recalculate layout and borders
-    if (m_workspace_manager) {
-        m_workspace_manager->recalculate_layout();
-    }
-    for (auto& view : m_views) {
-        view->update_border();
-    }
-
-    // 5. Live reload input device settings (natural scroll)
     if (m_input_manager) {
         m_input_manager->reapply_device_config();
     }
 
-    // 6. Execute reloadable exec commands from active config / sourced theme files
-    if (m_input_manager) {
-        for (const auto& cmd : Config::get().get_exec_commands()) {
-            m_input_manager->spawn_command(cmd.c_str());
+    for (const auto& v : m_views) {
+        if (v && v->is_mapped()) {
+            v->update_border();
         }
     }
 
-    log_info("Live configuration auto-reload complete!");
+    if (m_workspace_manager) {
+        m_workspace_manager->recalculate_layout();
+    }
+
+    for (const auto& cmd : Config::get().get_exec_commands()) {
+        if (m_input_manager) {
+            m_input_manager->spawn_command(cmd.c_str());
+        }
+    }
+}
+
+void Server::handle_new_xdg_toplevel(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_new_xdg_toplevel_listener);
+    auto* toplevel = static_cast<struct wlr_xdg_toplevel*>(data);
+
+    auto view = std::make_unique<View>(server, toplevel);
+    server->add_view(std::move(view));
 }
 
 void Server::run() {
     if (!wlr_backend_start(m_wlr_backend)) {
-        log_error("Failed to start wlr_backend");
+        log_error("Failed to start backend");
         return;
     }
 
-    if (m_input_manager) {
-        // 1. Run exec-once / autostart commands from config
-        for (const auto& cmd : Config::get().get_exec_once_commands()) {
-            m_input_manager->spawn_command(cmd.c_str());
-        }
-
-        // 2. Run initial exec commands from config (including sourced theme files)
-        for (const auto& cmd : Config::get().get_exec_commands()) {
-            m_input_manager->spawn_command(cmd.c_str());
-        }
-    }
-
-    // 3. Run command line startup command if provided
     if (!m_startup_cmd.empty() && m_input_manager) {
         m_input_manager->spawn_command(m_startup_cmd.c_str());
     }
@@ -311,7 +244,6 @@ void Server::remove_view(View* view) {
             break;
         }
     }
-    if (m_bar) m_bar->schedule_redraw();
 }
 
 bool Server::is_valid_view(View* view) const {
@@ -328,7 +260,6 @@ void Server::set_focused_view(View* view) {
     m_focused_view = view;
     if (prev) prev->update_border();
     if (m_focused_view) m_focused_view->update_border();
-    if (m_bar) m_bar->schedule_redraw();
 }
 
 View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy) {
@@ -356,15 +287,8 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
         }
         tree = tree->node.parent;
     }
+
     return nullptr;
-}
-
-void Server::handle_new_xdg_toplevel(struct wl_listener* listener, void* data) {
-    Server* server = wl_container_of(listener, server, m_new_xdg_toplevel_listener);
-    auto* toplevel = static_cast<struct wlr_xdg_toplevel*>(data);
-
-    auto view = std::make_unique<View>(server, toplevel);
-    server->add_view(std::move(view));
 }
 
 struct wlr_scene_tree* Server::get_layer_tree(enum zwlr_layer_shell_v1_layer layer) const {
@@ -429,7 +353,6 @@ void Server::arrange_layers(struct wlr_output* output) {
     };
     struct wlr_box usable_area = full_area;
 
-    // Order of arrangement: OVERLAY, TOP, BOTTOM, BACKGROUND
     const enum zwlr_layer_shell_v1_layer layers_order[] = {
         ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
         ZWLR_LAYER_SHELL_V1_LAYER_TOP,
@@ -443,6 +366,21 @@ void Server::arrange_layers(struct wlr_output* output) {
                 l_surf->configure(&full_area, &usable_area);
             }
         }
+    }
+
+    bool area_changed = false;
+    if (m_output_manager) {
+        auto* out = m_output_manager->find_output(output);
+        if (out) {
+            const auto& prev = out->get_usable_area();
+            area_changed = (prev.x != usable_area.x || prev.y != usable_area.y ||
+                            prev.width != usable_area.width || prev.height != usable_area.height);
+            out->set_usable_area(usable_area);
+        }
+    }
+
+    if (area_changed && m_workspace_manager) {
+        m_workspace_manager->recalculate_layout();
     }
 }
 

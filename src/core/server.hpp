@@ -10,9 +10,6 @@ namespace biway {
 class OutputManager;
 class WorkspaceManager;
 class InputManager;
-class Wallpaper;
-class Bar;
-class Menu;
 class View;
 class LayerSurface;
 
@@ -34,9 +31,7 @@ public:
     struct wlr_allocator* get_allocator() const { return m_wlr_allocator; }
     struct wlr_scene* get_scene() const { return m_scene; }
 
-    struct wlr_scene_tree* get_bg_tree() const { return m_bg_tree; }
     struct wlr_scene_tree* get_workspaces_tree() const { return m_workspaces_tree; }
-    struct wlr_scene_tree* get_bar_tree() const { return m_bar_tree; }
 
     struct wlr_scene_tree* get_layer_tree(enum zwlr_layer_shell_v1_layer layer) const;
     struct wlr_scene_tree* get_layer_background_tree() const { return m_layer_background_tree; }
@@ -47,9 +42,6 @@ public:
     OutputManager* get_output_manager() const { return m_output_manager.get(); }
     WorkspaceManager* get_workspace_manager() const { return m_workspace_manager.get(); }
     InputManager* get_input_manager() const { return m_input_manager.get(); }
-    Wallpaper* get_wallpaper() const { return m_wallpaper.get(); }
-    Bar* get_bar() const { return m_bar.get(); }
-    Menu* get_menu() const { return m_menu.get(); }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
@@ -60,6 +52,7 @@ public:
     void add_layer_surface(std::unique_ptr<LayerSurface> surface);
     void remove_layer_surface(LayerSurface* surface);
     void arrange_layers(struct wlr_output* output);
+
     void focus_layer_surface(LayerSurface* surface);
     LayerSurface* get_focused_layer_surface() const { return m_focused_layer_surface; }
     const std::vector<std::unique_ptr<LayerSurface>>& get_layer_surfaces() const { return m_layer_surfaces; }
@@ -90,11 +83,9 @@ private:
     struct wlr_scene* m_scene = nullptr;
 
     struct wlr_scene_tree* m_layer_background_tree = nullptr;
-    struct wlr_scene_tree* m_bg_tree = nullptr;
     struct wlr_scene_tree* m_layer_bottom_tree = nullptr;
     struct wlr_scene_tree* m_workspaces_tree = nullptr;
     struct wlr_scene_tree* m_layer_top_tree = nullptr;
-    struct wlr_scene_tree* m_bar_tree = nullptr;
     struct wlr_scene_tree* m_layer_overlay_tree = nullptr;
 
     struct wlr_xdg_shell* m_xdg_shell = nullptr;
@@ -112,9 +103,6 @@ private:
     std::unique_ptr<OutputManager> m_output_manager;
     std::unique_ptr<WorkspaceManager> m_workspace_manager;
     std::unique_ptr<InputManager> m_input_manager;
-    std::unique_ptr<Wallpaper> m_wallpaper;
-    std::unique_ptr<Bar> m_bar;
-    std::unique_ptr<Menu> m_menu;
 
     std::vector<std::unique_ptr<View>> m_views;
     View* m_focused_view = nullptr;

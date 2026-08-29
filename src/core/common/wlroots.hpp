@@ -23,8 +23,6 @@
 #include <pixman.h>
 #include <xkbcommon/xkbcommon.h>
 #include <cairo.h>
-#include <pango/pangocairo.h>
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <drm_fourcc.h>
 
 #ifndef WLR_USE_UNSTABLE

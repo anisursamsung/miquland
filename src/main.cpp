@@ -15,18 +15,18 @@ static void handle_signal(int sig) {
 static void print_usage(const char* prog) {
     std::cout << "Usage: " << prog << " [options]\n\n"
               << "Options:\n"
-              << "  --no-bar               Start with the top status/menu bar hidden\n"
               << "  -s, --startup <cmd>    Execute startup command after compositor initializes\n"
               << "  -h, --help             Show this help message\n\n"
               << "Configuration File:\n"
               << "  ~/.config/biway/biway.conf\n\n"
               << "Keybindings:\n"
-              << "  Super + Return         Spawn terminal ($TERMINAL, foot, alacritty, kitty)\n"
               << "  Super + Space          Spawn application menu launcher\n"
-              << "  Super + B              Toggle top status/menu bar\n"
+              << "  Super + T              Spawn terminal\n"
+              << "  Super + L              Toggle tiling layout (Spiral / Stack)\n"
+              << "  Super + Return         Swap active window with main window\n"
               << "  Super + Q              Close active window\n"
               << "  Super + [1..9]         Switch to workspace 1..9\n"
-              << "  Super + Shift + Q      Exit biway compositor\n\n";
+              << "  Super + Shift + Q      Exit compositor\n\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -40,8 +40,6 @@ int main(int argc, char* argv[]) {
         if (arg == "-h" || arg == "--help") {
             print_usage(argv[0]);
             return 0;
-        } else if (arg == "--no-bar") {
-            biway::Config::get().set_bar_visible(false);
         } else if ((arg == "-s" || arg == "--startup") && i + 1 < argc) {
             startup_cmd = argv[++i];
         }
@@ -60,11 +58,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (!server.init()) {
-        std::cerr << "biway: failed to initialize server\n";
+        std::cerr << "Failed to initialize Wayland compositor" << std::endl;
         return 1;
     }
 
     server.run();
-
     return 0;
 }

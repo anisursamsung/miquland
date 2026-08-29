@@ -59,17 +59,20 @@ void Config::set_defaults() {
     m_keybindings.push_back({ mod, XKB_KEY_f, "firefox", "Super+F" });
     m_keybindings.push_back({ mod, XKB_KEY_y, "kitty -e yazi || foot -e yazi || yazi", "Super+Y" });
 
-    // Window Management
+    // Window Management & Layouts
     m_keybindings.push_back({ mod, XKB_KEY_q, "close", "Super+Q" });
-    m_keybindings.push_back({ mod, XKB_KEY_b, "toggle_bar", "Super+B" });
+    m_keybindings.push_back({ mod, XKB_KEY_l, "toggle_layout", "Super+L" });
+    m_keybindings.push_back({ mod, XKB_KEY_Return, "swap_main", "Super+Return" });
 
     // Switch focus between windows in active workspace
+    m_keybindings.push_back({ mod, XKB_KEY_j, "next_window", "Super+J" });
+    m_keybindings.push_back({ mod, XKB_KEY_k, "prev_window", "Super+K" });
     m_keybindings.push_back({ mod, XKB_KEY_1, "focus_win_1", "Super+1" });
     m_keybindings.push_back({ mod, XKB_KEY_2, "focus_win_2", "Super+2" });
-    m_keybindings.push_back({ mod, XKB_KEY_Left, "toggle_focus", "Super+Left" });
-    m_keybindings.push_back({ mod, XKB_KEY_Right, "toggle_focus", "Super+Right" });
-    m_keybindings.push_back({ mod, XKB_KEY_Up, "toggle_focus", "Super+Up" });
-    m_keybindings.push_back({ mod, XKB_KEY_Down, "toggle_focus", "Super+Down" });
+    m_keybindings.push_back({ mod, XKB_KEY_Left, "prev_window", "Super+Left" });
+    m_keybindings.push_back({ mod, XKB_KEY_Right, "next_window", "Super+Right" });
+    m_keybindings.push_back({ mod, XKB_KEY_Up, "prev_window", "Super+Up" });
+    m_keybindings.push_back({ mod, XKB_KEY_Down, "next_window", "Super+Down" });
 
     // Toggle between Horizontal (Left/Right) and Vertical (Top/Bottom) split
     m_keybindings.push_back({ mod_alt, XKB_KEY_space, "toggle_split", "Super+Alt+Space" });
@@ -313,8 +316,7 @@ void Config::ensure_default_files() {
     // Fallback check for critical default theme files if directory iteration was unavailable
     const std::vector<std::string> fallback_theme_files = {
         "light.conf", "dark.conf", "theme_mode.conf",
-        "darkmodescript.sh", "lightmodescript.sh",
-        "darkwallpaper.jpg", "lightwallpaper.png"
+        "darkmodescript.sh", "lightmodescript.sh"
     };
     for (const auto& file : fallback_theme_files) {
         std::string dest_path = theme_dir + "/" + file;
@@ -459,16 +461,6 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             if (!resolved_cmd.empty()) {
                 file_exec_once_cmds.push_back(resolved_cmd);
             }
-        } else if (key == "wallpaper") {
-            m_wallpaper_path = value;
-        } else if (key == "show_bar") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_show_bar = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "bar_height") {
-            try {
-                m_bar_height = std::stoi(value);
-            } catch (...) {}
         } else if (key == "tap_to_click") {
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -523,6 +515,14 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_space_between_windows = std::max(0, std::stoi(value));
             } catch (...) {}
+        } else if (key == "layout" || key == "tiling_layout" || key == "tiling_mode" || key == "layout_mode") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            if (lower == "stack" || lower == "master" || lower == "main") {
+                m_layout_mode = LayoutMode::Stack;
+            } else {
+                m_layout_mode = LayoutMode::Spiral;
+            }
         } else if (key == "screen_edge_padding" || key == "screen_padding" || key == "outer_gap") {
             try {
                 m_screen_edge_padding = std::max(0, std::stoi(value));
@@ -579,8 +579,6 @@ void Config::save() {
 
     file << "# biway configuration file\n\n";
     file << "[appearance]\n";
-    file << "show_bar = " << (m_show_bar ? "true" : "false") << "\n";
-    file << "bar_height = " << m_bar_height << "\n";
     file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
     file << "icon_theme = " << m_icon_theme << "\n\n";
 
@@ -593,6 +591,7 @@ void Config::save() {
     file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n\n";
 
     file << "[windows]\n";
+    file << "layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
     file << "space_between_windows = " << m_space_between_windows << "\n";

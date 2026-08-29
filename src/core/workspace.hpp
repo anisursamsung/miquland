@@ -22,7 +22,7 @@ public:
     size_t get_id() const { return m_id; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
 
-    bool can_accept_view() const { return m_tiled_views.size() < 2; }
+    bool can_accept_view() const { return true; }
     size_t view_count() const { return m_tiled_views.size(); }
     const std::vector<View*>& get_views() const { return m_tiled_views; }
     const std::vector<View*>& get_tiled_views() const { return m_tiled_views; }
@@ -41,11 +41,17 @@ public:
         m_split_mode = (m_split_mode == SplitMode::Horizontal) ? SplitMode::Vertical : SplitMode::Horizontal;
     }
 
+    void swap_with_main(View* view);
+    void swap_views(size_t idx1, size_t idx2);
+
     void recalculate_layout(const struct wlr_box& usable_box);
 
     View* get_view(size_t index) const;
 
 private:
+    void layout_spiral(int base_x, int base_y, int base_w, int base_h, int gap);
+    void layout_stack(int base_x, int base_y, int base_w, int base_h, int gap);
+
     Server* m_server = nullptr;
     size_t m_id = 1;
     struct wlr_scene_tree* m_scene_tree = nullptr;
@@ -75,6 +81,8 @@ public:
     void focus_next_view();
     void focus_prev_view();
     void focus_window_index(size_t index);
+    void swap_with_main();
+    void toggle_layout_mode();
     void toggle_active_split();
     void recalculate_layout();
 

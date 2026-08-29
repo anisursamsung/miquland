@@ -16,8 +16,6 @@ pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols>=1.24)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
-pkg_check_modules(PANGOCAIRO REQUIRED IMPORTED_TARGET pangocairo)
-pkg_check_modules(GDK_PIXBUF REQUIRED IMPORTED_TARGET gdk-pixbuf-2.0)
 pkg_check_modules(LIBINPUT REQUIRED IMPORTED_TARGET libinput)
 pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb xcb-icccm xcb-ewmh)
 
@@ -60,19 +58,7 @@ add_executable(biway
     src/core/output.cpp
     src/core/input/input.cpp
     src/core/config/config.cpp
-    src/toolkit/render/cairo_buffer.cpp
-    src/toolkit/layout/row_view.cpp
-    src/toolkit/layout/column_view.cpp
-    src/toolkit/layout/table_view.cpp
-    src/toolkit/widgets/button_view.cpp
-    src/toolkit/widgets/card_view.cpp
-    src/toolkit/widgets/text_view.cpp
-    src/toolkit/widgets/text_input_view.cpp
-    src/toolkit/widgets/image_view.cpp
-    src/toolkit/widgets/cell_item_view.cpp
-    src/shell/bar/bar.cpp
-    src/shell/menu/menu.cpp
-    src/shell/wallpaper/wallpaper.cpp
+    src/core/common/cairo_buffer.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
@@ -82,16 +68,12 @@ add_executable(biway
 target_include_directories(biway PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/toolkit
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/shell
     ${CMAKE_CURRENT_BINARY_DIR}
     ${WLROOTS_INCLUDE_DIRS}
     ${WAYLAND_SERVER_INCLUDE_DIRS}
     ${XKBCOMMON_INCLUDE_DIRS}
     ${PIXMAN_INCLUDE_DIRS}
     ${CAIRO_INCLUDE_DIRS}
-    ${PANGOCAIRO_INCLUDE_DIRS}
-    ${GDK_PIXBUF_INCLUDE_DIRS}
     ${LIBINPUT_INCLUDE_DIRS}
     ${XCB_INCLUDE_DIRS}
 )
@@ -102,8 +84,6 @@ target_link_libraries(biway PRIVATE
     PkgConfig::XKBCOMMON
     PkgConfig::PIXMAN
     PkgConfig::CAIRO
-    PkgConfig::PANGOCAIRO
-    PkgConfig::GDK_PIXBUF
     PkgConfig::LIBINPUT
     PkgConfig::XCB
 )
@@ -116,9 +96,3 @@ target_compile_options(biway PRIVATE
 # Installation targets
 include(GNUInstallDirs)
 install(TARGETS biway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-
-
-install(FILES assets/biway.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
-install(DIRECTORY assets/theme DESTINATION ${CMAKE_INSTALL_DATADIR}/biway)
-install(FILES assets/biway.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)

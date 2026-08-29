@@ -22,14 +22,6 @@ public:
     void load();
     void save();
 
-    const std::string& get_wallpaper_path() const { return m_wallpaper_path; }
-    void set_wallpaper_path(const std::string& path) { m_wallpaper_path = path; }
-
-    bool is_bar_visible() const { return m_show_bar; }
-    void set_bar_visible(bool visible) { m_show_bar = visible; }
-
-    int get_bar_height() const { return m_bar_height; }
-
     bool is_tap_to_click_enabled() const { return m_tap_to_click; }
     void set_tap_to_click_enabled(bool enabled) { m_tap_to_click = enabled; }
 
@@ -97,6 +89,15 @@ public:
     const std::string& get_theme_source() const { return m_theme_source; }
     void set_theme_source(const std::string& src) { m_theme_source = src; }
 
+    enum class LayoutMode {
+        Spiral, // Recursive binary space partitioning (Fibonacci / BSP)
+        Stack   // Main prominent window on left, vertical stack on right
+    };
+
+    LayoutMode get_layout_mode() const { return m_layout_mode; }
+    void set_layout_mode(LayoutMode mode) { m_layout_mode = mode; }
+    void toggle_layout_mode() { m_layout_mode = (m_layout_mode == LayoutMode::Spiral) ? LayoutMode::Stack : LayoutMode::Spiral; }
+
     int get_space_between_windows() const { return m_space_between_windows; }
     void set_space_between_windows(int space) { m_space_between_windows = space; }
 
@@ -126,9 +127,6 @@ private:
     std::vector<std::string> m_exec_commands;
     std::vector<std::string> m_exec_once_commands;
 
-    std::string m_wallpaper_path;
-    bool m_show_bar = true;
-    int m_bar_height = 30;
     bool m_tap_to_click = true;
     bool m_natural_scroll = true;
     std::string m_icon_theme = "Papirus";
@@ -139,6 +137,7 @@ private:
     int m_window_border_radius = 8;
     int m_space_between_windows = 8;
     int m_screen_edge_padding = 10;
+    LayoutMode m_layout_mode = LayoutMode::Spiral;
 
     // Material Design 3 Palette
     std::string m_color_primary = "#0066ff";

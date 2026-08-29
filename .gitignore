@@ -1,4 +1,7 @@
 build/
+Build/
+build_*/
+biway
 .cache/
 compile_commands.json
 git_token_password

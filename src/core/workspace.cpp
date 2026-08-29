@@ -2,40 +2,43 @@
 #include "core/server.hpp"
 #include "core/view.hpp"
 #include "core/output.hpp"
-#include "shell/bar/bar.hpp"
 #include "core/config/config.hpp"
 #include <algorithm>
+#include <iostream>
 
 namespace biway {
 
 Workspace::Workspace(Server* server, size_t id)
     : m_server(server), m_id(id)
 {
-    m_scene_tree = wlr_scene_tree_create(server->get_workspaces_tree());
-    set_visible(false);
+    m_scene_tree = wlr_scene_tree_create(m_server->get_workspaces_tree());
+    wlr_scene_node_set_enabled(&m_scene_tree->node, false);
 }
 
 Workspace::~Workspace() {
-    // Scene tree nodes are cleaned up automatically when destroyed
+    if (m_scene_tree) {
+        wlr_scene_node_destroy(&m_scene_tree->node);
+    }
 }
 
 bool Workspace::add_view(View* view) {
-    if (contains_view(view)) {
+    if (!view) return false;
+
+    if (view->is_dialog()) {
+        if (std::find(m_floating_views.begin(), m_floating_views.end(), view) == m_floating_views.end()) {
+            m_floating_views.push_back(view);
+            view->set_workspace(this);
+            return true;
+        }
         return false;
     }
 
-    if (view->is_dialog()) {
-        m_floating_views.push_back(view);
+    if (std::find(m_tiled_views.begin(), m_tiled_views.end(), view) == m_tiled_views.end()) {
+        m_tiled_views.push_back(view);
         view->set_workspace(this);
         return true;
     }
-
-    if (m_tiled_views.size() >= 2) {
-        return false;
-    }
-    m_tiled_views.push_back(view);
-    view->set_workspace(this);
-    return true;
+    return false;
 }
 
 bool Workspace::remove_view(View* view) {
@@ -75,6 +78,96 @@ View* Workspace::get_view(size_t index) const {
     return nullptr;
 }
 
+void Workspace::swap_with_main(View* view) {
+    if (!view || m_tiled_views.size() < 2) return;
+    auto it = std::find(m_tiled_views.begin(), m_tiled_views.end(), view);
+    if (it != m_tiled_views.end()) {
+        size_t idx = std::distance(m_tiled_views.begin(), it);
+        if (idx > 0) {
+            std::swap(m_tiled_views[0], m_tiled_views[idx]);
+        }
+    }
+}
+
+void Workspace::swap_views(size_t idx1, size_t idx2) {
+    if (idx1 < m_tiled_views.size() && idx2 < m_tiled_views.size()) {
+        std::swap(m_tiled_views[idx1], m_tiled_views[idx2]);
+    }
+}
+
+void Workspace::layout_spiral(int base_x, int base_y, int base_w, int base_h, int gap) {
+    size_t n = m_tiled_views.size();
+    if (n == 0) return;
+    if (n == 1) {
+        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
+        return;
+    }
+
+    int cur_x = base_x;
+    int cur_y = base_y;
+    int cur_w = base_w;
+    int cur_h = base_h;
+
+    for (size_t i = 0; i < n; ++i) {
+        if (i == n - 1) {
+            m_tiled_views[i]->set_geometry(cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h));
+            break;
+        }
+
+        bool split_horizontal = (i % 2 == 0);
+        if (m_split_mode == SplitMode::Vertical) {
+            split_horizontal = !split_horizontal;
+        }
+
+        if (split_horizontal) {
+            int total_w = std::max(40, cur_w - gap);
+            int half_w = total_w / 2;
+            int rest_w = total_w - half_w;
+
+            m_tiled_views[i]->set_geometry(cur_x, cur_y, half_w, cur_h);
+            cur_x += half_w + gap;
+            cur_w = rest_w;
+        } else {
+            int total_h = std::max(40, cur_h - gap);
+            int half_h = total_h / 2;
+            int rest_h = total_h - half_h;
+
+            m_tiled_views[i]->set_geometry(cur_x, cur_y, cur_w, half_h);
+            cur_y += half_h + gap;
+            cur_h = rest_h;
+        }
+    }
+}
+
+void Workspace::layout_stack(int base_x, int base_y, int base_w, int base_h, int gap) {
+    size_t n = m_tiled_views.size();
+    if (n == 0) return;
+    if (n == 1) {
+        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
+        return;
+    }
+
+    int total_w = std::max(50, base_w - gap);
+    int master_w = static_cast<int>(total_w * 0.55);
+    int stack_w = total_w - master_w;
+
+    m_tiled_views[0]->set_geometry(base_x, base_y, master_w, base_h);
+
+    size_t stack_count = n - 1;
+    int total_stack_gaps = static_cast<int>(stack_count - 1) * gap;
+    int avail_stack_h = std::max(20, base_h - total_stack_gaps);
+    int item_h = avail_stack_h / static_cast<int>(stack_count);
+
+    int cur_y = base_y;
+    int stack_x = base_x + master_w + gap;
+
+    for (size_t i = 1; i < n; ++i) {
+        int win_h = (i == n - 1) ? (base_y + base_h - cur_y) : item_h;
+        m_tiled_views[i]->set_geometry(stack_x, cur_y, stack_w, std::max(20, win_h));
+        cur_y += win_h + gap;
+    }
+}
+
 void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     int pad = Config::get().get_screen_edge_padding();
     int gap = Config::get().get_space_between_windows();
@@ -84,27 +177,10 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     int base_w = std::max(50, usable_box.width - 2 * pad);
     int base_h = std::max(50, usable_box.height - 2 * pad);
 
-    if (m_tiled_views.size() == 1) {
-        // 1 Window: takes 100% padded usable screen
-        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
-    } else if (m_tiled_views.size() == 2) {
-        if (m_split_mode == SplitMode::Horizontal) {
-            // Horizontal split: 50% left, 50% right with gap between windows
-            int total_w = std::max(50, base_w - gap);
-            int half_w = total_w / 2;
-            int rest_w = total_w - half_w;
-
-            m_tiled_views[0]->set_geometry(base_x, base_y, half_w, base_h);
-            m_tiled_views[1]->set_geometry(base_x + half_w + gap, base_y, rest_w, base_h);
-        } else {
-            // Vertical split: 50% top, 50% bottom with gap between windows
-            int total_h = std::max(50, base_h - gap);
-            int half_h = total_h / 2;
-            int rest_h = total_h - half_h;
-
-            m_tiled_views[0]->set_geometry(base_x, base_y, base_w, half_h);
-            m_tiled_views[1]->set_geometry(base_x, base_y + half_h + gap, base_w, rest_h);
-        }
+    if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
+        layout_stack(base_x, base_y, base_w, base_h, gap);
+    } else {
+        layout_spiral(base_x, base_y, base_w, base_h, gap);
     }
 
     int bw = Config::get().get_window_border_width();
@@ -159,7 +235,6 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 WorkspaceManager::WorkspaceManager(Server* server)
     : m_server(server)
 {
-    // Start with workspace 1 active
     Workspace* ws1 = get_or_create_workspace(1);
     ws1->set_visible(true);
 }
@@ -179,11 +254,9 @@ Workspace* WorkspaceManager::get_or_create_workspace(size_t id) {
     if (it != m_workspaces.end()) {
         return it->second.get();
     }
+
     auto ws = std::make_unique<Workspace>(m_server, id);
     Workspace* ptr = ws.get();
-    if (id == m_active_workspace_id) {
-        ptr->set_visible(true);
-    }
     m_workspaces[id] = std::move(ws);
     return ptr;
 }
@@ -193,7 +266,7 @@ Workspace* WorkspaceManager::get_active_workspace() {
 }
 
 void WorkspaceManager::switch_to_workspace(size_t id) {
-    if (id == m_active_workspace_id || id == 0) return;
+    if (id == 0 || id == m_active_workspace_id) return;
 
     Workspace* current = get_workspace(m_active_workspace_id);
     if (current) {
@@ -201,19 +274,15 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
     }
 
     m_active_workspace_id = id;
-    Workspace* next = get_or_create_workspace(id);
-    next->set_visible(true);
+    Workspace* target = get_or_create_workspace(id);
+    target->set_visible(true);
 
     recalculate_layout();
 
-    if (next->view_count() > 0) {
-        next->get_view(0)->focus();
+    if (target->view_count() > 0) {
+        target->get_view(0)->focus();
     } else {
         m_server->set_focused_view(nullptr);
-    }
-
-    if (m_server->get_bar()) {
-        m_server->get_bar()->schedule_redraw();
     }
 }
 
@@ -241,23 +310,8 @@ void WorkspaceManager::add_view_auto(View* view) {
     }
 
     Workspace* active_ws = get_active_workspace();
-    if (active_ws->can_accept_view()) {
-        active_ws->add_view(view);
-        recalculate_layout();
-    } else {
-        // Find next workspace with available slot
-        size_t next_id = m_active_workspace_id + 1;
-        while (true) {
-            Workspace* candidate = get_or_create_workspace(next_id);
-            if (candidate->can_accept_view()) {
-                switch_to_workspace(next_id);
-                candidate->add_view(view);
-                recalculate_layout();
-                break;
-            }
-            next_id++;
-        }
-    }
+    active_ws->add_view(view);
+    recalculate_layout();
 }
 
 void WorkspaceManager::remove_view(View* view) {
@@ -284,17 +338,15 @@ void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
     if (!current || current->get_id() == target_ws_id) return;
 
     Workspace* target = get_or_create_workspace(target_ws_id);
-    if (target->can_accept_view()) {
-        current->remove_view(view);
-        target->add_view(view);
-        recalculate_layout();
+    current->remove_view(view);
+    target->add_view(view);
+    recalculate_layout();
 
-        if (current->is_visible()) {
-            if (current->view_count() > 0) {
-                current->get_view(0)->focus();
-            } else {
-                m_server->set_focused_view(nullptr);
-            }
+    if (current->is_visible()) {
+        if (current->view_count() > 0) {
+            current->get_view(0)->focus();
+        } else {
+            m_server->set_focused_view(nullptr);
         }
     }
 }
@@ -304,15 +356,33 @@ void WorkspaceManager::focus_next_view() {
     if (!ws || ws->view_count() < 2) return;
 
     View* cur = m_server->get_focused_view();
-    if (cur == ws->get_view(0)) {
-        ws->get_view(1)->focus();
-    } else {
-        ws->get_view(0)->focus();
+    size_t count = ws->view_count();
+    size_t cur_idx = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (ws->get_view(i) == cur) {
+            cur_idx = i;
+            break;
+        }
     }
+    size_t next_idx = (cur_idx + 1) % count;
+    ws->get_view(next_idx)->focus();
 }
 
 void WorkspaceManager::focus_prev_view() {
-    focus_next_view();
+    Workspace* ws = get_active_workspace();
+    if (!ws || ws->view_count() < 2) return;
+
+    View* cur = m_server->get_focused_view();
+    size_t count = ws->view_count();
+    size_t cur_idx = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (ws->get_view(i) == cur) {
+            cur_idx = i;
+            break;
+        }
+    }
+    size_t prev_idx = (cur_idx == 0) ? (count - 1) : (cur_idx - 1);
+    ws->get_view(prev_idx)->focus();
 }
 
 void WorkspaceManager::focus_window_index(size_t index) {
@@ -325,6 +395,22 @@ void WorkspaceManager::focus_window_index(size_t index) {
     }
 }
 
+void WorkspaceManager::swap_with_main() {
+    Workspace* ws = get_active_workspace();
+    if (!ws || ws->view_count() < 2) return;
+    View* cur = m_server->get_focused_view();
+    if (cur) {
+        ws->swap_with_main(cur);
+        recalculate_layout();
+        cur->focus();
+    }
+}
+
+void WorkspaceManager::toggle_layout_mode() {
+    Config::get().toggle_layout_mode();
+    recalculate_layout();
+}
+
 void WorkspaceManager::toggle_active_split() {
     Workspace* ws = get_active_workspace();
     if (ws) {
@@ -334,24 +420,14 @@ void WorkspaceManager::toggle_active_split() {
 }
 
 void WorkspaceManager::recalculate_layout() {
-    struct wlr_box geom = m_server->get_output_manager()->get_primary_geometry();
+    struct wlr_box geom = m_server->get_output_manager()->get_primary_usable_geometry();
     if (geom.width <= 0 || geom.height <= 0) {
         geom = { .x = 0, .y = 0, .width = 1920, .height = 1080 };
-    }
-
-    if (m_server->get_bar() && m_server->get_bar()->is_visible()) {
-        int bar_h = m_server->get_bar()->get_height();
-        geom.y += bar_h;
-        geom.height -= bar_h;
     }
 
     Workspace* active_ws = get_active_workspace();
     if (active_ws) {
         active_ws->recalculate_layout(geom);
-    }
-
-    if (m_server->get_bar()) {
-        m_server->get_bar()->schedule_redraw();
     }
 }
 

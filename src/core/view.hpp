@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/common/util.hpp"
-#include "toolkit/render/cairo_buffer.hpp"
+#include "core/common/cairo_buffer.hpp"
 #include <string>
 #include <vector>
 #include <memory>
