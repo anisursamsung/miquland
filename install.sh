@@ -13,12 +13,22 @@ if [ "${EUID}" -ne 0 ]; then
     exec sudo bash "$0" "$@"
 fi
 
-TARGET_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "$USER")}"
-TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Locate repo directories
+if [ -d "$SCRIPT_DIR/src/core" ]; then
+    MIQULAND_DIR="$SCRIPT_DIR"
+    TOOLKIT_DIR="$BASE_DIR/miqutoolkit"
+    LAUNCHER_DIR="$BASE_DIR/miqulauncher"
+else
+    MIQULAND_DIR="$SCRIPT_DIR/miquland"
+    TOOLKIT_DIR="$SCRIPT_DIR/miqutoolkit"
+    LAUNCHER_DIR="$SCRIPT_DIR/miqulauncher"
+fi
 
 echo "=========================================================="
 echo "  Miquland Ecosystem Installation & System Cleanup"
-echo "  Target User: $TARGET_USER ($TARGET_HOME)"
 echo "=========================================================="
 
 # ------------------------------------------------------------------------------
@@ -35,24 +45,16 @@ rm -f /usr/lib/pkgconfig/biwaytoolkit.pc /usr/local/lib/pkgconfig/biwaytoolkit.p
 rm -rf /usr/share/biway /usr/local/share/biway /etc/biway
 rm -f /usr/share/wayland-sessions/biway.desktop
 
-# Clean legacy user-local caches and symlinks
-rm -f "$TARGET_HOME/biway" 2>/dev/null || true
-rm -rf "$TARGET_HOME/.config/biway" 2>/dev/null || true
-rm -f "$TARGET_HOME/.local/bin/biway"* 2>/dev/null || true
-rm -f "$TARGET_HOME/.local/lib/libbiway"* 2>/dev/null || true
-rm -rf "$TARGET_HOME/.local/include/biway"* 2>/dev/null || true
-rm -f "$TARGET_HOME/.local/lib/pkgconfig/biway"* 2>/dev/null || true
-
 ldconfig || true
-echo "    ✓ Legacy biway artifacts completely cleaned."
+echo "    ✓ Legacy biway system artifacts cleaned."
 
 # ------------------------------------------------------------------------------
 # STEP 2: Build & Install Miqutoolkit
 # ------------------------------------------------------------------------------
 echo ""
 echo "==> [2/4] Building and installing miqutoolkit (Declarative C++20 UI Library)..."
-if [ -d "$TARGET_HOME/miqutoolkit" ]; then
-    cd "$TARGET_HOME/miqutoolkit"
+if [ -d "$TOOLKIT_DIR" ]; then
+    cd "$TOOLKIT_DIR"
     rm -rf build
     cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     cmake --build build -j"$(nproc)"
@@ -60,7 +62,7 @@ if [ -d "$TARGET_HOME/miqutoolkit" ]; then
     ldconfig || true
     echo "    ✓ miqutoolkit successfully installed to /usr/lib and /usr/include/miqutoolkit."
 else
-    echo "    ✗ ERROR: Directory $TARGET_HOME/miqutoolkit not found!" >&2
+    echo "    ✗ ERROR: Directory $TOOLKIT_DIR not found!" >&2
     exit 1
 fi
 
@@ -69,15 +71,15 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo "==> [3/4] Building and installing miqulauncher (Application Menu Launcher)..."
-if [ -d "$TARGET_HOME/miqulauncher" ]; then
-    cd "$TARGET_HOME/miqulauncher"
+if [ -d "$LAUNCHER_DIR" ]; then
+    cd "$LAUNCHER_DIR"
     rm -rf build
     cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     cmake --build build -j"$(nproc)"
     cmake --install build
     echo "    ✓ miqulauncher successfully installed to /usr/bin/miqulauncher."
 else
-    echo "    ✗ ERROR: Directory $TARGET_HOME/miqulauncher not found!" >&2
+    echo "    ✗ ERROR: Directory $LAUNCHER_DIR not found!" >&2
     exit 1
 fi
 
@@ -86,30 +88,18 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo "==> [4/4] Building and installing miquland (Wayland Compositor)..."
-if [ -d "$TARGET_HOME/miquland" ]; then
-    cd "$TARGET_HOME/miquland"
+if [ -d "$MIQULAND_DIR" ]; then
+    cd "$MIQULAND_DIR"
     rm -rf build
     cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     cmake --build build -j"$(nproc)"
     cmake --install build
     echo "    ✓ miquland successfully installed to /usr/bin/miquland."
+    echo "    ✓ Assets & default themes installed to /usr/share/miquland/."
     echo "    ✓ Session entry installed to /usr/share/wayland-sessions/miquland.desktop."
 else
-    echo "    ✗ ERROR: Directory $TARGET_HOME/miquland not found!" >&2
+    echo "    ✗ ERROR: Directory $MIQULAND_DIR not found!" >&2
     exit 1
-fi
-
-# ------------------------------------------------------------------------------
-# User Configuration Setup
-# ------------------------------------------------------------------------------
-CONFIG_DIR="$TARGET_HOME/.config/miquland"
-if [ ! -f "$CONFIG_DIR/miquland.conf" ]; then
-    echo ""
-    echo "==> Initializing default user configuration at $CONFIG_DIR..."
-    mkdir -p "$CONFIG_DIR"
-    cp -r "$TARGET_HOME/miquland/assets/"* "$CONFIG_DIR/"
-    chown -R "$TARGET_USER:$TARGET_USER" "$CONFIG_DIR"
-    echo "    ✓ Default configuration installed to $CONFIG_DIR"
 fi
 
 echo ""
@@ -119,6 +109,6 @@ echo "=========================================================="
 echo "  • Compositor: /usr/bin/miquland"
 echo "  • Launcher:   /usr/bin/miqulauncher"
 echo "  • Toolkit:    /usr/lib/libmiqutoolkit.so"
-echo "  • Config:     $CONFIG_DIR/miquland.conf"
+echo "  • Assets:     /usr/share/miquland/"
 echo "  • Session:    Select 'Miquland' in your Display Manager"
 echo "=========================================================="
