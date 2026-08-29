@@ -1,101 +1,174 @@
-# Miquland
+# 🌌 Miquland
 
-A modern, fast, dynamic tiling Wayland compositor written in C++ using **wlroots**.
-
-Miquland is designed to deliver a smooth, high-performance desktop experience out of the box with intelligent dynamic layouts, standard Layer Shell panel integration, an Android-inspired cascading theme system, and rich Wayland/XWayland compatibility.
+A modern, lightweight, dynamic tiling Wayland compositor built with **wlroots**, featuring live configuration hot-reloading, Material-inspired dynamic theming, and an integrated companion ecosystem.
 
 ---
 
-## Key Features
+## ✨ Features
 
-### 🪟 Intelligent Dynamic Tiling (`Spiral` & `Stack`)
-- **`Spiral` Layout (Binary Space Partitioning):** Recursively subdivides available space in an alternating spiral, maximizing screen utilization for any number of windows.
-- **`Stack` Layout (Main & Stack):** Keeps a prominent main window on the left, with all secondary windows neatly stacked in a vertical column on the right.
-- **Live Layout Switching:** Instantly switch between `Spiral` and `Stack` layouts with `Super + L`.
-- **Main Window Swap:** Promote any focused window to the primary position instantly with `Super + Return`.
-- **Smart Fullscreen:** Single window automatically expands to use the full padded screen area.
-- **Orientation Control:** Toggle horizontal and vertical split orientation on the fly with `Super + Alt + Space`.
+### 🪟 Intelligent Dynamic Tiling
+- **`Spiral` Layout (Binary Space Partitioning):** Recursively subdivides available space in an alternating spiral pattern, maximizing screen real estate.
+- **`Stack` Layout (Master + Stack):** Keeps a prominent primary window on the left with secondary windows neatly stacked in a vertical column.
+- **Instant Layout Toggle:** Switch between `Spiral` and `Stack` layouts on the fly (`Super + L`).
+- **Main Window Swap:** Promote any focused window to the primary position instantly (`Super + Return`).
+- **Split Orientation Control:** Toggle between horizontal and vertical split orientations (`Super + Alt + Space`).
+- **Smart Window Aesthetics:** Customizable rounded corners, inner gaps, and outer edge padding.
 
-### 🎨 Cascading Theme Engine (Android-Style)
-- **Live Inotify Hot-Reload:** Configuration and theme files in `~/.config/miquland/` and `~/.config/miquland/theme/` are monitored in real time—changes apply instantly without restarting the compositor.
-- **Modular Sourcing:** Built-in Light and Dark themes driven by `source = theme/theme_mode.conf`. Easily swap color palettes, border widths, and corner radii through modular config files.
-- **Customizable Aesthetics:** Control active/inactive border colors, border thickness, corner rounding radius, window gaps, and edge padding.
+### 🎨 Live Theming & Hot Reloading
+- **Zero-Restart Reloading (`inotify`):** Changes to `miquland.conf` or theme files are applied immediately without restarting the session.
+- **Dynamic Theme Modes:** Switch seamlessly between dark and light modes via `theme/theme_mode.conf`.
+- **Material Design 3 Palette:** Unified styling across active/inactive window borders, cards, and UI components.
 
-### 🐚 Native Shell & External Panels Integration
-- **Full Layer Shell Support (`wlr-layer-shell`):** Works natively with any modern bar, panel, or dock (Waybar, Eww, etc.) with automatic exclusive zone layout compensation.
-- **Companion Application Menu (`miqulauncher`):** Clean, keyboard- and mouse-navigable launcher accessible via `Super + Space` with icon theme support (Papirus, Adwaita, Tela, etc.).
-- **Wallpaper Independence:** Seamlessly integrates with standard background managers (`swaybg`, `swww`, `hyprpaper`, `mpvpaper`).
-
-### ⚡ Wayland Native & Compatibility
-- **XWayland Integration:** Seamless support for legacy X11 applications.
-- **Foreign Toplevel Management (`wlr-foreign-toplevel`):** Full integration with external taskbars, pagers, and window switchers.
-- **Touchpad Gestures:** Built-in 3-finger swipe to switch workspaces, natural scrolling option, and tap-to-click.
+### ⚡ Wayland Native & Performance
+- Built on top of **wlroots** and modern **Wayland protocols**.
+- **XWayland Support:** Seamless compatibility for legacy X11 applications.
+- **Multi-Workspace Navigation:** Independent workspaces (1–9) with fast keyboard switching.
+- **Input Customization:** Native support for touchpad tap-to-click and natural scrolling.
 
 ---
 
-## Default Keybindings
+## 🧩 The Miquland Ecosystem
 
-### System & Reserved
-| Keybinding | Action | Description |
-|---|---|---|
-| `Super + Shift + Q` | `exit` | Safely exit Miquland compositor (*System reserved*) |
-| `Super + T` | `terminal` | Launch configured terminal (*System reserved*) |
+Miquland is barebone by design and works seamlessly with its companion native tools:
 
-### Application Launchers (Configurable)
-| Keybinding | Action | Description |
-|---|---|---|
-| `Super + Space` | `miqulauncher` | Launch application menu (`miqulauncher`) |
-| `Super + F` | `firefox` | Launch web browser |
-| `Super + E` | `file_manager` | Launch file manager |
-
-### Window & Layout Management
-| Keybinding | Action | Description |
-|---|---|---|
-| `Super + Q` | `close` | Close focused window |
-| `Super + L` | `toggle_layout` | Switch between `Spiral` and `Stack` tiling layouts |
-| `Super + Return` | `swap_main` | Swap focused window with primary / main window |
-| `Super + J` / `Super + Down` | `next_window` | Focus next window |
-| `Super + K` / `Super + Up` | `prev_window` | Focus previous window |
-| `Super + Alt + Space` | `toggle_split` | Toggle horizontal / vertical split direction |
-
-### Workspaces
-| Keybinding | Action | Description |
-|---|---|---|
-| `Super + Shift + Left` | `prev_ws` | Switch to previous workspace |
-| `Super + Shift + Right` | `next_ws` | Switch to next workspace |
-| `Super + Shift + [1-9]` | `ws_[1-9]` | Jump directly to workspace 1 through 9 |
+| Component | Directory | Description |
+| :--- | :--- | :--- |
+| **`miquland`** | `miquland/` | Core dynamic tiling Wayland compositor |
+| **`miqutoolkit`** | `miqutoolkit/` | Declarative, lightweight C++20 Cairo/Pango UI framework |
+| **`miqulauncher`** | `miqulauncher/` | Fast, layer-shell application launcher built with Miqutoolkit |
 
 ---
 
-## Installation Guide
+## 🚀 Installation
 
-### 1. Install Dependencies
+### 1. Install Dependencies (Arch Linux)
 
 ```bash
 sudo pacman -S --needed \
     base-devel cmake git pkgconf \
     wlroots wayland wayland-protocols libxkbcommon pixman \
-    cairo libinput \
+    cairo libinput pango \
     libxcb xcb-util-wm xcb-util-image
 ```
 
-### 2. Build and Install
+### 2. Build & Install via `make.sh`
 
+Each component includes a `make.sh` script for building and installing to `/usr`:
+
+#### Step A: Build & Install `miqutoolkit` (Required for launcher)
 ```bash
-cd ~/miquland
+cd miqutoolkit
+sudo ./make.sh
+```
+
+#### Step B: Build & Install `miqulauncher` (Application menu)
+```bash
+cd miqulauncher
+sudo ./make.sh
+```
+
+#### Step C: Build & Install `miquland` (Compositor)
+```bash
+cd miquland
 sudo ./make.sh
 ```
 
 `make.sh` automatically installs:
-- The compositor binary (`/usr/bin/miquland`)
-- Default themes and configuration files to `/usr/share/miquland/` and `~/.config/miquland/`
-- Wayland session desktop entry to `/usr/share/wayland-sessions/miquland.desktop` for login managers (SDDM, GDM, LightDM).
+- The compositor binary to `/usr/bin/miquland`
+- Default templates and themes to `/usr/share/miquland/` (copied to `~/.config/miquland/` on first launch)
+- Wayland session entry to `/usr/share/wayland-sessions/miquland.desktop` for display managers (SDDM, GDM, LightDM, etc.)
 
 ---
 
-## Ecosystem Companion Tools
-- **Toolkit & Launcher:** `miqutoolkit` & `miqulauncher`.
-- **Clipboard Management:** `wl-clipboard` and `wl-clip-persist`.
-- **Notifications:** `dunst` or `mako`.
-- **Terminal:** `kitty`, `foot`, `alacritty`, or `wezterm`.
-- **Icon Theme:** `papirus-icon-theme` or `tela-circle-icon-theme`.
+## ⌨️ Default Keybindings
+
+### 🔒 System Reserved
+| Keybinding | Action |
+| :--- | :--- |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>Q</kbd> | Exit Miquland compositor |
+| <kbd>Super</kbd> + <kbd>T</kbd> | Launch default terminal (`$TERMINAL` or `kitty`/`foot`/`alacritty`) |
+
+### 🚀 Applications & Window Management
+| Keybinding | Action |
+| :--- | :--- |
+| <kbd>Super</kbd> + <kbd>Space</kbd> | Launch Application Menu (`miqulauncher`) |
+| <kbd>Super</kbd> + <kbd>F</kbd> | Launch Web Browser (`firefox`) |
+| <kbd>Super</kbd> + <kbd>E</kbd> | Launch File Manager (`kitty -e yazi`) |
+| <kbd>Super</kbd> + <kbd>Q</kbd> | Close active window |
+| <kbd>Super</kbd> + <kbd>L</kbd> | Toggle tiling layout (`Spiral` ↔ `Stack`) |
+| <kbd>Super</kbd> + <kbd>Return</kbd> | Swap focused window with master/main position |
+| <kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd> | Toggle split orientation (Horizontal ↔ Vertical) |
+
+### 🧭 Navigation & Workspaces
+| Keybinding | Action |
+| :--- | :--- |
+| <kbd>Super</kbd> + <kbd>J</kbd> / <kbd>K</kbd> / <kbd>Arrows</kbd> | Focus Next / Previous window |
+| <kbd>Super</kbd> + <kbd>1</kbd> / <kbd>2</kbd> | Focus Window 1 / Window 2 |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd> | Switch to Previous / Next Workspace |
+| <kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>1..9</kbd> | Switch directly to Workspace 1–9 |
+
+---
+
+## ⚙️ Configuration & Dynamic Theming
+
+On first run, Miquland automatically generates the default configuration structure in `~/.config/miquland/`:
+
+```
+~/.config/miquland/
+├── miquland.conf            # Main compositor settings & keybindings
+└── theme/
+    ├── theme_mode.conf      # Theme mode switcher
+    ├── dark.conf            # Material Dark color palette
+    ├── light.conf           # Material Light color palette
+    ├── darkmodescript.sh    # Script executed on dark mode switch
+    └── lightmodescript.sh   # Script executed on light mode switch
+```
+
+### Example `miquland.conf`
+```ini
+# Autostart applications
+exec_once = waybar &
+exec_once = dunst &
+
+# Window Layout & Padding
+[windows]
+layout = spiral
+window_border_width = 3
+window_border_radius = 20
+space_between_windows = 10
+screen_edge_padding = 20
+
+# Input Settings
+[input]
+tap_to_click = true
+natural_scroll = false
+
+# Theme Sourcing (Hot Reload Enabled)
+[theme]
+source = ~/.config/miquland/theme/theme_mode.conf
+```
+
+### Switching Themes Live
+You can switch themes on the fly without restarting the compositor:
+
+- **Switch to Light Mode:**
+  ```bash
+  echo "source = theme/light.conf" > ~/.config/miquland/theme/theme_mode.conf
+  ```
+- **Switch to Dark Mode:**
+  ```bash
+  echo "source = theme/dark.conf" > ~/.config/miquland/theme/theme_mode.conf
+  ```
+
+---
+
+## 💡 Recommended Desktop Setup
+
+Since Miquland focuses purely on window management, combine it with standard Wayland utilities:
+- **Terminal:** `kitty`, `foot`, `alacritty`
+- **Application Launcher:** `miqulauncher` (native)
+- **Status Bar:** `waybar`
+- **Wallpaper:** `swaybg` or `hyprpaper`
+- **Notifications:** `dunst` or `mako`
+
+
