@@ -82,7 +82,7 @@ sudo pacman -S --needed \
 ### 2. Build and Install
 
 ```bash
-cd ~/biway # (or ~/miquland)
+cd ~/miquland # (or ~/biway)
 sudo ./make.sh
 ```
 
