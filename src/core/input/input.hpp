@@ -35,10 +35,22 @@ private:
  
     static void handle_selection_destroy(struct wl_listener* listener, void* data);
 
-    // Touchpad swipe gesture handlers
+    // Touchpad swipe & pinch gesture handlers
     static void handle_cursor_swipe_begin(struct wl_listener* listener, void* data);
     static void handle_cursor_swipe_update(struct wl_listener* listener, void* data);
     static void handle_cursor_swipe_end(struct wl_listener* listener, void* data);
+    static void handle_cursor_pinch_begin(struct wl_listener* listener, void* data);
+    static void handle_cursor_pinch_update(struct wl_listener* listener, void* data);
+    static void handle_cursor_pinch_end(struct wl_listener* listener, void* data);
+    static void handle_cursor_hold_begin(struct wl_listener* listener, void* data);
+    static void handle_cursor_hold_end(struct wl_listener* listener, void* data);
+
+    // Touchscreen handlers
+    static void handle_cursor_touch_down(struct wl_listener* listener, void* data);
+    static void handle_cursor_touch_up(struct wl_listener* listener, void* data);
+    static void handle_cursor_touch_motion(struct wl_listener* listener, void* data);
+    static void handle_cursor_touch_cancel(struct wl_listener* listener, void* data);
+    static void handle_cursor_touch_frame(struct wl_listener* listener, void* data);
 
     void process_cursor_motion(uint32_t time);
 
@@ -49,6 +61,7 @@ private:
 
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
     std::vector<struct wlr_input_device*> m_pointers;
+    std::vector<struct wlr_input_device*> m_touch_devices;
 
     // Gesture tracking state
     double m_swipe_dx = 0.0;
@@ -64,12 +77,22 @@ private:
     
     // Clipboard selection listeners
     struct wl_listener m_request_set_selection_listener;
-   
     struct wl_listener m_selection_destroy_listener;
 
     struct wl_listener m_cursor_swipe_begin_listener;
     struct wl_listener m_cursor_swipe_update_listener;
     struct wl_listener m_cursor_swipe_end_listener;
+    struct wl_listener m_cursor_pinch_begin_listener;
+    struct wl_listener m_cursor_pinch_update_listener;
+    struct wl_listener m_cursor_pinch_end_listener;
+    struct wl_listener m_cursor_hold_begin_listener;
+    struct wl_listener m_cursor_hold_end_listener;
+
+    struct wl_listener m_cursor_touch_down_listener;
+    struct wl_listener m_cursor_touch_up_listener;
+    struct wl_listener m_cursor_touch_motion_listener;
+    struct wl_listener m_cursor_touch_cancel_listener;
+    struct wl_listener m_cursor_touch_frame_listener;
 };
 
 class Keyboard {

@@ -49,7 +49,7 @@ InputManager::InputManager(Server* server)
     m_selection_destroy_listener.notify = handle_selection_destroy;
     wl_list_init(&m_selection_destroy_listener.link);
 
-    // Touchpad swipe gesture listeners
+    // Touchpad swipe & pinch gesture listeners
     m_cursor_swipe_begin_listener.notify = handle_cursor_swipe_begin;
     wl_signal_add(&m_cursor->events.swipe_begin, &m_cursor_swipe_begin_listener);
 
@@ -58,6 +58,37 @@ InputManager::InputManager(Server* server)
 
     m_cursor_swipe_end_listener.notify = handle_cursor_swipe_end;
     wl_signal_add(&m_cursor->events.swipe_end, &m_cursor_swipe_end_listener);
+
+    m_cursor_pinch_begin_listener.notify = handle_cursor_pinch_begin;
+    wl_signal_add(&m_cursor->events.pinch_begin, &m_cursor_pinch_begin_listener);
+
+    m_cursor_pinch_update_listener.notify = handle_cursor_pinch_update;
+    wl_signal_add(&m_cursor->events.pinch_update, &m_cursor_pinch_update_listener);
+
+    m_cursor_pinch_end_listener.notify = handle_cursor_pinch_end;
+    wl_signal_add(&m_cursor->events.pinch_end, &m_cursor_pinch_end_listener);
+
+    m_cursor_hold_begin_listener.notify = handle_cursor_hold_begin;
+    wl_signal_add(&m_cursor->events.hold_begin, &m_cursor_hold_begin_listener);
+
+    m_cursor_hold_end_listener.notify = handle_cursor_hold_end;
+    wl_signal_add(&m_cursor->events.hold_end, &m_cursor_hold_end_listener);
+
+    // Touchscreen listeners
+    m_cursor_touch_down_listener.notify = handle_cursor_touch_down;
+    wl_signal_add(&m_cursor->events.touch_down, &m_cursor_touch_down_listener);
+
+    m_cursor_touch_up_listener.notify = handle_cursor_touch_up;
+    wl_signal_add(&m_cursor->events.touch_up, &m_cursor_touch_up_listener);
+
+    m_cursor_touch_motion_listener.notify = handle_cursor_touch_motion;
+    wl_signal_add(&m_cursor->events.touch_motion, &m_cursor_touch_motion_listener);
+
+    m_cursor_touch_cancel_listener.notify = handle_cursor_touch_cancel;
+    wl_signal_add(&m_cursor->events.touch_cancel, &m_cursor_touch_cancel_listener);
+
+    m_cursor_touch_frame_listener.notify = handle_cursor_touch_frame;
+    wl_signal_add(&m_cursor->events.touch_frame, &m_cursor_touch_frame_listener);
 }
 
 InputManager::~InputManager() {
@@ -71,12 +102,22 @@ InputManager::~InputManager() {
     
     // Cleanup Clipboard listeners
     wl_list_remove(&m_request_set_selection_listener.link);
-  
     wl_list_remove(&m_selection_destroy_listener.link);
 
     wl_list_remove(&m_cursor_swipe_begin_listener.link);
     wl_list_remove(&m_cursor_swipe_update_listener.link);
     wl_list_remove(&m_cursor_swipe_end_listener.link);
+    wl_list_remove(&m_cursor_pinch_begin_listener.link);
+    wl_list_remove(&m_cursor_pinch_update_listener.link);
+    wl_list_remove(&m_cursor_pinch_end_listener.link);
+    wl_list_remove(&m_cursor_hold_begin_listener.link);
+    wl_list_remove(&m_cursor_hold_end_listener.link);
+
+    wl_list_remove(&m_cursor_touch_down_listener.link);
+    wl_list_remove(&m_cursor_touch_up_listener.link);
+    wl_list_remove(&m_cursor_touch_motion_listener.link);
+    wl_list_remove(&m_cursor_touch_cancel_listener.link);
+    wl_list_remove(&m_cursor_touch_frame_listener.link);
 
     if (m_cursor_mgr) wlr_xcursor_manager_destroy(m_cursor_mgr);
     if (m_cursor) wlr_cursor_destroy(m_cursor);
@@ -272,11 +313,18 @@ void InputManager::handle_new_input(struct wl_listener* listener, void* data) {
 
         wlr_cursor_attach_input_device(manager->m_cursor, device);
         manager->m_pointers.push_back(device);
+    } else if (device->type == WLR_INPUT_DEVICE_TOUCH) {
+        wlr_cursor_attach_input_device(manager->m_cursor, device);
+        manager->m_touch_devices.push_back(device);
+        log_info("Touchscreen device attached: " + std::string(device->name ? device->name : "unnamed"));
     }
 
     uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
     if (!manager->m_keyboards.empty()) {
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+    }
+    if (!manager->m_touch_devices.empty()) {
+        caps |= WL_SEAT_CAPABILITY_TOUCH;
     }
     wlr_seat_set_capabilities(manager->m_seat, caps);
 }
@@ -397,6 +445,110 @@ void InputManager::handle_cursor_swipe_end(struct wl_listener* listener, void* d
     manager->m_swipe_triggered = false;
 }
 
+void InputManager::handle_cursor_pinch_begin(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_pinch_begin_listener);
+    auto* event = static_cast<struct wlr_pointer_pinch_begin_event*>(data);
+    if (manager->m_server->get_pointer_gestures()) {
+        wlr_pointer_gestures_v1_send_pinch_begin(manager->m_server->get_pointer_gestures(),
+            manager->m_seat, event->time_msec, event->fingers);
+    }
+}
+
+void InputManager::handle_cursor_pinch_update(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_pinch_update_listener);
+    auto* event = static_cast<struct wlr_pointer_pinch_update_event*>(data);
+    if (manager->m_server->get_pointer_gestures()) {
+        wlr_pointer_gestures_v1_send_pinch_update(manager->m_server->get_pointer_gestures(),
+            manager->m_seat, event->time_msec, event->dx, event->dy, event->scale, event->rotation);
+    }
+}
+
+void InputManager::handle_cursor_pinch_end(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_pinch_end_listener);
+    auto* event = static_cast<struct wlr_pointer_pinch_end_event*>(data);
+    if (manager->m_server->get_pointer_gestures()) {
+        wlr_pointer_gestures_v1_send_pinch_end(manager->m_server->get_pointer_gestures(),
+            manager->m_seat, event->time_msec, event->cancelled);
+    }
+}
+
+void InputManager::handle_cursor_hold_begin(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_hold_begin_listener);
+    auto* event = static_cast<struct wlr_pointer_hold_begin_event*>(data);
+    if (manager->m_server->get_pointer_gestures()) {
+        wlr_pointer_gestures_v1_send_hold_begin(manager->m_server->get_pointer_gestures(),
+            manager->m_seat, event->time_msec, event->fingers);
+    }
+}
+
+void InputManager::handle_cursor_hold_end(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_hold_end_listener);
+    auto* event = static_cast<struct wlr_pointer_hold_end_event*>(data);
+    if (manager->m_server->get_pointer_gestures()) {
+        wlr_pointer_gestures_v1_send_hold_end(manager->m_server->get_pointer_gestures(),
+            manager->m_seat, event->time_msec, event->cancelled);
+    }
+}
+
+void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_down_listener);
+    auto* event = static_cast<struct wlr_touch_down_event*>(data);
+
+    double lx = 0.0, ly = 0.0;
+    wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+
+    double sx = 0.0, sy = 0.0;
+    struct wlr_surface* surface = nullptr;
+    View* view = manager->m_server->view_at(lx, ly, &surface, &sx, &sy);
+
+    View* target_view = view;
+    if (target_view && target_view->has_child_dialogs()) {
+        View* top_dialog = target_view->get_top_dialog();
+        if (top_dialog) target_view = top_dialog;
+    }
+
+    if (target_view && !target_view->is_override_redirect() && target_view != manager->m_server->get_focused_view()) {
+        target_view->focus();
+    }
+
+    if (surface) {
+        wlr_seat_touch_notify_down(manager->m_seat, surface, event->time_msec, event->touch_id, sx, sy);
+    }
+}
+
+void InputManager::handle_cursor_touch_up(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_up_listener);
+    auto* event = static_cast<struct wlr_touch_up_event*>(data);
+    wlr_seat_touch_notify_up(manager->m_seat, event->time_msec, event->touch_id);
+}
+
+void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_motion_listener);
+    auto* event = static_cast<struct wlr_touch_motion_event*>(data);
+
+    double lx = 0.0, ly = 0.0;
+    wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+
+    double sx = 0.0, sy = 0.0;
+    struct wlr_surface* surface = nullptr;
+    manager->m_server->view_at(lx, ly, &surface, &sx, &sy);
+
+    if (surface) {
+        wlr_seat_touch_notify_motion(manager->m_seat, event->time_msec, event->touch_id, sx, sy);
+    }
+}
+
+void InputManager::handle_cursor_touch_cancel(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_cancel_listener);
+    auto* event = static_cast<struct wlr_touch_cancel_event*>(data);
+    wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, event->touch_id);
+}
+
+void InputManager::handle_cursor_touch_frame(struct wl_listener* listener, void* data) {
+    InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_frame_listener);
+    wlr_seat_touch_notify_frame(manager->m_seat);
+}
+
 Keyboard::Keyboard(Server* server, struct wlr_input_device* device)
     : m_server(server), m_device(device)
 {
@@ -453,6 +605,17 @@ void Keyboard::handle_key(struct wl_listener* listener, void* data) {
         for (int i = 0; i < nsyms; ++i) {
             handled = kb->m_server->get_input_manager()->handle_keybinding(modifiers, syms[i]);
             if (handled) break;
+        }
+
+        // If not handled (e.g. Shift was held down turning '1' into '!'), check unshifted base sym
+        if (!handled && kb->m_keyboard->keymap) {
+            xkb_layout_index_t layout = xkb_state_key_get_layout(kb->m_keyboard->xkb_state, keycode);
+            const xkb_keysym_t* raw_syms;
+            int n_raw_syms = xkb_keymap_key_get_syms_by_level(kb->m_keyboard->keymap, keycode, layout, 0, &raw_syms);
+            for (int i = 0; i < n_raw_syms; ++i) {
+                handled = kb->m_server->get_input_manager()->handle_keybinding(modifiers, raw_syms[i]);
+                if (handled) break;
+            }
         }
     }
 

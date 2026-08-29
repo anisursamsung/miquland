@@ -113,17 +113,27 @@ Output* OutputManager::find_output(struct wlr_output* wlr_out) const {
 
 void OutputManager::add_output(Output* output) {
     m_outputs.emplace_back(output);
-    m_server->get_workspace_manager()->recalculate_layout();
+    if (m_server->get_ext_workspace_group() && output && output->get_wlr_output()) {
+        wlr_ext_workspace_group_handle_v1_output_enter(m_server->get_ext_workspace_group(), output->get_wlr_output());
+    }
+    if (m_server->get_workspace_manager()) {
+        m_server->get_workspace_manager()->recalculate_layout();
+    }
 }
 
 void OutputManager::remove_output(Output* output) {
+    if (m_server->get_ext_workspace_group() && output && output->get_wlr_output()) {
+        wlr_ext_workspace_group_handle_v1_output_leave(m_server->get_ext_workspace_group(), output->get_wlr_output());
+    }
     for (auto it = m_outputs.begin(); it != m_outputs.end(); ++it) {
         if (it->get() == output) {
             m_outputs.erase(it);
             break;
         }
     }
-    m_server->get_workspace_manager()->recalculate_layout();
+    if (m_server->get_workspace_manager()) {
+        m_server->get_workspace_manager()->recalculate_layout();
+    }
 }
 
 void OutputManager::handle_new_output(struct wl_listener* listener, void* data) {

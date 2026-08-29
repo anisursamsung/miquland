@@ -47,6 +47,7 @@ public:
     void recalculate_layout(const struct wlr_box& usable_box);
 
     View* get_view(size_t index) const;
+    struct wlr_ext_workspace_handle_v1* get_ext_handle() const { return m_ext_handle; }
 
 private:
     void layout_spiral(int base_x, int base_y, int base_w, int base_h, int gap);
@@ -55,6 +56,7 @@ private:
     Server* m_server = nullptr;
     size_t m_id = 1;
     struct wlr_scene_tree* m_scene_tree = nullptr;
+    struct wlr_ext_workspace_handle_v1* m_ext_handle = nullptr;
     std::vector<View*> m_tiled_views;
     std::vector<View*> m_floating_views;
     bool m_visible = false;

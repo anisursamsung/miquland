@@ -13,9 +13,30 @@ Workspace::Workspace(Server* server, size_t id)
 {
     m_scene_tree = wlr_scene_tree_create(m_server->get_workspaces_tree());
     wlr_scene_node_set_enabled(&m_scene_tree->node, false);
+
+    if (m_server->get_ext_workspace_manager()) {
+        std::string id_str = std::to_string(m_id);
+        m_ext_handle = wlr_ext_workspace_handle_v1_create(
+            m_server->get_ext_workspace_manager(),
+            id_str.c_str(),
+            EXT_WORKSPACE_HANDLE_V1_WORKSPACE_CAPABILITIES_ACTIVATE
+        );
+        if (m_ext_handle) {
+            if (m_server->get_ext_workspace_group()) {
+                wlr_ext_workspace_handle_v1_set_group(m_ext_handle, m_server->get_ext_workspace_group());
+            }
+            wlr_ext_workspace_handle_v1_set_name(m_ext_handle, id_str.c_str());
+            wlr_ext_workspace_handle_v1_set_active(m_ext_handle, m_id == 1);
+            m_ext_handle->data = this;
+        }
+    }
 }
 
 Workspace::~Workspace() {
+    if (m_ext_handle) {
+        wlr_ext_workspace_handle_v1_destroy(m_ext_handle);
+        m_ext_handle = nullptr;
+    }
     if (m_scene_tree) {
         wlr_scene_node_destroy(&m_scene_tree->node);
     }
@@ -235,6 +256,9 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 WorkspaceManager::WorkspaceManager(Server* server)
     : m_server(server)
 {
+    for (size_t i = 1; i <= 9; ++i) {
+        get_or_create_workspace(i);
+    }
     Workspace* ws1 = get_or_create_workspace(1);
     ws1->set_visible(true);
 }
@@ -271,11 +295,17 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
     Workspace* current = get_workspace(m_active_workspace_id);
     if (current) {
         current->set_visible(false);
+        if (current->get_ext_handle()) {
+            wlr_ext_workspace_handle_v1_set_active(current->get_ext_handle(), false);
+        }
     }
 
     m_active_workspace_id = id;
     Workspace* target = get_or_create_workspace(id);
     target->set_visible(true);
+    if (target->get_ext_handle()) {
+        wlr_ext_workspace_handle_v1_set_active(target->get_ext_handle(), true);
+    }
 
     recalculate_layout();
 

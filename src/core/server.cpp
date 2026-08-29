@@ -92,6 +92,13 @@ bool Server::init() {
     m_layer_top_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_overlay_tree = wlr_scene_tree_create(&m_scene->tree);
 
+    m_ext_workspace_manager = wlr_ext_workspace_manager_v1_create(m_wl_display, 1);
+    if (m_ext_workspace_manager) {
+        m_ext_workspace_group = wlr_ext_workspace_group_handle_v1_create(m_ext_workspace_manager, 0);
+        m_ext_workspace_commit_listener.notify = handle_ext_workspace_commit;
+        wl_signal_add(&m_ext_workspace_manager->events.commit, &m_ext_workspace_commit_listener);
+    }
+
     m_output_manager = std::make_unique<OutputManager>(this);
     m_workspace_manager = std::make_unique<WorkspaceManager>(this);
     m_input_manager = std::make_unique<InputManager>(this);
@@ -107,6 +114,7 @@ bool Server::init() {
     wl_signal_add(&m_layer_shell->events.new_surface, &m_new_layer_shell_surface_listener);
 
     m_foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(m_wl_display);
+    m_pointer_gestures = wlr_pointer_gestures_v1_create(m_wl_display);
 
     m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
     if (m_xwayland) {
@@ -392,6 +400,21 @@ void Server::handle_new_layer_shell_surface(struct wl_listener* listener, void* 
 
     auto layer_surface = std::make_unique<LayerSurface>(server, wlr_layer_surface);
     server->add_layer_surface(std::move(layer_surface));
+}
+
+void Server::handle_ext_workspace_commit(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_ext_workspace_commit_listener);
+    auto* event = static_cast<struct wlr_ext_workspace_v1_commit_event*>(data);
+
+    struct wlr_ext_workspace_v1_request* req;
+    wl_list_for_each(req, event->requests, link) {
+        if (req->type == WLR_EXT_WORKSPACE_V1_REQUEST_ACTIVATE && req->activate.workspace) {
+            auto* ws = static_cast<Workspace*>(req->activate.workspace->data);
+            if (ws && server->m_workspace_manager) {
+                server->m_workspace_manager->switch_to_workspace(ws->get_id());
+            }
+        }
+    }
 }
 
 void Server::handle_xwayland_ready(struct wl_listener* listener, void* data) {
