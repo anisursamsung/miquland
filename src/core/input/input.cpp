@@ -425,17 +425,14 @@ void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void
 
         if (manager->m_swipe_dx > threshold) {
             // Swiped Right -> Switch to previous workspace
-            size_t current = manager->m_server->get_workspace_manager()->get_active_workspace_id();
-            if (current > 1) {
-                manager->m_server->get_workspace_manager()->switch_to_workspace(current - 1);
-            }
+            manager->m_server->get_workspace_manager()->prev_workspace();
             manager->m_swipe_triggered = true;
         } else if (manager->m_swipe_dx < -threshold) {
             // Swiped Left -> Switch to next workspace
-            size_t current = manager->m_server->get_workspace_manager()->get_active_workspace_id();
-            manager->m_server->get_workspace_manager()->switch_to_workspace(current + 1);
+            manager->m_server->get_workspace_manager()->next_workspace();
             manager->m_swipe_triggered = true;
         }
+
     }
 }
 

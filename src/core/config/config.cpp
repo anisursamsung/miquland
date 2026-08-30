@@ -33,8 +33,10 @@ void Config::set_defaults() {
     uint32_t mod = WLR_MODIFIER_LOGO;
     uint32_t mod_shift = WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT;
     uint32_t mod_alt = WLR_MODIFIER_LOGO | WLR_MODIFIER_ALT;
+    uint32_t mod_ctrl = WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL;
 
     const char* env_term = getenv("TERMINAL");
+
     std::string term = (env_term && *env_term) ? env_term : "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
     m_terminal = term;
 
@@ -81,12 +83,21 @@ void Config::set_defaults() {
     m_keybindings.push_back({ mod_shift, XKB_KEY_Left, "prev_ws", "Super+Shift+Left" });
     m_keybindings.push_back({ mod_shift, XKB_KEY_Right, "next_ws", "Super+Shift+Right" });
 
-    // Jump directly to workspace 1..9
+    // Jump directly to workspace 1..10 (Super + Shift + 1..0)
     for (int i = 1; i <= 9; ++i) {
         xkb_keysym_t sym = XKB_KEY_0 + i;
         m_keybindings.push_back({ mod_shift, sym, "ws_" + std::to_string(i), "Super+Shift+" + std::to_string(i) });
     }
+    m_keybindings.push_back({ mod_shift, XKB_KEY_0, "ws_10", "Super+Shift+0" });
+
+    // Jump directly to workspace 11..20 (Super + Ctrl + 1..0)
+    for (int i = 1; i <= 9; ++i) {
+        xkb_keysym_t sym = XKB_KEY_0 + i;
+        m_keybindings.push_back({ mod_ctrl, sym, "ws_" + std::to_string(i + 10), "Super+Ctrl+" + std::to_string(i) });
+    }
+    m_keybindings.push_back({ mod_ctrl, XKB_KEY_0, "ws_20", "Super+Ctrl+0" });
 }
+
 
 void Config::add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::string& action, const std::string& combo) {
     xkb_keysym_t norm_sym = (sym >= XKB_KEY_A && sym <= XKB_KEY_Z) ? (sym - XKB_KEY_A + XKB_KEY_a) : sym;

@@ -256,12 +256,13 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 WorkspaceManager::WorkspaceManager(Server* server)
     : m_server(server)
 {
-    for (size_t i = 1; i <= 9; ++i) {
+    for (size_t i = 1; i <= 20; ++i) {
         get_or_create_workspace(i);
     }
     Workspace* ws1 = get_or_create_workspace(1);
     ws1->set_visible(true);
 }
+
 
 WorkspaceManager::~WorkspaceManager() = default;
 
@@ -290,7 +291,7 @@ Workspace* WorkspaceManager::get_active_workspace() {
 }
 
 void WorkspaceManager::switch_to_workspace(size_t id) {
-    if (id == 0 || id == m_active_workspace_id) return;
+    if (id == 0 || id > 20 || id == m_active_workspace_id) return;
 
     Workspace* current = get_workspace(m_active_workspace_id);
     if (current) {
@@ -323,8 +324,11 @@ void WorkspaceManager::prev_workspace() {
 }
 
 void WorkspaceManager::next_workspace() {
-    switch_to_workspace(m_active_workspace_id + 1);
+    if (m_active_workspace_id < 20) {
+        switch_to_workspace(m_active_workspace_id + 1);
+    }
 }
+
 
 void WorkspaceManager::add_view_auto(View* view) {
     if (view->is_dialog()) {
@@ -363,7 +367,7 @@ void WorkspaceManager::remove_view(View* view) {
 }
 
 void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
-    if (target_ws_id == 0) return;
+    if (target_ws_id == 0 || target_ws_id > 20) return;
     Workspace* current = view->get_workspace();
     if (!current || current->get_id() == target_ws_id) return;
 
