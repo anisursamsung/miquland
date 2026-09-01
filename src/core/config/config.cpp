@@ -62,7 +62,6 @@ void Config::set_defaults() {
     m_keybindings.push_back({ mod, XKB_KEY_space, "menu", "Super+Space" });
     m_keybindings.push_back({ mod, XKB_KEY_f, "firefox", "Super+F" });
     m_keybindings.push_back({ mod, XKB_KEY_y, "kitty -e yazi || foot -e yazi || yazi", "Super+Y" });
-    m_keybindings.push_back({ mod_alt, XKB_KEY_l, "hyprlock || swaylock || gtklock || waylock", "Super+Alt+L" });
 
     // Window Management & Layouts
     m_keybindings.push_back({ mod, XKB_KEY_q, "close", "Super+Q" });
