@@ -165,9 +165,6 @@ void Server::setup_config_watcher() {
     std::string config_dir = Config::get_config_dir_path();
     m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
 
-    std::string theme_dir = config_dir + "/theme";
-    inotify_add_watch(m_inotify_fd, theme_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
-
     m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd, WL_EVENT_READABLE, handle_config_inotify, this);
 }
 
@@ -188,7 +185,7 @@ int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
     }
 
     if (should_reload) {
-        log_info("Detected theme/config file change, reloading...");
+        log_info("Detected config file change, reloading...");
         server->reload_config();
     }
     return 0;

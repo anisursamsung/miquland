@@ -43,7 +43,7 @@ void Config::set_defaults() {
     m_window_opacity_inactive = 0.85f;
 
     // Material Design 3 Neon Light Theme Color Defaults
-  m_theme_source = "theme/theme_mode.conf";
+    m_theme_source = "";
     m_color_primary = "#0066ff";
     m_color_on_primary = "#ffffff";
     m_color_primary_container = "#cce5ff";
@@ -307,59 +307,12 @@ std::string Config::resolve_path(const std::string& path) const {
 
 void Config::ensure_default_files() {
     std::string dir = get_config_dir_path();
-    std::string theme_dir = dir + "/theme";
     std::error_code ec;
     
-    // Create ~/.config/miquland/ and ~/.config/miquland/theme/
+    // Create ~/.config/miquland/
     fs::create_directories(dir, ec);
-    fs::create_directories(theme_dir, ec);
 
-    // 1. Copy theme files (scan theme directories to ensure all files under theme of assets are copied)
-    const std::vector<std::string> theme_source_dirs = {
-        "assets/theme",
-        "/usr/share/miquland/theme",
-        "/usr/local/share/miquland/theme",
-        "/etc/miquland/theme"
-    };
-
-    for (const auto& base_dir : theme_source_dirs) {
-        if (fs::exists(base_dir, ec) && fs::is_directory(base_dir, ec)) {
-            for (const auto& entry : fs::recursive_directory_iterator(base_dir, fs::directory_options::skip_permission_denied, ec)) {
-                if (ec) break;
-                auto rel_path = fs::relative(entry.path(), base_dir, ec);
-                if (ec) continue;
-                auto dest_path = fs::path(theme_dir) / rel_path;
-
-                if (entry.is_directory(ec)) {
-                    fs::create_directories(dest_path, ec);
-                } else if (entry.is_regular_file(ec)) {
-                    if (!fs::exists(dest_path, ec)) {
-                        fs::copy_file(entry.path(), dest_path, fs::copy_options::overwrite_existing, ec);
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback check for critical default theme files if directory iteration was unavailable
-    const std::vector<std::string> fallback_theme_files = {
-        "light.conf", "dark.conf", "theme_mode.conf",
-        "darkmodescript.sh", "lightmodescript.sh"
-    };
-    for (const auto& file : fallback_theme_files) {
-        std::string dest_path = theme_dir + "/" + file;
-        if (!fs::exists(dest_path, ec)) {
-            for (const auto& base_dir : theme_source_dirs) {
-                std::string src_path = base_dir + "/" + file;
-                if (fs::exists(src_path, ec)) {
-                    fs::copy_file(src_path, dest_path, fs::copy_options::overwrite_existing, ec);
-                    if (!ec) break;
-                }
-            }
-        }
-    }
-
-    // 2. Copy main miquland.conf
+    // Copy main miquland.conf
     std::string config_path = get_config_file_path();
     if (!fs::exists(config_path)) {
         bool copied = false;
