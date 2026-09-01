@@ -27,6 +27,7 @@ Workspace::Workspace(Server* server, size_t id)
             }
             wlr_ext_workspace_handle_v1_set_name(m_ext_handle, id_str.c_str());
             wlr_ext_workspace_handle_v1_set_active(m_ext_handle, m_id == 1);
+            wlr_ext_workspace_handle_v1_set_hidden(m_ext_handle, true);
             m_ext_handle->data = this;
         }
     }
@@ -42,6 +43,12 @@ Workspace::~Workspace() {
     }
 }
 
+void Workspace::update_ext_state() {
+    if (m_ext_handle) {
+        wlr_ext_workspace_handle_v1_set_hidden(m_ext_handle, is_empty());
+    }
+}
+
 bool Workspace::add_view(View* view) {
     if (!view) return false;
 
@@ -49,6 +56,7 @@ bool Workspace::add_view(View* view) {
         if (std::find(m_floating_views.begin(), m_floating_views.end(), view) == m_floating_views.end()) {
             m_floating_views.push_back(view);
             view->set_workspace(this);
+            update_ext_state();
             return true;
         }
         return false;
@@ -57,6 +65,7 @@ bool Workspace::add_view(View* view) {
     if (std::find(m_tiled_views.begin(), m_tiled_views.end(), view) == m_tiled_views.end()) {
         m_tiled_views.push_back(view);
         view->set_workspace(this);
+        update_ext_state();
         return true;
     }
     return false;
@@ -67,6 +76,7 @@ bool Workspace::remove_view(View* view) {
     if (it_tile != m_tiled_views.end()) {
         m_tiled_views.erase(it_tile);
         view->set_workspace(nullptr);
+        update_ext_state();
         return true;
     }
 
@@ -74,6 +84,7 @@ bool Workspace::remove_view(View* view) {
     if (it_float != m_floating_views.end()) {
         m_floating_views.erase(it_float);
         view->set_workspace(nullptr);
+        update_ext_state();
         return true;
     }
 

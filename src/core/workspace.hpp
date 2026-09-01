@@ -24,9 +24,13 @@ public:
 
     bool can_accept_view() const { return true; }
     size_t view_count() const { return m_tiled_views.size(); }
+    size_t total_view_count() const { return m_tiled_views.size() + m_floating_views.size(); }
+    bool is_empty() const { return m_tiled_views.empty() && m_floating_views.empty(); }
     const std::vector<View*>& get_views() const { return m_tiled_views; }
     const std::vector<View*>& get_tiled_views() const { return m_tiled_views; }
     const std::vector<View*>& get_floating_views() const { return m_floating_views; }
+
+    void update_ext_state();
 
     bool add_view(View* view);
     bool remove_view(View* view);
