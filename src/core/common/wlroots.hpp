@@ -69,6 +69,7 @@ extern "C" {
 #include <wlr/xwayland.h>
 #include <wlr/util/log.h>
 #include <wlr/util/box.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/util/edges.h>
 
 #ifdef __cplusplus

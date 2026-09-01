@@ -3,6 +3,7 @@
 #include "core/workspace.hpp"
 #include "core/view.hpp"
 #include "core/output.hpp"
+#include "core/session_lock.hpp"
 #include "core/config/config.hpp"
 #include <unistd.h>
 #include <cstdlib>
@@ -165,6 +166,11 @@ void InputManager::set_cursor_icon(const char* name) {
 }
 
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
+    // 0. If session is locked, NEVER process any shortcuts (all keys go directly to locker)
+    if (m_server->is_locked()) {
+        return false;
+    }
+
     xkb_keysym_t norm_sym = (keysym >= XKB_KEY_A && keysym <= XKB_KEY_Z) ? (keysym - XKB_KEY_A + XKB_KEY_a) : keysym;
 
     bool mod = (modifiers & WLR_MODIFIER_LOGO) != 0;
@@ -270,6 +276,23 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
 }
 
 void InputManager::process_cursor_motion(uint32_t time) {
+    if (m_server->is_locked()) {
+        double sx = 0, sy = 0;
+        SessionLockSurface* lock_surf = m_server->get_session_lock()->surface_at(m_cursor->x, m_cursor->y, &sx, &sy);
+        if (lock_surf && lock_surf->get_wlr_surface()) {
+            struct wlr_surface* surface = lock_surf->get_wlr_surface();
+            if (m_seat->pointer_state.focused_surface != surface) {
+                wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
+            }
+            wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
+            lock_surf->focus();
+        } else {
+            wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
+            wlr_seat_pointer_clear_focus(m_seat);
+        }
+        return;
+    }
+
     double sx, sy;
     struct wlr_surface* surface = nullptr;
     View* view = m_server->view_at(m_cursor->x, m_cursor->y, &surface, &sx, &sy);
@@ -360,6 +383,16 @@ void InputManager::handle_cursor_motion_absolute(struct wl_listener* listener, v
 void InputManager::handle_cursor_button(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_button_listener);
     auto* event = static_cast<struct wlr_pointer_button_event*>(data);
+
+    if (manager->m_server->is_locked()) {
+        double sx = 0, sy = 0;
+        SessionLockSurface* lock_surf = manager->m_server->get_session_lock()->surface_at(manager->m_cursor->x, manager->m_cursor->y, &sx, &sy);
+        if (lock_surf) {
+            lock_surf->focus();
+        }
+        wlr_seat_pointer_notify_button(manager->m_seat, event->time_msec, event->button, event->state);
+        return;
+    }
 
     double sx, sy;
     struct wlr_surface* surface = nullptr;
@@ -505,6 +538,17 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
 
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+
+    if (manager->m_server->is_locked()) {
+        double sx = 0, sy = 0;
+        SessionLockSurface* lock_surf = manager->m_server->get_session_lock()->surface_at(lx, ly, &sx, &sy);
+        if (lock_surf && lock_surf->get_wlr_surface()) {
+            lock_surf->focus();
+            wlr_seat_touch_notify_down(manager->m_seat, lock_surf->get_wlr_surface(),
+                event->time_msec, event->touch_id, sx, sy);
+        }
+        return;
+    }
 
     double sx = 0.0, sy = 0.0;
     struct wlr_surface* surface = nullptr;

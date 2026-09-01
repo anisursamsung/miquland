@@ -58,6 +58,7 @@ add_executable(miquland
     src/core/output.cpp
     src/core/input/input.cpp
     src/core/config/config.cpp
+    src/core/session_lock.cpp
     src/core/common/cairo_buffer.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c

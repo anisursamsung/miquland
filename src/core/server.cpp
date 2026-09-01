@@ -5,6 +5,7 @@
 #include "core/view.hpp"
 #include "core/layer_surface.hpp"
 #include "core/popup.hpp"
+#include "core/session_lock.hpp"
 #include "core/config/config.hpp"
 #include <sys/inotify.h>
 #include <unistd.h>
@@ -84,13 +85,20 @@ bool Server::init() {
         return false;
     }
 
-    // Standard 4-Layer Scene Tree Hierarchy:
-    // Background -> Bottom -> Workspaces (Tiled Apps) -> Top -> Overlay
+    // Standard Layer Scene Tree Hierarchy:
+    // Background -> Bottom -> Workspaces (Tiled Apps) -> Top -> Overlay -> Session Lock
     m_layer_background_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_bottom_tree = wlr_scene_tree_create(&m_scene->tree);
     m_workspaces_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_top_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_overlay_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_session_lock_tree = wlr_scene_tree_create(&m_scene->tree);
+
+    m_session_lock_manager = wlr_session_lock_manager_v1_create(m_wl_display);
+    if (m_session_lock_manager) {
+        m_session_lock_new_lock_listener.notify = handle_new_session_lock;
+        wl_signal_add(&m_session_lock_manager->events.new_lock, &m_session_lock_new_lock_listener);
+    }
 
     m_ext_workspace_manager = wlr_ext_workspace_manager_v1_create(m_wl_display, 1);
     if (m_ext_workspace_manager) {
@@ -438,6 +446,40 @@ void Server::handle_xwayland_new_surface(struct wl_listener* listener, void* dat
 
     auto view = std::make_unique<View>(server, xsurface);
     server->add_view(std::move(view));
+}
+
+bool Server::is_locked() const {
+    return m_session_lock != nullptr;
+}
+
+SessionLock* Server::get_session_lock() const {
+    return m_session_lock.get();
+}
+
+void Server::handle_new_session_lock(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_session_lock_new_lock_listener);
+    auto* lock = static_cast<struct wlr_session_lock_v1*>(data);
+    if (server->m_session_lock) {
+        log_warn("Session lock requested while already locked; rejecting duplicate request");
+        wlr_session_lock_v1_destroy(lock);
+        return;
+    }
+
+    log_info("Activating new session lock");
+    server->m_session_lock = std::make_unique<SessionLock>(server, lock);
+}
+
+void Server::unlock_session() {
+    if (!m_session_lock) return;
+    log_info("Session unlocked successfully");
+    m_session_lock.reset();
+
+    if (m_workspace_manager) {
+        Workspace* ws = m_workspace_manager->get_active_workspace();
+        if (ws && ws->view_count() > 0) {
+            ws->get_view(0)->focus();
+        }
+    }
 }
 
 } // namespace miquland

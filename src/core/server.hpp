@@ -12,6 +12,7 @@ class WorkspaceManager;
 class InputManager;
 class View;
 class LayerSurface;
+class SessionLock;
 
 class Server {
 public:
@@ -67,6 +68,11 @@ public:
 
     void reload_config();
 
+    struct wlr_scene_tree* get_session_lock_tree() const { return m_session_lock_tree; }
+    bool is_locked() const;
+    SessionLock* get_session_lock() const;
+    void unlock_session();
+
 private:
     static void handle_new_xdg_toplevel(struct wl_listener* listener, void* data);
     static void handle_new_layer_shell_surface(struct wl_listener* listener, void* data);
@@ -91,10 +97,12 @@ private:
     struct wlr_scene_tree* m_workspaces_tree = nullptr;
     struct wlr_scene_tree* m_layer_top_tree = nullptr;
     struct wlr_scene_tree* m_layer_overlay_tree = nullptr;
+    struct wlr_scene_tree* m_session_lock_tree = nullptr;
 
     struct wlr_xdg_output_manager_v1* m_xdg_output_manager = nullptr;
     struct wlr_xdg_shell* m_xdg_shell = nullptr;
     struct wlr_layer_shell_v1* m_layer_shell = nullptr;
+    struct wlr_session_lock_manager_v1* m_session_lock_manager = nullptr;
     struct wlr_ext_workspace_manager_v1* m_ext_workspace_manager = nullptr;
     struct wlr_ext_workspace_group_handle_v1* m_ext_workspace_group = nullptr;
     struct wlr_foreign_toplevel_manager_v1* m_foreign_toplevel_manager = nullptr;
@@ -118,8 +126,13 @@ private:
     std::vector<std::unique_ptr<LayerSurface>> m_layer_surfaces;
     LayerSurface* m_focused_layer_surface = nullptr;
 
+    std::unique_ptr<SessionLock> m_session_lock;
+
+    static void handle_new_session_lock(struct wl_listener* listener, void* data);
+
     struct wl_listener m_new_xdg_toplevel_listener;
     struct wl_listener m_new_layer_shell_surface_listener;
+    struct wl_listener m_session_lock_new_lock_listener;
     struct wl_listener m_ext_workspace_commit_listener;
     struct wl_listener m_xwayland_ready_listener;
     struct wl_listener m_xwayland_new_surface_listener;
