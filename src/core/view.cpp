@@ -375,6 +375,21 @@ void View::update_border() {
     wlr_scene_buffer_set_buffer(m_border_scene_buffer, m_border_buffer->get_wlr_buffer());
 }
 
+void View::update_opacity() {
+    if (!m_mapped || !m_surface_scene_tree) return;
+
+    float opacity = is_focused()
+        ? Config::get().get_window_opacity_active()
+        : Config::get().get_window_opacity_inactive();
+
+    opacity = std::clamp(opacity, 0.0f, 1.0f);
+
+    wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buffer, int sx, int sy, void* data) {
+        float val = *static_cast<float*>(data);
+        wlr_scene_buffer_set_opacity(buffer, val);
+    }, &opacity);
+}
+
 void View::focus() {
     if (!m_mapped) return;
 
@@ -435,8 +450,10 @@ void View::focus() {
 
     if (prev && prev != this) {
         prev->update_border();
+        prev->update_opacity();
     }
     update_border();
+    update_opacity();
 
     if (target_surface) {
         struct wlr_seat* seat = m_server->get_input_manager()->get_seat();
@@ -503,6 +520,7 @@ void View::handle_map(struct wl_listener* listener, void* data) {
     if (view->m_workspace && view->m_workspace->is_visible()) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
     }
+    view->update_opacity();
     view->focus();
 }
 
@@ -599,6 +617,10 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
                 }
             }
         }
+    }
+
+    if (view->m_mapped) {
+        view->update_opacity();
     }
 }
 

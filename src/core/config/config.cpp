@@ -39,6 +39,8 @@ void Config::set_defaults() {
 
     std::string term = (env_term && *env_term) ? env_term : "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
     m_terminal = term;
+    m_window_opacity_active = 1.0f;
+    m_window_opacity_inactive = 0.85f;
 
     // Material Design 3 Neon Light Theme Color Defaults
   m_theme_source = "theme/theme_mode.conf";
@@ -538,6 +540,20 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_screen_edge_padding = std::max(0, std::stoi(value));
             } catch (...) {}
+        } else if (key == "window_opacity_active" || key == "active_opacity" || key == "opacity_active") {
+            try {
+                m_window_opacity_active = std::clamp(std::stof(value), 0.0f, 1.0f);
+            } catch (...) {}
+        } else if (key == "window_opacity_inactive" || key == "inactive_opacity" || key == "opacity_inactive") {
+            try {
+                m_window_opacity_inactive = std::clamp(std::stof(value), 0.0f, 1.0f);
+            } catch (...) {}
+        } else if (key == "window_opacity" || key == "opacity") {
+            try {
+                float val = std::clamp(std::stof(value), 0.0f, 1.0f);
+                m_window_opacity_active = val;
+                m_window_opacity_inactive = val;
+            } catch (...) {}
         } else if (key == "bind") {
             // Format: bind = Super+F, firefox or bind = Super, K, kitty
             size_t comma = value.rfind(',');
@@ -606,7 +622,9 @@ void Config::save() {
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
     file << "space_between_windows = " << m_space_between_windows << "\n";
-    file << "screen_edge_padding = " << m_screen_edge_padding << "\n\n";
+    file << "screen_edge_padding = " << m_screen_edge_padding << "\n";
+    file << "window_opacity_active = " << m_window_opacity_active << "\n";
+    file << "window_opacity_inactive = " << m_window_opacity_inactive << "\n\n";
 
     file << "[applications]\n";
     file << "terminal = " << m_terminal << "\n\n";

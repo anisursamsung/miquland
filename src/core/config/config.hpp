@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <cstdint>
+#include <algorithm>
 #include <xkbcommon/xkbcommon.h>
 
 namespace miquland {
@@ -104,6 +105,12 @@ public:
     int get_screen_edge_padding() const { return m_screen_edge_padding; }
     void set_screen_edge_padding(int pad) { m_screen_edge_padding = pad; }
 
+    float get_window_opacity_active() const { return m_window_opacity_active; }
+    void set_window_opacity_active(float op) { m_window_opacity_active = std::clamp(op, 0.0f, 1.0f); }
+
+    float get_window_opacity_inactive() const { return m_window_opacity_inactive; }
+    void set_window_opacity_inactive(float op) { m_window_opacity_inactive = std::clamp(op, 0.0f, 1.0f); }
+
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
@@ -137,6 +144,8 @@ private:
     int m_window_border_radius = 8;
     int m_space_between_windows = 8;
     int m_screen_edge_padding = 10;
+    float m_window_opacity_active = 1.0f;
+    float m_window_opacity_inactive = 0.85f;
     LayoutMode m_layout_mode = LayoutMode::Spiral;
 
     // Material Design 3 Palette

@@ -196,6 +196,7 @@ void Server::reload_config() {
     for (const auto& v : m_views) {
         if (v && v->is_mapped()) {
             v->update_border();
+            v->update_opacity();
         }
     }
 

@@ -36,6 +36,7 @@ public:
     void close();
 
     void update_border();
+    void update_opacity();
     bool is_focused() const;
 
     std::string get_title() const;
