@@ -49,6 +49,7 @@ public:
     void swap_views(size_t idx1, size_t idx2);
 
     void recalculate_layout(const struct wlr_box& usable_box);
+    struct wlr_box calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const;
 
     View* get_view(size_t index) const;
     struct wlr_ext_workspace_handle_v1* get_ext_handle() const { return m_ext_handle; }

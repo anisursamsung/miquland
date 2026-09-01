@@ -30,6 +30,7 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     // Create view container scene tree under root scene (reparented to workspace later)
     m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
     m_scene_tree->node.data = this;
+    wlr_scene_node_set_enabled(&m_scene_tree->node, false);
 
     // Create xdg surface scene tree under view container tree (Child 1 - bottom layer)
     m_surface_scene_tree = wlr_scene_xdg_surface_create(m_scene_tree, toplevel->base);
@@ -93,6 +94,7 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
         m_height = xsurface->height;
         wlr_scene_node_set_position(&m_scene_tree->node, m_x, m_y);
     } else {
+        wlr_scene_node_set_enabled(&m_scene_tree->node, false);
         // Create border scene buffer on top of surface
         m_border_scene_buffer = wlr_scene_buffer_create(m_scene_tree, nullptr);
         m_border_scene_buffer->point_accepts_input = [](struct wlr_scene_buffer*, double*, double*) -> bool {
@@ -146,6 +148,11 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
 }
 
 View::~View() {
+    if (m_workspace) {
+        m_workspace->remove_view(this);
+        m_workspace = nullptr;
+    }
+
     if (m_type == ViewType::Xdg) {
         wl_list_remove(&m_map_listener.link);
         wl_list_remove(&m_unmap_listener.link);
@@ -285,8 +292,13 @@ void View::set_geometry(int x, int y, int width, int height) {
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
-        if (m_xdg_toplevel && size_changed) {
-            wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
+        if (m_xdg_toplevel) {
+            if (!is_dialog()) {
+                wlr_xdg_toplevel_set_tiled(m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+            }
+            if (size_changed) {
+                wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
+            }
         }
     } else {
         if (m_surface_scene_tree) {
@@ -474,6 +486,7 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         if (view->is_override_redirect()) {
             wlr_scene_node_set_position(&view->m_scene_tree->node, view->m_xwayland_surface->x, view->m_xwayland_surface->y);
             wlr_scene_node_raise_to_top(&view->m_scene_tree->node);
+            wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
             if (wlr_xwayland_surface_override_redirect_wants_focus(view->m_xwayland_surface)) {
                 struct wlr_seat* seat = view->m_server->get_input_manager()->get_seat();
                 struct wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat);
@@ -487,12 +500,19 @@ void View::handle_map(struct wl_listener* listener, void* data) {
     }
 
     view->m_server->get_workspace_manager()->add_view_auto(view);
+    if (view->m_workspace && view->m_workspace->is_visible()) {
+        wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
+    }
     view->focus();
 }
 
 void View::handle_unmap(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_unmap_listener);
     view->m_mapped = false;
+
+    if (view->m_scene_tree) {
+        wlr_scene_node_set_enabled(&view->m_scene_tree->node, false);
+    }
 
     if (!view->is_override_redirect()) {
         view->m_server->get_workspace_manager()->remove_view(view);
@@ -531,8 +551,54 @@ void View::handle_destroy(struct wl_listener* listener, void* data) {
 
 void View::handle_commit(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_commit_listener);
-    if (view->m_type == ViewType::Xdg && view->m_xdg_toplevel->base->initial_commit) {
-        wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
+    if (view->m_type == ViewType::Xdg) {
+        if (view->m_xdg_toplevel->base->initial_commit) {
+            view->update_parent_relationship();
+            if (view->is_dialog()) {
+                wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
+            } else {
+                auto* ws_mgr = view->m_server->get_workspace_manager();
+                auto* ws = ws_mgr ? ws_mgr->get_active_workspace() : nullptr;
+                if (ws && view->m_server->get_output_manager()) {
+                    struct wlr_box usable = view->m_server->get_output_manager()->get_primary_usable_geometry();
+                    if (usable.width <= 0 || usable.height <= 0) {
+                        usable = { .x = 0, .y = 0, .width = 1920, .height = 1080 };
+                    }
+                    struct wlr_box next_box = ws->calculate_tiled_geometry_for_new_view(usable);
+                    int bw = Config::get().get_window_border_width();
+                    int client_w = std::max(1, next_box.width - 2 * bw);
+                    int client_h = std::max(1, next_box.height - 2 * bw);
+
+                    if (view->m_scene_tree) {
+                        wlr_scene_node_set_position(&view->m_scene_tree->node, next_box.x, next_box.y);
+                    }
+                    if (view->m_surface_scene_tree) {
+                        wlr_scene_node_set_position(&view->m_surface_scene_tree->node, bw, bw);
+                    }
+                    wlr_xdg_toplevel_set_tiled(view->m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+                    wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, client_w, client_h);
+                } else {
+                    wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
+                }
+            }
+            return;
+        }
+
+        if (view->m_mapped && view->is_dialog()) {
+            auto* xdg_surf = view->m_xdg_toplevel->base;
+            int gw = xdg_surf->current.geometry.width;
+            int gh = xdg_surf->current.geometry.height;
+            if (gw <= 0 && xdg_surf->surface) {
+                gw = xdg_surf->surface->current.width;
+                gh = xdg_surf->surface->current.height;
+            }
+            int bw = Config::get().get_window_border_width();
+            if (gw > 0 && gh > 0 && (gw + 2 * bw != view->m_width || gh + 2 * bw != view->m_height)) {
+                if (view->m_workspace) {
+                    view->m_server->get_workspace_manager()->recalculate_layout();
+                }
+            }
+        }
     }
 }
 

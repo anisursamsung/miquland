@@ -264,6 +264,77 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     }
 }
 
+struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const {
+    int pad = Config::get().get_screen_edge_padding();
+    int gap = Config::get().get_space_between_windows();
+
+    int base_x = usable_box.x + pad;
+    int base_y = usable_box.y + pad;
+    int base_w = std::max(50, usable_box.width - 2 * pad);
+    int base_h = std::max(50, usable_box.height - 2 * pad);
+
+    size_t n = m_tiled_views.size() + 1;
+    if (n == 1) {
+        return { base_x, base_y, base_w, base_h };
+    }
+
+    if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
+        int total_w = std::max(50, base_w - gap);
+        int master_w = static_cast<int>(total_w * 0.55);
+        int stack_w = total_w - master_w;
+
+        size_t stack_count = n - 1;
+        int total_stack_gaps = static_cast<int>(stack_count - 1) * gap;
+        int avail_stack_h = std::max(20, base_h - total_stack_gaps);
+        int item_h = avail_stack_h / static_cast<int>(stack_count);
+
+        int cur_y = base_y;
+        int stack_x = base_x + master_w + gap;
+
+        for (size_t i = 1; i < n; ++i) {
+            int win_h = (i == n - 1) ? (base_y + base_h - cur_y) : item_h;
+            if (i == n - 1) {
+                return { stack_x, cur_y, stack_w, std::max(20, win_h) };
+            }
+            cur_y += win_h + gap;
+        }
+        return { stack_x, cur_y, stack_w, std::max(20, base_y + base_h - cur_y) };
+    } else {
+        int cur_x = base_x;
+        int cur_y = base_y;
+        int cur_w = base_w;
+        int cur_h = base_h;
+
+        for (size_t i = 0; i < n; ++i) {
+            if (i == n - 1) {
+                return { cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h) };
+            }
+
+            bool split_horizontal = (i % 2 == 0);
+            if (m_split_mode == SplitMode::Vertical) {
+                split_horizontal = !split_horizontal;
+            }
+
+            if (split_horizontal) {
+                int total_w = std::max(40, cur_w - gap);
+                int half_w = total_w / 2;
+                int rest_w = total_w - half_w;
+
+                cur_x += half_w + gap;
+                cur_w = rest_w;
+            } else {
+                int total_h = std::max(40, cur_h - gap);
+                int half_h = total_h / 2;
+                int rest_h = total_h - half_h;
+
+                cur_y += half_h + gap;
+                cur_h = rest_h;
+            }
+        }
+        return { cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h) };
+    }
+}
+
 WorkspaceManager::WorkspaceManager(Server* server)
     : m_server(server)
 {
