@@ -268,7 +268,12 @@ void Server::set_focused_view(View* view) {
     if (m_focused_view == view) return;
     View* prev = m_focused_view;
     m_focused_view = view;
-    if (prev) prev->update_border();
+    if (prev) {
+        prev->update_border();
+        if (view == nullptr && prev->get_foreign_toplevel()) {
+            wlr_foreign_toplevel_handle_v1_set_activated(prev->get_foreign_toplevel(), false);
+        }
+    }
     if (m_focused_view) m_focused_view->update_border();
 }
 

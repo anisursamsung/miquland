@@ -1,6 +1,7 @@
 #include "core/view.hpp"
 #include "core/popup.hpp"
 #include "core/server.hpp"
+#include "core/output.hpp"
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
 #include "core/config/config.hpp"
@@ -211,6 +212,13 @@ void View::setup_foreign_toplevel() {
             std::string app_id = get_app_id();
             if (!title.empty()) wlr_foreign_toplevel_handle_v1_set_title(m_foreign_toplevel, title.c_str());
             if (!app_id.empty()) wlr_foreign_toplevel_handle_v1_set_app_id(m_foreign_toplevel, app_id.c_str());
+
+            if (m_server->get_output_manager()) {
+                auto* out = m_server->get_output_manager()->get_primary_output();
+                if (out && out->get_wlr_output()) {
+                    wlr_foreign_toplevel_handle_v1_output_enter(m_foreign_toplevel, out->get_wlr_output());
+                }
+            }
 
             m_foreign_request_activate_listener.notify = handle_foreign_request_activate;
             wl_signal_add(&m_foreign_toplevel->events.request_activate, &m_foreign_request_activate_listener);
@@ -442,6 +450,19 @@ void View::handle_map(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_map_listener);
     view->m_mapped = true;
     view->update_parent_relationship();
+
+    if (view->m_foreign_toplevel) {
+        std::string title = view->get_title();
+        std::string app_id = view->get_app_id();
+        if (!title.empty()) wlr_foreign_toplevel_handle_v1_set_title(view->m_foreign_toplevel, title.c_str());
+        if (!app_id.empty()) wlr_foreign_toplevel_handle_v1_set_app_id(view->m_foreign_toplevel, app_id.c_str());
+        if (view->m_server->get_output_manager()) {
+            auto* out = view->m_server->get_output_manager()->get_primary_output();
+            if (out && out->get_wlr_output()) {
+                wlr_foreign_toplevel_handle_v1_output_enter(view->m_foreign_toplevel, out->get_wlr_output());
+            }
+        }
+    }
 
     if (view->m_type == ViewType::XWayland) {
         if (view->m_xwayland_surface && view->m_xwayland_surface->surface) {
