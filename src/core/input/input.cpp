@@ -246,6 +246,18 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
                     View* focused = m_server->get_focused_view();
                     if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
                 } catch (...) {}
+            } else if (action.rfind("move_to_ws_", 0) == 0) {
+                try {
+                    size_t ws_id = std::stoul(action.substr(11));
+                    View* focused = m_server->get_focused_view();
+                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+                } catch (...) {}
+            } else if (action.rfind("movetoworkspace_", 0) == 0) {
+                try {
+                    size_t ws_id = std::stoul(action.substr(16));
+                    View* focused = m_server->get_focused_view();
+                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+                } catch (...) {}
             } else if (action == "exit" || action == "quit") {
                 m_server->terminate();
             } else {

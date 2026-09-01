@@ -98,6 +98,21 @@ void Config::set_defaults() {
         m_keybindings.push_back({ mod_ctrl, sym, "ws_" + std::to_string(i + 10), "Super+Ctrl+" + std::to_string(i) });
     }
     m_keybindings.push_back({ mod_ctrl, XKB_KEY_0, "ws_20", "Super+Ctrl+0" });
+
+    // Move window directly to workspace 1..10 (Super + Alt + 1..0)
+    for (int i = 1; i <= 9; ++i) {
+        xkb_keysym_t sym = XKB_KEY_0 + i;
+        m_keybindings.push_back({ mod_alt, sym, "move_ws_" + std::to_string(i), "Super+Alt+" + std::to_string(i) });
+    }
+    m_keybindings.push_back({ mod_alt, XKB_KEY_0, "move_ws_10", "Super+Alt+0" });
+
+    // Move window directly to workspace 11..20 (Super + Ctrl + Alt + 1..0)
+    uint32_t mod_ctrl_alt = WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT;
+    for (int i = 1; i <= 9; ++i) {
+        xkb_keysym_t sym = XKB_KEY_0 + i;
+        m_keybindings.push_back({ mod_ctrl_alt, sym, "move_ws_" + std::to_string(i + 10), "Super+Ctrl+Alt+" + std::to_string(i) });
+    }
+    m_keybindings.push_back({ mod_ctrl_alt, XKB_KEY_0, "move_ws_20", "Super+Ctrl+Alt+0" });
 }
 
 
