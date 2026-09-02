@@ -77,7 +77,7 @@ public:
     Workspace* get_or_create_workspace(size_t id);
     Workspace* get_active_workspace();
 
-    void switch_to_workspace(size_t id);
+    void switch_to_workspace(size_t id, View* focus_view = nullptr);
     void prev_workspace();
     void next_workspace();
 
@@ -94,6 +94,7 @@ public:
     void recalculate_layout();
 
     size_t get_active_workspace_id() const { return m_active_workspace_id; }
+    void prune_workspace(size_t id);
 
 private:
     Server* m_server = nullptr;

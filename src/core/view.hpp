@@ -32,6 +32,8 @@ public:
     Workspace* get_workspace() const { return m_workspace; }
 
     void set_geometry(int x, int y, int width, int height);
+    void set_fullscreen(bool fullscreen);
+    bool is_fullscreen() const { return m_is_fullscreen; }
     void focus();
     void close();
 
@@ -110,10 +112,17 @@ private:
 
     bool m_mapped = false;
     bool m_is_override_redirect = false;
+    bool m_is_fullscreen = false;
     int m_x = 0;
     int m_y = 0;
     int m_width = 0;
     int m_height = 0;
+
+    // Saved state for fullscreen → tiled restoration
+    struct {
+        int x = 0, y = 0, w = 0, h = 0;
+        struct wlr_scene_tree* workspace_tree = nullptr;
+    } m_saved_geometry;
 
     struct wl_listener m_map_listener;
     struct wl_listener m_unmap_listener;

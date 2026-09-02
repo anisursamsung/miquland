@@ -71,40 +71,37 @@ void Config::set_defaults() {
     // Switch focus between windows in active workspace
     m_keybindings.push_back({ mod, XKB_KEY_j, "next_window", "Super+J" });
     m_keybindings.push_back({ mod, XKB_KEY_k, "prev_window", "Super+K" });
-    m_keybindings.push_back({ mod, XKB_KEY_1, "focus_win_1", "Super+1" });
-    m_keybindings.push_back({ mod, XKB_KEY_2, "focus_win_2", "Super+2" });
-    m_keybindings.push_back({ mod, XKB_KEY_Left, "prev_window", "Super+Left" });
-    m_keybindings.push_back({ mod, XKB_KEY_Right, "next_window", "Super+Right" });
-    m_keybindings.push_back({ mod, XKB_KEY_Up, "prev_window", "Super+Up" });
-    m_keybindings.push_back({ mod, XKB_KEY_Down, "next_window", "Super+Down" });
+    // Workspace Navigation & Direct Jump (Super + 1..0) [Hyprland standard]
+    for (int i = 1; i <= 9; ++i) {
+        xkb_keysym_t sym = XKB_KEY_0 + i;
+        m_keybindings.push_back({ mod, sym, "ws_" + std::to_string(i), "Super+" + std::to_string(i) });
+    }
+    m_keybindings.push_back({ mod, XKB_KEY_0, "ws_10", "Super+0" });
 
-    // Toggle between Horizontal (Left/Right) and Vertical (Top/Bottom) split
-    m_keybindings.push_back({ mod_alt, XKB_KEY_space, "toggle_split", "Super+Alt+Space" });
-
-    // Workspace Navigation (Super + Shift + ...)
+    // Workspace Navigation (Super + Shift + Left/Right)
     m_keybindings.push_back({ mod_shift, XKB_KEY_Left, "prev_ws", "Super+Shift+Left" });
     m_keybindings.push_back({ mod_shift, XKB_KEY_Right, "next_ws", "Super+Shift+Right" });
 
-    // Jump directly to workspace 1..10 (Super + Shift + 1..0)
+    // Move window directly to workspace 1..10 (Super + Shift + 1..0) [Hyprland standard]
     for (int i = 1; i <= 9; ++i) {
         xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_shift, sym, "ws_" + std::to_string(i), "Super+Shift+" + std::to_string(i) });
+        m_keybindings.push_back({ mod_shift, sym, "move_ws_" + std::to_string(i), "Super+Shift+" + std::to_string(i) });
     }
-    m_keybindings.push_back({ mod_shift, XKB_KEY_0, "ws_10", "Super+Shift+0" });
+    m_keybindings.push_back({ mod_shift, XKB_KEY_0, "move_ws_10", "Super+Shift+0" });
 
-    // Jump directly to workspace 11..20 (Super + Ctrl + 1..0)
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_ctrl, sym, "ws_" + std::to_string(i + 10), "Super+Ctrl+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod_ctrl, XKB_KEY_0, "ws_20", "Super+Ctrl+0" });
-
-    // Move window directly to workspace 1..10 (Super + Alt + 1..0)
+    // Move window directly to workspace 1..10 (Super + Alt + 1..0) [Alternate]
     for (int i = 1; i <= 9; ++i) {
         xkb_keysym_t sym = XKB_KEY_0 + i;
         m_keybindings.push_back({ mod_alt, sym, "move_ws_" + std::to_string(i), "Super+Alt+" + std::to_string(i) });
     }
     m_keybindings.push_back({ mod_alt, XKB_KEY_0, "move_ws_10", "Super+Alt+0" });
+
+    // Direct Jump to Workspace 11..20 (Super + Ctrl + 1..0)
+    for (int i = 1; i <= 9; ++i) {
+        xkb_keysym_t sym = XKB_KEY_0 + i;
+        m_keybindings.push_back({ mod_ctrl, sym, "ws_" + std::to_string(i + 10), "Super+Ctrl+" + std::to_string(i) });
+    }
+    m_keybindings.push_back({ mod_ctrl, XKB_KEY_0, "ws_20", "Super+Ctrl+0" });
 
     // Move window directly to workspace 11..20 (Super + Ctrl + Alt + 1..0)
     uint32_t mod_ctrl_alt = WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT;

@@ -26,7 +26,8 @@ Workspace::Workspace(Server* server, size_t id)
                 wlr_ext_workspace_handle_v1_set_group(m_ext_handle, m_server->get_ext_workspace_group());
             }
             wlr_ext_workspace_handle_v1_set_name(m_ext_handle, id_str.c_str());
-            wlr_ext_workspace_handle_v1_set_active(m_ext_handle, m_id == 1);
+            bool is_act = (m_server->get_workspace_manager()) ? (m_server->get_workspace_manager()->get_active_workspace_id() == m_id) : (m_id == 1);
+            wlr_ext_workspace_handle_v1_set_active(m_ext_handle, is_act);
             wlr_ext_workspace_handle_v1_set_hidden(m_ext_handle, true);
             m_ext_handle->data = this;
         }
@@ -338,15 +339,20 @@ struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr
 WorkspaceManager::WorkspaceManager(Server* server)
     : m_server(server)
 {
-    for (size_t i = 1; i <= 20; ++i) {
-        get_or_create_workspace(i);
-    }
     Workspace* ws1 = get_or_create_workspace(1);
     ws1->set_visible(true);
 }
 
-
 WorkspaceManager::~WorkspaceManager() = default;
+
+void WorkspaceManager::prune_workspace(size_t id) {
+    if (id == m_active_workspace_id) return;
+
+    auto it = m_workspaces.find(id);
+    if (it != m_workspaces.end() && it->second->is_empty()) {
+        m_workspaces.erase(it);
+    }
+}
 
 Workspace* WorkspaceManager::get_workspace(size_t id) {
     auto it = m_workspaces.find(id);
@@ -372,10 +378,16 @@ Workspace* WorkspaceManager::get_active_workspace() {
     return get_or_create_workspace(m_active_workspace_id);
 }
 
-void WorkspaceManager::switch_to_workspace(size_t id) {
-    if (id == 0 || id > 20 || id == m_active_workspace_id) return;
+void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
+    if (id == 0 || id == m_active_workspace_id) {
+        if (focus_view) {
+            focus_view->focus();
+        }
+        return;
+    }
 
-    Workspace* current = get_workspace(m_active_workspace_id);
+    size_t old_id = m_active_workspace_id;
+    Workspace* current = get_workspace(old_id);
     if (current) {
         current->set_visible(false);
         if (current->get_ext_handle()) {
@@ -392,7 +404,12 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
 
     recalculate_layout();
 
-    if (target->view_count() > 0) {
+    // Auto-prune previous workspace if it was left empty
+    prune_workspace(old_id);
+
+    if (focus_view) {
+        focus_view->focus();
+    } else if (target->view_count() > 0) {
         target->get_view(0)->focus();
     } else {
         m_server->set_focused_view(nullptr);
@@ -400,17 +417,22 @@ void WorkspaceManager::switch_to_workspace(size_t id) {
 }
 
 void WorkspaceManager::prev_workspace() {
-    if (m_active_workspace_id > 1) {
+    auto it = m_workspaces.find(m_active_workspace_id);
+    if (it != m_workspaces.end() && it != m_workspaces.begin()) {
+        switch_to_workspace(std::prev(it)->first);
+    } else if (m_active_workspace_id > 1) {
         switch_to_workspace(m_active_workspace_id - 1);
     }
 }
 
 void WorkspaceManager::next_workspace() {
-    if (m_active_workspace_id < 20) {
+    auto it = m_workspaces.find(m_active_workspace_id);
+    if (it != m_workspaces.end() && std::next(it) != m_workspaces.end()) {
+        switch_to_workspace(std::next(it)->first);
+    } else {
         switch_to_workspace(m_active_workspace_id + 1);
     }
 }
-
 
 void WorkspaceManager::add_view_auto(View* view) {
     if (view->is_dialog()) {
@@ -435,6 +457,7 @@ void WorkspaceManager::remove_view(View* view) {
     View* parent = view->get_parent_view();
 
     if (ws) {
+        size_t ws_id = ws->get_id();
         ws->remove_view(view);
         recalculate_layout();
 
@@ -444,15 +467,18 @@ void WorkspaceManager::remove_view(View* view) {
             } else if (ws->view_count() > 0) {
                 ws->get_view(0)->focus();
             }
+        } else if (ws->is_empty()) {
+            prune_workspace(ws_id);
         }
     }
 }
 
 void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
-    if (target_ws_id == 0 || target_ws_id > 20) return;
+    if (target_ws_id == 0) return;
     Workspace* current = view->get_workspace();
     if (!current || current->get_id() == target_ws_id) return;
 
+    size_t current_id = current->get_id();
     Workspace* target = get_or_create_workspace(target_ws_id);
     current->remove_view(view);
     target->add_view(view);
@@ -464,6 +490,8 @@ void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
         } else {
             m_server->set_focused_view(nullptr);
         }
+    } else if (current->is_empty()) {
+        prune_workspace(current_id);
     }
 }
 

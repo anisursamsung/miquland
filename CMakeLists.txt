@@ -100,4 +100,4 @@ install(TARGETS miquland RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Install assets and desktop entry
 install(FILES assets/miquland.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)
-install(DIRECTORY assets/ DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)
+install(FILES assets/miquland.conf assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)

@@ -313,6 +313,100 @@ void View::set_geometry(int x, int y, int width, int height) {
     update_child_dialog_geometries();
 }
 
+void View::set_fullscreen(bool fullscreen) {
+    if (m_is_fullscreen == fullscreen) return;
+
+    auto* output_mgr = m_server->get_output_manager();
+    if (!output_mgr) return;
+    auto* primary_out = output_mgr->get_primary_output();
+    if (!primary_out || !primary_out->get_wlr_output()) return;
+
+    if (fullscreen) {
+        // --- Enter fullscreen ---
+        m_saved_geometry.x = m_x;
+        m_saved_geometry.y = m_y;
+        m_saved_geometry.w = m_width;
+        m_saved_geometry.h = m_height;
+        m_saved_geometry.workspace_tree = m_workspace ? m_workspace->get_scene_tree() : nullptr;
+
+        // Reparent to the overlay scene tree so it sits above everything
+        if (m_scene_tree) {
+            wlr_scene_node_reparent(&m_scene_tree->node, m_server->get_layer_overlay_tree());
+            wlr_scene_node_raise_to_top(&m_scene_tree->node);
+        }
+
+        // Cover the entire output (no border offset)
+        struct wlr_box output_box = {};
+        wlr_output_effective_resolution(primary_out->get_wlr_output(), &output_box.width, &output_box.height);
+        // Account for output layout position
+        struct wlr_box layout_box = output_mgr->get_primary_geometry();
+        output_box.x = layout_box.x;
+        output_box.y = layout_box.y;
+
+        m_x = output_box.x;
+        m_y = output_box.y;
+        m_width = output_box.width;
+        m_height = output_box.height;
+
+        if (m_scene_tree) {
+            wlr_scene_node_set_position(&m_scene_tree->node, m_x, m_y);
+        }
+
+        if (m_type == ViewType::Xdg && m_xdg_toplevel) {
+            if (m_surface_scene_tree) {
+                wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
+            }
+            wlr_xdg_toplevel_set_fullscreen(m_xdg_toplevel, true);
+            wlr_xdg_toplevel_set_size(m_xdg_toplevel, m_width, m_height);
+        } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
+            if (m_surface_scene_tree) {
+                wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
+            }
+            wlr_xwayland_surface_set_fullscreen(m_xwayland_surface, true);
+            wlr_xwayland_surface_configure(m_xwayland_surface, m_x, m_y, m_width, m_height);
+        }
+
+        // Disable border in fullscreen
+        if (m_border_scene_buffer) {
+            wlr_scene_node_set_enabled(&m_border_scene_buffer->node, false);
+        }
+
+        m_is_fullscreen = true;
+        focus();
+
+    } else {
+        // --- Exit fullscreen ---
+        m_is_fullscreen = false;
+
+        // Reparent back to workspace scene tree
+        struct wlr_scene_tree* parent_tree = m_saved_geometry.workspace_tree;
+        if (!parent_tree && m_workspace) {
+            parent_tree = m_workspace->get_scene_tree();
+        }
+        if (parent_tree && m_scene_tree) {
+            wlr_scene_node_reparent(&m_scene_tree->node, parent_tree);
+        }
+
+        if (m_type == ViewType::Xdg && m_xdg_toplevel) {
+            if (m_surface_scene_tree) {
+                int bw = Config::get().get_window_border_width();
+                wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+            }
+            wlr_xdg_toplevel_set_fullscreen(m_xdg_toplevel, false);
+        } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
+            if (m_surface_scene_tree) {
+                int bw = Config::get().get_window_border_width();
+                wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+            }
+            wlr_xwayland_surface_set_fullscreen(m_xwayland_surface, false);
+        }
+
+        // Trigger workspace relayout to reassign geometry
+        m_server->get_workspace_manager()->recalculate_layout();
+    }
+}
+
+
 void View::update_border() {
     if (m_is_override_redirect || !m_mapped || m_width <= 0 || m_height <= 0) {
         if (m_border_scene_buffer) {
@@ -392,6 +486,13 @@ void View::update_opacity() {
 
 void View::focus() {
     if (!m_mapped) return;
+
+    if (m_workspace && m_server->get_workspace_manager()) {
+        if (m_workspace->get_id() != m_server->get_workspace_manager()->get_active_workspace_id()) {
+            m_server->get_workspace_manager()->switch_to_workspace(m_workspace->get_id(), this);
+            return;
+        }
+    }
 
     if (is_override_redirect()) {
         if (m_scene_tree) {
@@ -526,6 +627,19 @@ void View::handle_map(struct wl_listener* listener, void* data) {
 
 void View::handle_unmap(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_unmap_listener);
+
+    // If this view is fullscreen, restore scene tree parent before normal teardown
+    if (view->m_is_fullscreen) {
+        view->m_is_fullscreen = false;
+        struct wlr_scene_tree* parent_tree = view->m_saved_geometry.workspace_tree;
+        if (!parent_tree && view->m_workspace) {
+            parent_tree = view->m_workspace->get_scene_tree();
+        }
+        if (parent_tree && view->m_scene_tree) {
+            wlr_scene_node_reparent(&view->m_scene_tree->node, parent_tree);
+        }
+    }
+
     view->m_mapped = false;
 
     if (view->m_scene_tree) {
@@ -627,12 +741,14 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
 void View::handle_request_fullscreen(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_request_fullscreen_listener);
     if (view->m_type == ViewType::Xdg) {
-        if (view->m_xdg_toplevel->base->surface->mapped) {
-            wlr_xdg_toplevel_set_fullscreen(view->m_xdg_toplevel, false);
+        if (view->m_xdg_toplevel && view->m_xdg_toplevel->base->surface->mapped) {
+            bool requested = view->m_xdg_toplevel->requested.fullscreen;
+            view->set_fullscreen(requested);
         }
     } else if (view->m_type == ViewType::XWayland && view->m_xwayland_surface) {
         if (!view->is_override_redirect()) {
-            wlr_xwayland_surface_set_fullscreen(view->m_xwayland_surface, false);
+            bool requested = view->m_xwayland_surface->fullscreen;
+            view->set_fullscreen(requested);
         }
     }
 }
@@ -668,7 +784,11 @@ void View::handle_set_app_id(struct wl_listener* listener, void* data) {
 
 void View::handle_foreign_request_activate(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_foreign_request_activate_listener);
-    view->focus();
+    if (view->m_workspace && view->m_server->get_workspace_manager()) {
+        view->m_server->get_workspace_manager()->switch_to_workspace(view->m_workspace->get_id(), view);
+    } else {
+        view->focus();
+    }
 }
 
 void View::handle_foreign_request_close(struct wl_listener* listener, void* data) {
