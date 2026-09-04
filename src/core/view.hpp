@@ -39,6 +39,7 @@ public:
 
     void update_border();
     void update_opacity();
+    void update_corner_radius();
     bool is_focused() const;
 
     std::string get_title() const;

@@ -426,6 +426,7 @@ void View::set_fullscreen(bool fullscreen) {
         }
 
         m_is_fullscreen = true;
+        update_corner_radius();
         focus();
 
     } else {
@@ -459,6 +460,8 @@ void View::set_fullscreen(bool fullscreen) {
         if (m_border_scene_buffer) {
             wlr_scene_node_set_enabled(&m_border_scene_buffer->node, true);
         }
+
+        update_corner_radius();
 
         if (m_is_floating) {
             set_geometry(m_saved_geometry.x, m_saved_geometry.y, m_saved_geometry.w, m_saved_geometry.h);
@@ -530,6 +533,7 @@ void View::update_border() {
     }
 
     wlr_scene_buffer_set_buffer(m_border_scene_buffer, m_border_buffer->get_wlr_buffer());
+    update_corner_radius();
 }
 
 void View::update_opacity() {
@@ -545,6 +549,22 @@ void View::update_opacity() {
         float val = *static_cast<float*>(data);
         wlr_scene_buffer_set_opacity(buffer, val);
     }, &opacity);
+}
+
+void View::update_corner_radius() {
+    if (!m_mapped || !m_surface_scene_tree) return;
+
+    int radius = 0;
+    if (!m_is_fullscreen && !m_is_override_redirect) {
+        int r = Config::get().get_window_border_radius();
+        int bw = Config::get().get_window_border_width();
+        radius = (bw > 0) ? std::max(0, r - bw) : std::max(0, r);
+    }
+
+    wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buffer, int sx, int sy, void* data) {
+        int val = *static_cast<int*>(data);
+        wlr_scene_buffer_set_corner_radius(buffer, val);
+    }, &radius);
 }
 
 void View::focus() {
@@ -685,6 +705,7 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
     }
     view->update_opacity();
+    view->update_corner_radius();
     view->focus();
 }
 
@@ -798,6 +819,7 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
 
     if (view->m_mapped) {
         view->update_opacity();
+        view->update_corner_radius();
     }
 }
 

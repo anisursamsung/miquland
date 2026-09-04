@@ -7,6 +7,9 @@
 #include "core/popup.hpp"
 #include "core/session_lock.hpp"
 #include "core/config/config.hpp"
+extern "C" {
+#include <scenefx/render/fx_renderer/fx_renderer.h>
+}
 #include <sys/inotify.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -58,7 +61,11 @@ bool Server::init() {
         return false;
     }
 
-    m_wlr_renderer = wlr_renderer_autocreate(m_wlr_backend);
+    m_wlr_renderer = fx_renderer_create(m_wlr_backend);
+    if (!m_wlr_renderer) {
+        log_warn("fx_renderer_create failed, falling back to wlr_renderer_autocreate");
+        m_wlr_renderer = wlr_renderer_autocreate(m_wlr_backend);
+    }
     if (!m_wlr_renderer) {
         log_error("Failed to create wlr_renderer");
         return false;

@@ -51,7 +51,7 @@ extern "C" {
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
-#include <wlr/types/wlr_scene.h>
+#include <scenefx/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_ext_workspace_v1.h>

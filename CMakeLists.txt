@@ -81,6 +81,8 @@ add_executable(miquland
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-output-power-management-unstable-v1-protocol.c
 )
 
+add_subdirectory(subprojects/scenefx)
+
 target_include_directories(miquland PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
@@ -94,7 +96,12 @@ target_include_directories(miquland PRIVATE
     ${XCB_INCLUDE_DIRS}
 )
 
+target_include_directories(miquland SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/subprojects/scenefx/include
+)
+
 target_link_libraries(miquland PRIVATE
+    scenefx
     PkgConfig::WLROOTS
     PkgConfig::WAYLAND_SERVER
     PkgConfig::XKBCOMMON
