@@ -41,6 +41,12 @@ public:
     int get_window_border_radius() const { return m_window_border_radius; }
     void set_window_border_radius(int r) { m_window_border_radius = r; }
 
+    bool is_resize_on_border_enabled() const { return m_resize_on_border; }
+    void set_resize_on_border_enabled(bool enabled) { m_resize_on_border = enabled; }
+
+    int get_border_grab_area() const { return m_border_grab_area; }
+    void set_border_grab_area(int area) { m_border_grab_area = area; }
+
     const std::string& get_window_border_color_active() const { return m_color_primary; }
     void set_window_border_color_active(const std::string& color) { m_color_primary = color; }
 
@@ -142,6 +148,8 @@ private:
 
     int m_window_border_width = 2;
     int m_window_border_radius = 8;
+    bool m_resize_on_border = true;
+    int m_border_grab_area = 5;
     int m_space_between_windows = 8;
     int m_screen_edge_padding = 10;
     float m_window_opacity_active = 1.0f;

@@ -39,7 +39,24 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
 
     // Create border scene buffer on top of xdg surface (Child 2 - top overlay layer)
     m_border_scene_buffer = wlr_scene_buffer_create(m_scene_tree, nullptr);
-    m_border_scene_buffer->point_accepts_input = [](struct wlr_scene_buffer*, double*, double*) -> bool {
+    m_border_scene_buffer->point_accepts_input = [](struct wlr_scene_buffer* buffer, double* sx, double* sy) -> bool {
+        if (!Config::get().is_resize_on_border_enabled()) {
+            return false;
+        }
+        if (!buffer || !buffer->node.parent || !buffer->node.parent->node.data) {
+            return false;
+        }
+        auto* view = static_cast<View*>(buffer->node.parent->node.data);
+        if (!view || view->is_fullscreen()) {
+            return false;
+        }
+        int grab = std::max(Config::get().get_window_border_width(), Config::get().get_border_grab_area());
+        int w = view->get_width();
+        int h = view->get_height();
+        if (w <= 0 || h <= 0) return false;
+        if (*sx < grab || *sx >= w - grab || *sy < grab || *sy >= h - grab) {
+            return true;
+        }
         return false;
     };
 
@@ -103,7 +120,24 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
         wlr_scene_node_set_enabled(&m_scene_tree->node, false);
         // Create border scene buffer on top of surface
         m_border_scene_buffer = wlr_scene_buffer_create(m_scene_tree, nullptr);
-        m_border_scene_buffer->point_accepts_input = [](struct wlr_scene_buffer*, double*, double*) -> bool {
+        m_border_scene_buffer->point_accepts_input = [](struct wlr_scene_buffer* buffer, double* sx, double* sy) -> bool {
+            if (!Config::get().is_resize_on_border_enabled()) {
+                return false;
+            }
+            if (!buffer || !buffer->node.parent || !buffer->node.parent->node.data) {
+                return false;
+            }
+            auto* view = static_cast<View*>(buffer->node.parent->node.data);
+            if (!view || view->is_fullscreen()) {
+                return false;
+            }
+            int grab = std::max(Config::get().get_window_border_width(), Config::get().get_border_grab_area());
+            int w = view->get_width();
+            int h = view->get_height();
+            if (w <= 0 || h <= 0) return false;
+            if (*sx < grab || *sx >= w - grab || *sy < grab || *sy >= h - grab) {
+                return true;
+            }
             return false;
         };
     }

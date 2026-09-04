@@ -461,6 +461,14 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_window_border_radius = std::max(0, std::stoi(value));
             } catch (...) {}
+        } else if (key == "resize_on_border" || key == "border_resize") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_resize_on_border = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "border_grab_area" || key == "grab_area") {
+            try {
+                m_border_grab_area = std::clamp(std::stoi(value), 1, 30);
+            } catch (...) {}
         } else if (key == "color_primary" || key == "primary" || key == "accent" ||
                    key == "window_border_color_active" || key == "border_color_active") {
             m_color_primary = value;
@@ -586,6 +594,8 @@ void Config::save() {
     file << "layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
+    file << "resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
+    file << "border_grab_area = " << m_border_grab_area << "\n";
     file << "space_between_windows = " << m_space_between_windows << "\n";
     file << "screen_edge_padding = " << m_screen_edge_padding << "\n";
     file << "window_opacity_active = " << m_window_opacity_active << "\n";

@@ -257,6 +257,10 @@ void InputManager::notify_view_destroyed(View* view) {
         m_cursor_mode = CursorMode::Passthrough;
         set_cursor_icon("default");
     }
+    if (m_border_hover_view == view) {
+        m_border_hover_view = nullptr;
+        m_border_hover_edges = 0;
+    }
 }
 
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
@@ -454,7 +458,38 @@ void InputManager::process_cursor_motion(uint32_t time) {
     struct wlr_surface* surface = nullptr;
     View* view = m_server->view_at(m_cursor->x, m_cursor->y, &surface, &sx, &sy);
 
+    m_border_hover_view = nullptr;
+    m_border_hover_edges = 0;
+
     if (!surface) {
+        if (view && Config::get().is_resize_on_border_enabled() && !view->is_fullscreen() && !view->is_override_redirect()) {
+            int grab = std::max(Config::get().get_window_border_width(), Config::get().get_border_grab_area());
+            uint32_t edges = 0;
+            if (sx < grab) edges |= WLR_EDGE_LEFT;
+            else if (sx >= view->get_width() - grab) edges |= WLR_EDGE_RIGHT;
+            if (sy < grab) edges |= WLR_EDGE_TOP;
+            else if (sy >= view->get_height() - grab) edges |= WLR_EDGE_BOTTOM;
+
+            if (edges != 0) {
+                m_border_hover_view = view;
+                m_border_hover_edges = edges;
+
+                const char* edge_name = "se-resize";
+                if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_LEFT)) edge_name = "nw-resize";
+                else if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_RIGHT)) edge_name = "ne-resize";
+                else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_LEFT)) edge_name = "sw-resize";
+                else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_RIGHT)) edge_name = "se-resize";
+                else if (edges & WLR_EDGE_TOP) edge_name = "n-resize";
+                else if (edges & WLR_EDGE_BOTTOM) edge_name = "s-resize";
+                else if (edges & WLR_EDGE_LEFT) edge_name = "w-resize";
+                else if (edges & WLR_EDGE_RIGHT) edge_name = "e-resize";
+
+                set_cursor_icon(edge_name);
+                wlr_seat_pointer_clear_focus(m_seat);
+                return;
+            }
+        }
+
         wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
         wlr_seat_pointer_clear_focus(m_seat);
         return;
@@ -585,6 +620,12 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
     }
 
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        // Direct border drag-resize without holding Super
+        if (event->button == BTN_LEFT && manager->m_border_hover_view && manager->m_border_hover_edges != 0) {
+            manager->begin_interactive(manager->m_border_hover_view, CursorMode::Resize, manager->m_border_hover_edges);
+            return;
+        }
+
         struct wlr_keyboard* kb = wlr_seat_get_keyboard(manager->m_seat);
         uint32_t modifiers = kb ? wlr_keyboard_get_modifiers(kb) : 0;
         bool mod_pressed = (modifiers & WLR_MODIFIER_LOGO) != 0;

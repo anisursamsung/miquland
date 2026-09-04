@@ -79,6 +79,9 @@ private:
     struct wlr_box m_grab_initial_view_box = { 0, 0, 0, 0 };
     uint32_t m_resize_edges = 0;
 
+    View* m_border_hover_view = nullptr;
+    uint32_t m_border_hover_edges = 0;
+
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
     std::vector<struct wlr_input_device*> m_pointers;
     std::vector<struct wlr_input_device*> m_touch_devices;
