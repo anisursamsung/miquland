@@ -62,6 +62,12 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     m_request_maximize_listener.notify = handle_request_maximize;
     wl_signal_add(&toplevel->events.request_maximize, &m_request_maximize_listener);
 
+    m_request_move_listener.notify = handle_request_move;
+    wl_signal_add(&toplevel->events.request_move, &m_request_move_listener);
+
+    m_request_resize_listener.notify = handle_request_resize;
+    wl_signal_add(&toplevel->events.request_resize, &m_request_resize_listener);
+
     m_set_title_listener.notify = handle_set_title;
     wl_signal_add(&toplevel->events.set_title, &m_set_title_listener);
 
@@ -124,6 +130,12 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
     m_request_maximize_listener.notify = handle_request_maximize;
     wl_signal_add(&xsurface->events.request_maximize, &m_request_maximize_listener);
 
+    m_xwayland_request_move_listener.notify = handle_xwayland_request_move;
+    wl_signal_add(&xsurface->events.request_move, &m_xwayland_request_move_listener);
+
+    m_xwayland_request_resize_listener.notify = handle_xwayland_request_resize;
+    wl_signal_add(&xsurface->events.request_resize, &m_xwayland_request_resize_listener);
+
     m_set_title_listener.notify = handle_set_title;
     wl_signal_add(&xsurface->events.set_title, &m_set_title_listener);
 
@@ -148,6 +160,10 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
 }
 
 View::~View() {
+    if (m_server && m_server->get_input_manager()) {
+        m_server->get_input_manager()->notify_view_destroyed(this);
+    }
+
     if (m_workspace) {
         m_workspace->remove_view(this);
         m_workspace = nullptr;
@@ -160,6 +176,8 @@ View::~View() {
         wl_list_remove(&m_commit_listener.link);
         wl_list_remove(&m_request_fullscreen_listener.link);
         wl_list_remove(&m_request_maximize_listener.link);
+        wl_list_remove(&m_request_move_listener.link);
+        wl_list_remove(&m_request_resize_listener.link);
         wl_list_remove(&m_set_title_listener.link);
         wl_list_remove(&m_set_app_id_listener.link);
         wl_list_remove(&m_set_parent_listener.link);
@@ -172,6 +190,8 @@ View::~View() {
         wl_list_remove(&m_request_activate_listener.link);
         wl_list_remove(&m_request_fullscreen_listener.link);
         wl_list_remove(&m_request_maximize_listener.link);
+        wl_list_remove(&m_xwayland_request_move_listener.link);
+        wl_list_remove(&m_xwayland_request_resize_listener.link);
         wl_list_remove(&m_set_title_listener.link);
         wl_list_remove(&m_set_class_listener.link);
         wl_list_remove(&m_set_parent_listener.link);
@@ -401,8 +421,17 @@ void View::set_fullscreen(bool fullscreen) {
             wlr_xwayland_surface_set_fullscreen(m_xwayland_surface, false);
         }
 
-        // Trigger workspace relayout to reassign geometry
-        m_server->get_workspace_manager()->recalculate_layout();
+        // Re-enable border
+        if (m_border_scene_buffer) {
+            wlr_scene_node_set_enabled(&m_border_scene_buffer->node, true);
+        }
+
+        if (m_is_floating) {
+            set_geometry(m_saved_geometry.x, m_saved_geometry.y, m_saved_geometry.w, m_saved_geometry.h);
+        } else {
+            // Trigger workspace relayout to reassign geometry
+            m_server->get_workspace_manager()->recalculate_layout();
+        }
     }
 }
 
@@ -763,6 +792,40 @@ void View::handle_request_maximize(struct wl_listener* listener, void* data) {
         if (!view->is_override_redirect()) {
             wlr_xwayland_surface_set_maximized(view->m_xwayland_surface, false, false);
         }
+    }
+}
+
+void View::handle_request_move(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_request_move_listener);
+    if (!view || !view->m_mapped || view->m_is_fullscreen) return;
+    if (view->m_server && view->m_server->get_input_manager()) {
+        view->m_server->get_input_manager()->begin_interactive(view, CursorMode::Move, 0);
+    }
+}
+
+void View::handle_request_resize(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_request_resize_listener);
+    auto* event = static_cast<struct wlr_xdg_toplevel_resize_event*>(data);
+    if (!view || !view->m_mapped || view->m_is_fullscreen) return;
+    if (view->m_server && view->m_server->get_input_manager()) {
+        view->m_server->get_input_manager()->begin_interactive(view, CursorMode::Resize, event ? event->edges : 0);
+    }
+}
+
+void View::handle_xwayland_request_move(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_xwayland_request_move_listener);
+    if (!view || !view->m_mapped || view->m_is_fullscreen) return;
+    if (view->m_server && view->m_server->get_input_manager()) {
+        view->m_server->get_input_manager()->begin_interactive(view, CursorMode::Move, 0);
+    }
+}
+
+void View::handle_xwayland_request_resize(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_xwayland_request_resize_listener);
+    auto* event = static_cast<struct wlr_xwayland_resize_event*>(data);
+    if (!view || !view->m_mapped || view->m_is_fullscreen) return;
+    if (view->m_server && view->m_server->get_input_manager()) {
+        view->m_server->get_input_manager()->begin_interactive(view, CursorMode::Resize, event ? event->edges : 0);
     }
 }
 

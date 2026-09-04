@@ -53,7 +53,7 @@ void Workspace::update_ext_state() {
 bool Workspace::add_view(View* view) {
     if (!view) return false;
 
-    if (view->is_dialog()) {
+    if (view->is_dialog() || view->is_floating()) {
         if (std::find(m_floating_views.begin(), m_floating_views.end(), view) == m_floating_views.end()) {
             m_floating_views.push_back(view);
             view->set_workspace(this);
@@ -125,6 +125,53 @@ void Workspace::swap_with_main(View* view) {
 void Workspace::swap_views(size_t idx1, size_t idx2) {
     if (idx1 < m_tiled_views.size() && idx2 < m_tiled_views.size()) {
         std::swap(m_tiled_views[idx1], m_tiled_views[idx2]);
+    }
+}
+
+bool Workspace::swap_views(View* view1, View* view2) {
+    if (!view1 || !view2 || view1 == view2) return false;
+    auto it1 = std::find(m_tiled_views.begin(), m_tiled_views.end(), view1);
+    auto it2 = std::find(m_tiled_views.begin(), m_tiled_views.end(), view2);
+    if (it1 != m_tiled_views.end() && it2 != m_tiled_views.end()) {
+        std::iter_swap(it1, it2);
+        auto* out_mgr = m_server->get_output_manager();
+        if (out_mgr) {
+            recalculate_layout(out_mgr->get_primary_usable_geometry());
+        }
+        return true;
+    }
+    return false;
+}
+
+void Workspace::toggle_floating(View* view) {
+    if (!view || view->is_dialog()) return;
+
+    auto it_tile = std::find(m_tiled_views.begin(), m_tiled_views.end(), view);
+    if (it_tile != m_tiled_views.end()) {
+        m_tiled_views.erase(it_tile);
+        m_floating_views.push_back(view);
+        view->set_floating(true);
+
+        if (view->get_scene_tree()) {
+            wlr_scene_node_raise_to_top(&view->get_scene_tree()->node);
+        }
+
+        auto* out_mgr = m_server->get_output_manager();
+        if (out_mgr) {
+            recalculate_layout(out_mgr->get_primary_usable_geometry());
+        }
+    } else {
+        auto it_float = std::find(m_floating_views.begin(), m_floating_views.end(), view);
+        if (it_float != m_floating_views.end()) {
+            m_floating_views.erase(it_float);
+            m_tiled_views.push_back(view);
+            view->set_floating(false);
+
+            auto* out_mgr = m_server->get_output_manager();
+            if (out_mgr) {
+                recalculate_layout(out_mgr->get_primary_usable_geometry());
+            }
+        }
     }
 }
 
@@ -560,6 +607,13 @@ void WorkspaceManager::toggle_active_split() {
     if (ws) {
         ws->toggle_split_mode();
         recalculate_layout();
+    }
+}
+
+void WorkspaceManager::toggle_floating_active() {
+    View* cur = m_server->get_focused_view();
+    if (cur && cur->get_workspace()) {
+        cur->get_workspace()->toggle_floating(cur);
     }
 }
 

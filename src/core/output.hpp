@@ -52,14 +52,23 @@ public:
     void add_output(Output* output);
     void remove_output(Output* output);
 
+    void update_manager_config();
+
 private:
     static void handle_new_output(struct wl_listener* listener, void* data);
+    static void handle_manager_apply(struct wl_listener* listener, void* data);
+    static void handle_manager_test(struct wl_listener* listener, void* data);
+
+    bool apply_config(struct wlr_output_configuration_v1* config, bool test_only);
 
     Server* m_server = nullptr;
     struct wlr_output_layout* m_output_layout = nullptr;
+    struct wlr_output_manager_v1* m_output_manager_v1 = nullptr;
     std::vector<std::unique_ptr<Output>> m_outputs;
 
     struct wl_listener m_new_output_listener;
+    struct wl_listener m_output_manager_apply_listener;
+    struct wl_listener m_output_manager_test_listener;
 };
 
 } // namespace miquland

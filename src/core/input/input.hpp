@@ -6,6 +6,13 @@ namespace miquland {
 
 class Server;
 class Keyboard;
+class View;
+
+enum class CursorMode {
+    Passthrough,
+    Move,
+    Resize
+};
 
 class InputManager {
 public:
@@ -20,6 +27,11 @@ public:
     void remove_keyboard(Keyboard* kb);
     void reapply_device_config();
     void set_cursor_icon(const char* name);
+
+    void begin_interactive(View* view, CursorMode mode, uint32_t edges);
+    void end_interactive();
+    void notify_view_destroyed(View* view);
+    CursorMode get_cursor_mode() const { return m_cursor_mode; }
 
 private:
     static void handle_new_input(struct wl_listener* listener, void* data);
@@ -58,6 +70,14 @@ private:
     struct wlr_seat* m_seat = nullptr;
     struct wlr_cursor* m_cursor = nullptr;
     struct wlr_xcursor_manager* m_cursor_mgr = nullptr;
+
+    CursorMode m_cursor_mode = CursorMode::Passthrough;
+    View* m_grabbed_view = nullptr;
+    bool m_grabbed_view_was_tiled = false;
+    double m_grab_x = 0;
+    double m_grab_y = 0;
+    struct wlr_box m_grab_initial_view_box = { 0, 0, 0, 0 };
+    uint32_t m_resize_edges = 0;
 
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
     std::vector<struct wlr_input_device*> m_pointers;

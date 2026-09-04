@@ -124,6 +124,49 @@ bool Server::init() {
     m_foreign_toplevel_manager = wlr_foreign_toplevel_manager_v1_create(m_wl_display);
     m_pointer_gestures = wlr_pointer_gestures_v1_create(m_wl_display);
 
+    // Protocols
+    m_screencopy_manager = wlr_screencopy_manager_v1_create(m_wl_display);
+
+    m_gamma_control_manager = wlr_gamma_control_manager_v1_create(m_wl_display);
+    if (m_gamma_control_manager) {
+        m_gamma_set_gamma_listener.notify = handle_gamma_set_gamma;
+        wl_signal_add(&m_gamma_control_manager->events.set_gamma, &m_gamma_set_gamma_listener);
+    }
+
+    m_output_power_manager = wlr_output_power_manager_v1_create(m_wl_display);
+    if (m_output_power_manager) {
+        m_output_power_set_mode_listener.notify = handle_output_power_set_mode;
+        wl_signal_add(&m_output_power_manager->events.set_mode, &m_output_power_set_mode_listener);
+    }
+
+    m_idle_notifier = wlr_idle_notifier_v1_create(m_wl_display);
+    m_idle_inhibit_manager = wlr_idle_inhibit_v1_create(m_wl_display);
+    if (m_idle_inhibit_manager) {
+        m_new_idle_inhibitor_listener.notify = handle_new_idle_inhibitor;
+        wl_signal_add(&m_idle_inhibit_manager->events.new_inhibitor, &m_new_idle_inhibitor_listener);
+    }
+
+    m_xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(m_wl_display);
+    if (m_xdg_decoration_manager) {
+        m_new_xdg_decoration_listener.notify = handle_new_xdg_decoration;
+        wl_signal_add(&m_xdg_decoration_manager->events.new_toplevel_decoration, &m_new_xdg_decoration_listener);
+    }
+
+    m_xdg_activation = wlr_xdg_activation_v1_create(m_wl_display);
+    if (m_xdg_activation) {
+        m_xdg_activation_request_activate_listener.notify = handle_xdg_activation_request_activate;
+        wl_signal_add(&m_xdg_activation->events.request_activate, &m_xdg_activation_request_activate_listener);
+    }
+
+    m_cursor_shape_manager = wlr_cursor_shape_manager_v1_create(m_wl_display, 1);
+    if (m_cursor_shape_manager) {
+        m_cursor_shape_request_set_shape_listener.notify = handle_cursor_shape_request_set_shape;
+        wl_signal_add(&m_cursor_shape_manager->events.request_set_shape, &m_cursor_shape_request_set_shape_listener);
+    }
+
+    m_relative_pointer_manager = wlr_relative_pointer_manager_v1_create(m_wl_display);
+    m_pointer_constraints = wlr_pointer_constraints_v1_create(m_wl_display);
+
     m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
     if (m_xwayland) {
         m_xwayland_ready_listener.notify = handle_xwayland_ready;
@@ -476,6 +519,170 @@ void Server::unlock_session() {
         if (ws && ws->view_count() > 0) {
             ws->get_view(0)->focus();
         }
+    }
+}
+
+void Server::handle_gamma_set_gamma(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_gamma_set_gamma_listener);
+    auto* event = static_cast<struct wlr_gamma_control_manager_v1_set_gamma_event*>(data);
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    if (!wlr_gamma_control_v1_apply(event->control, &state)) {
+        wlr_output_state_finish(&state);
+        return;
+    }
+    if (!wlr_output_commit_state(event->output, &state)) {
+        wlr_gamma_control_v1_send_failed_and_destroy(event->control);
+    }
+    wlr_output_state_finish(&state);
+}
+
+void Server::handle_output_power_set_mode(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_output_power_set_mode_listener);
+    auto* event = static_cast<struct wlr_output_power_v1_set_mode_event*>(data);
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, event->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON);
+    wlr_output_commit_state(event->output, &state);
+    wlr_output_state_finish(&state);
+}
+
+struct IdleInhibitorWrapper {
+    Server* server = nullptr;
+    struct wl_listener destroy;
+
+    static void handle_destroy(struct wl_listener* listener, void* data) {
+        IdleInhibitorWrapper* wrapper = wl_container_of(listener, wrapper, destroy);
+        if (wrapper->server) {
+            wrapper->server->handle_idle_inhibitor_destroy();
+        }
+        wl_list_remove(&wrapper->destroy.link);
+        delete wrapper;
+    }
+};
+
+void Server::handle_idle_inhibitor_destroy() {
+    if (m_idle_inhibitor_count > 0) {
+        m_idle_inhibitor_count--;
+    }
+    if (m_idle_notifier) {
+        wlr_idle_notifier_v1_set_inhibited(m_idle_notifier, m_idle_inhibitor_count > 0);
+    }
+}
+
+void Server::handle_new_idle_inhibitor(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_new_idle_inhibitor_listener);
+    auto* inhibitor = static_cast<struct wlr_idle_inhibitor_v1*>(data);
+
+    server->m_idle_inhibitor_count++;
+    if (server->m_idle_notifier) {
+        wlr_idle_notifier_v1_set_inhibited(server->m_idle_notifier, true);
+    }
+
+    auto* wrapper = new IdleInhibitorWrapper();
+    wrapper->server = server;
+    wrapper->destroy.notify = IdleInhibitorWrapper::handle_destroy;
+    wl_signal_add(&inhibitor->events.destroy, &wrapper->destroy);
+}
+
+struct DecorationWrapper {
+    struct wlr_xdg_toplevel_decoration_v1* decoration = nullptr;
+    struct wl_listener request_mode;
+    struct wl_listener surface_commit;
+    struct wl_listener destroy;
+
+    static void handle_request_mode(struct wl_listener* listener, void* data) {
+        DecorationWrapper* wrapper = wl_container_of(listener, wrapper, request_mode);
+        if (wrapper->decoration && wrapper->decoration->toplevel &&
+            wrapper->decoration->toplevel->base &&
+            wrapper->decoration->toplevel->base->initialized) {
+            wlr_xdg_toplevel_decoration_v1_set_mode(wrapper->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+        }
+    }
+
+    static void handle_commit(struct wl_listener* listener, void* data) {
+        DecorationWrapper* wrapper = wl_container_of(listener, wrapper, surface_commit);
+        if (wrapper->decoration && wrapper->decoration->toplevel &&
+            wrapper->decoration->toplevel->base &&
+            wrapper->decoration->toplevel->base->initialized) {
+            if (wrapper->decoration->current.mode != WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE &&
+                wrapper->decoration->scheduled_mode != WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE) {
+                wlr_xdg_toplevel_decoration_v1_set_mode(wrapper->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+            }
+            wl_list_remove(&wrapper->surface_commit.link);
+            wl_list_init(&wrapper->surface_commit.link);
+        }
+    }
+
+    static void handle_destroy(struct wl_listener* listener, void* data) {
+        DecorationWrapper* wrapper = wl_container_of(listener, wrapper, destroy);
+        wl_list_remove(&wrapper->request_mode.link);
+        wl_list_remove(&wrapper->surface_commit.link);
+        wl_list_remove(&wrapper->destroy.link);
+        delete wrapper;
+    }
+};
+
+void Server::handle_new_xdg_decoration(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_new_xdg_decoration_listener);
+    auto* decoration = static_cast<struct wlr_xdg_toplevel_decoration_v1*>(data);
+
+    auto* wrapper = new DecorationWrapper();
+    wrapper->decoration = decoration;
+
+    wrapper->request_mode.notify = DecorationWrapper::handle_request_mode;
+    wl_signal_add(&decoration->events.request_mode, &wrapper->request_mode);
+
+    wrapper->surface_commit.notify = DecorationWrapper::handle_commit;
+    if (decoration->toplevel && decoration->toplevel->base && decoration->toplevel->base->surface) {
+        wl_signal_add(&decoration->toplevel->base->surface->events.commit, &wrapper->surface_commit);
+    } else {
+        wl_list_init(&wrapper->surface_commit.link);
+    }
+
+    wrapper->destroy.notify = DecorationWrapper::handle_destroy;
+    wl_signal_add(&decoration->events.destroy, &wrapper->destroy);
+
+    if (decoration->toplevel && decoration->toplevel->base && decoration->toplevel->base->initialized) {
+        wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+    }
+}
+
+void Server::handle_xdg_activation_request_activate(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_xdg_activation_request_activate_listener);
+    auto* event = static_cast<struct wlr_xdg_activation_v1_request_activate_event*>(data);
+
+    if (!event || !event->surface) return;
+
+    for (const auto& v : server->m_views) {
+        if (!v || !v->is_mapped()) continue;
+
+        struct wlr_surface* view_surf = nullptr;
+        if (v->get_type() == ViewType::Xdg && v->get_xdg_toplevel() && v->get_xdg_toplevel()->base) {
+            view_surf = v->get_xdg_toplevel()->base->surface;
+        } else if (v->get_type() == ViewType::XWayland && v->get_xwayland_surface()) {
+            view_surf = v->get_xwayland_surface()->surface;
+        }
+
+        if (view_surf == event->surface) {
+            v->focus();
+            break;
+        }
+    }
+}
+
+void Server::handle_cursor_shape_request_set_shape(struct wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, m_cursor_shape_request_set_shape_listener);
+    auto* event = static_cast<struct wlr_cursor_shape_manager_v1_request_set_shape_event*>(data);
+
+    if (!server->m_input_manager) return;
+
+    struct wlr_seat_client* focused_client = server->m_input_manager->get_seat()->pointer_state.focused_client;
+    if (focused_client == event->seat_client) {
+        const char* name = wlr_cursor_shape_v1_name(event->shape);
+        server->m_input_manager->set_cursor_icon(name);
     }
 }
 

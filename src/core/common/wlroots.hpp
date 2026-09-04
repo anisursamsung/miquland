@@ -71,6 +71,17 @@ extern "C" {
 #include <wlr/util/box.h>
 #include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/util/edges.h>
+#include <wlr/types/wlr_screencopy_v1.h>
+#include <wlr/types/wlr_gamma_control_v1.h>
+#include <wlr/types/wlr_output_power_management_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
+#include <wlr/types/wlr_idle_inhibit_v1.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_output_management_v1.h>
 
 #ifdef __cplusplus
 }

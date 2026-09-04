@@ -45,6 +45,8 @@ public:
     std::string get_app_id() const;
 
     bool is_dialog() const { return m_is_dialog; }
+    bool is_floating() const { return m_is_floating; }
+    void set_floating(bool floating) { m_is_floating = floating; }
     View* get_parent_view() const { return m_parent_view; }
     void set_parent_view(View* parent);
     void update_parent_relationship();
@@ -78,6 +80,8 @@ private:
     static void handle_commit(struct wl_listener* listener, void* data);
     static void handle_request_fullscreen(struct wl_listener* listener, void* data);
     static void handle_request_maximize(struct wl_listener* listener, void* data);
+    static void handle_request_move(struct wl_listener* listener, void* data);
+    static void handle_request_resize(struct wl_listener* listener, void* data);
     static void handle_set_title(struct wl_listener* listener, void* data);
     static void handle_set_app_id(struct wl_listener* listener, void* data);
     static void handle_set_parent(struct wl_listener* listener, void* data);
@@ -90,6 +94,8 @@ private:
     static void handle_xwayland_dissociate(struct wl_listener* listener, void* data);
     static void handle_xwayland_request_configure(struct wl_listener* listener, void* data);
     static void handle_xwayland_request_activate(struct wl_listener* listener, void* data);
+    static void handle_xwayland_request_move(struct wl_listener* listener, void* data);
+    static void handle_xwayland_request_resize(struct wl_listener* listener, void* data);
     static void handle_xwayland_set_geometry(struct wl_listener* listener, void* data);
     static void handle_xwayland_set_class(struct wl_listener* listener, void* data);
     static void handle_xwayland_set_parent(struct wl_listener* listener, void* data);
@@ -113,6 +119,7 @@ private:
     bool m_mapped = false;
     bool m_is_override_redirect = false;
     bool m_is_fullscreen = false;
+    bool m_is_floating = false;
     int m_x = 0;
     int m_y = 0;
     int m_width = 0;
@@ -130,6 +137,8 @@ private:
     struct wl_listener m_commit_listener;
     struct wl_listener m_request_fullscreen_listener;
     struct wl_listener m_request_maximize_listener;
+    struct wl_listener m_request_move_listener;
+    struct wl_listener m_request_resize_listener;
     struct wl_listener m_set_title_listener;
     struct wl_listener m_set_app_id_listener;
     struct wl_listener m_set_parent_listener;
@@ -142,6 +151,8 @@ private:
     struct wl_listener m_dissociate_listener;
     struct wl_listener m_request_configure_listener;
     struct wl_listener m_request_activate_listener;
+    struct wl_listener m_xwayland_request_move_listener;
+    struct wl_listener m_xwayland_request_resize_listener;
     struct wl_listener m_set_geometry_listener;
     struct wl_listener m_set_class_listener;
     struct wl_listener m_set_override_redirect_listener;

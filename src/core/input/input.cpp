@@ -7,6 +7,8 @@
 #include "core/config/config.hpp"
 #include <unistd.h>
 #include <cstdlib>
+#include <cmath>
+#include <linux/input-event-codes.h>
 
 namespace miquland {
 
@@ -165,6 +167,98 @@ void InputManager::set_cursor_icon(const char* name) {
     }
 }
 
+void InputManager::begin_interactive(View* view, CursorMode mode, uint32_t edges) {
+    if (!view || view->is_fullscreen() || view->is_override_redirect()) return;
+
+    m_grabbed_view = view;
+    m_grabbed_view_was_tiled = !view->is_floating();
+    m_cursor_mode = mode;
+    m_grab_x = m_cursor->x;
+    m_grab_y = m_cursor->y;
+    m_grab_initial_view_box = {
+        .x = view->get_x(),
+        .y = view->get_y(),
+        .width = view->get_width(),
+        .height = view->get_height()
+    };
+    m_resize_edges = edges;
+
+    // For interactive resize, pop to floating if tiled
+    if (mode == CursorMode::Resize && m_grabbed_view_was_tiled && view->get_workspace()) {
+        view->get_workspace()->toggle_floating(view);
+        m_grabbed_view_was_tiled = false;
+    }
+
+    view->focus();
+    if (view->get_scene_tree()) {
+        wlr_scene_node_raise_to_top(&view->get_scene_tree()->node);
+    }
+
+    if (mode == CursorMode::Move) {
+        set_cursor_icon("grab");
+    } else if (mode == CursorMode::Resize) {
+        const char* edge_name = "se-resize";
+        if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_LEFT)) edge_name = "nw-resize";
+        else if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_RIGHT)) edge_name = "ne-resize";
+        else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_LEFT)) edge_name = "sw-resize";
+        else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_RIGHT)) edge_name = "se-resize";
+        else if (edges & WLR_EDGE_TOP) edge_name = "n-resize";
+        else if (edges & WLR_EDGE_BOTTOM) edge_name = "s-resize";
+        else if (edges & WLR_EDGE_LEFT) edge_name = "w-resize";
+        else if (edges & WLR_EDGE_RIGHT) edge_name = "e-resize";
+
+        set_cursor_icon(edge_name);
+    }
+}
+
+void InputManager::end_interactive() {
+    if (m_cursor_mode == CursorMode::Move && m_grabbed_view && m_grabbed_view_was_tiled) {
+        View* target = nullptr;
+        if (m_grabbed_view->get_scene_tree()) {
+            wlr_scene_node_set_enabled(&m_grabbed_view->get_scene_tree()->node, false);
+            double sx = 0, sy = 0;
+            struct wlr_surface* surf = nullptr;
+            target = m_server->view_at(m_cursor->x, m_cursor->y, &surf, &sx, &sy);
+            wlr_scene_node_set_enabled(&m_grabbed_view->get_scene_tree()->node, true);
+        }
+
+        Workspace* ws = m_grabbed_view->get_workspace();
+        double dist = std::hypot(m_cursor->x - m_grab_x, m_cursor->y - m_grab_y);
+
+        if (target && target != m_grabbed_view && ws && !target->is_floating() && target->get_workspace() == ws) {
+            // Drop onto another tiled window: Swap positions in layout!
+            ws->swap_views(m_grabbed_view, target);
+        } else if (target == m_grabbed_view || dist < 40.0) {
+            // Dropped back in place or slight twitch: snap back to tiled position
+            if (ws) {
+                auto* out_mgr = m_server->get_output_manager();
+                if (out_mgr) {
+                    ws->recalculate_layout(out_mgr->get_primary_usable_geometry());
+                }
+            }
+        } else {
+            // Dragged far into empty space: pop out to floating
+            if (ws) {
+                ws->toggle_floating(m_grabbed_view);
+            }
+        }
+    }
+
+    m_cursor_mode = CursorMode::Passthrough;
+    m_grabbed_view = nullptr;
+    m_grabbed_view_was_tiled = false;
+    set_cursor_icon("default");
+}
+
+void InputManager::notify_view_destroyed(View* view) {
+    if (m_grabbed_view == view) {
+        m_grabbed_view = nullptr;
+        m_grabbed_view_was_tiled = false;
+        m_cursor_mode = CursorMode::Passthrough;
+        set_cursor_icon("default");
+    }
+}
+
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     // 0. If session is locked, NEVER process any shortcuts (all keys go directly to locker)
     if (m_server->is_locked()) {
@@ -223,6 +317,13 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
             } else if (action == "close" || action == "close_window") {
                 View* focused = m_server->get_focused_view();
                 if (focused) focused->close();
+            } else if (action == "toggle_fullscreen" || action == "fullscreen") {
+                View* focused = m_server->get_focused_view();
+                if (focused) {
+                    focused->set_fullscreen(!focused->is_fullscreen());
+                }
+            } else if (action == "toggle_floating" || action == "toggle_float" || action == "floating_toggle") {
+                m_server->get_workspace_manager()->toggle_floating_active();
             } else if (action == "toggle_layout" || action == "layout_toggle") {
                 m_server->get_workspace_manager()->toggle_layout_mode();
             } else if (action == "swap_main" || action == "swap_master" || action == "swap_with_main") {
@@ -289,6 +390,62 @@ void InputManager::process_cursor_motion(uint32_t time) {
         } else {
             wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
             wlr_seat_pointer_clear_focus(m_seat);
+        }
+        return;
+    }
+
+    if (m_server->get_idle_notifier()) {
+        wlr_idle_notifier_v1_notify_activity(m_server->get_idle_notifier(), m_seat);
+    }
+
+    // Handle interactive Move & Resize
+    if (m_cursor_mode == CursorMode::Move) {
+        if (m_grabbed_view) {
+            int new_x = m_grab_initial_view_box.x + (int)std::round(m_cursor->x - m_grab_x);
+            int new_y = m_grab_initial_view_box.y + (int)std::round(m_cursor->y - m_grab_y);
+            m_grabbed_view->set_geometry(new_x, new_y, m_grab_initial_view_box.width, m_grab_initial_view_box.height);
+        }
+        return;
+    } else if (m_cursor_mode == CursorMode::Resize) {
+        if (m_grabbed_view) {
+            double dx = m_cursor->x - m_grab_x;
+            double dy = m_cursor->y - m_grab_y;
+
+            int new_x = m_grab_initial_view_box.x;
+            int new_y = m_grab_initial_view_box.y;
+            int new_w = m_grab_initial_view_box.width;
+            int new_h = m_grab_initial_view_box.height;
+
+            const int min_w = 100;
+            const int min_h = 80;
+
+            if (m_resize_edges & WLR_EDGE_RIGHT) {
+                new_w = std::max(min_w, (int)std::round(m_grab_initial_view_box.width + dx));
+            } else if (m_resize_edges & WLR_EDGE_LEFT) {
+                int potential_w = (int)std::round(m_grab_initial_view_box.width - dx);
+                if (potential_w >= min_w) {
+                    new_w = potential_w;
+                    new_x = (int)std::round(m_grab_initial_view_box.x + dx);
+                } else {
+                    new_w = min_w;
+                    new_x = m_grab_initial_view_box.x + m_grab_initial_view_box.width - min_w;
+                }
+            }
+
+            if (m_resize_edges & WLR_EDGE_BOTTOM) {
+                new_h = std::max(min_h, (int)std::round(m_grab_initial_view_box.height + dy));
+            } else if (m_resize_edges & WLR_EDGE_TOP) {
+                int potential_h = (int)std::round(m_grab_initial_view_box.height - dy);
+                if (potential_h >= min_h) {
+                    new_h = potential_h;
+                    new_y = (int)std::round(m_grab_initial_view_box.y + dy);
+                } else {
+                    new_h = min_h;
+                    new_y = m_grab_initial_view_box.y + m_grab_initial_view_box.height - min_h;
+                }
+            }
+
+            m_grabbed_view->set_geometry(new_x, new_y, new_w, new_h);
         }
         return;
     }
@@ -370,6 +527,16 @@ void InputManager::handle_cursor_motion(struct wl_listener* listener, void* data
 
     wlr_cursor_move(manager->m_cursor, &event->pointer->base, event->delta_x, event->delta_y);
     manager->process_cursor_motion(event->time_msec);
+
+    if (manager->m_server->get_relative_pointer_manager()) {
+        wlr_relative_pointer_manager_v1_send_relative_motion(
+            manager->m_server->get_relative_pointer_manager(),
+            manager->m_seat,
+            (uint64_t)event->time_msec * 1000,
+            event->delta_x, event->delta_y,
+            event->unaccel_dx, event->unaccel_dy
+        );
+    }
 }
 
 void InputManager::handle_cursor_motion_absolute(struct wl_listener* listener, void* data) {
@@ -384,6 +551,10 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
     InputManager* manager = wl_container_of(listener, manager, m_cursor_button_listener);
     auto* event = static_cast<struct wlr_pointer_button_event*>(data);
 
+    if (manager->m_server->get_idle_notifier()) {
+        wlr_idle_notifier_v1_notify_activity(manager->m_server->get_idle_notifier(), manager->m_seat);
+    }
+
     if (manager->m_server->is_locked()) {
         double sx = 0, sy = 0;
         SessionLockSurface* lock_surf = manager->m_server->get_session_lock()->surface_at(manager->m_cursor->x, manager->m_cursor->y, &sx, &sy);
@@ -392,6 +563,13 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
         }
         wlr_seat_pointer_notify_button(manager->m_seat, event->time_msec, event->button, event->state);
         return;
+    }
+
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
+        if (manager->m_cursor_mode != CursorMode::Passthrough) {
+            manager->end_interactive();
+            return;
+        }
     }
 
     double sx, sy;
@@ -406,8 +584,32 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
         }
     }
 
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && target_view && !target_view->is_override_redirect()) {
-        target_view->focus();
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED) {
+        struct wlr_keyboard* kb = wlr_seat_get_keyboard(manager->m_seat);
+        uint32_t modifiers = kb ? wlr_keyboard_get_modifiers(kb) : 0;
+        bool mod_pressed = (modifiers & WLR_MODIFIER_LOGO) != 0;
+
+        if (mod_pressed && target_view && !target_view->is_fullscreen() && !target_view->is_override_redirect()) {
+            if (event->button == BTN_LEFT) {
+                manager->begin_interactive(target_view, CursorMode::Move, 0);
+                return;
+            } else if (event->button == BTN_RIGHT) {
+                uint32_t edges = 0;
+                double center_x = target_view->get_x() + target_view->get_width() / 2.0;
+                double center_y = target_view->get_y() + target_view->get_height() / 2.0;
+                if (manager->m_cursor->x < center_x) edges |= WLR_EDGE_LEFT;
+                else edges |= WLR_EDGE_RIGHT;
+                if (manager->m_cursor->y < center_y) edges |= WLR_EDGE_TOP;
+                else edges |= WLR_EDGE_BOTTOM;
+
+                manager->begin_interactive(target_view, CursorMode::Resize, edges);
+                return;
+            }
+        }
+
+        if (target_view && !target_view->is_override_redirect()) {
+            target_view->focus();
+        }
     }
 
     wlr_seat_pointer_notify_button(manager->m_seat, event->time_msec, event->button, event->state);
@@ -536,6 +738,10 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
     InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_down_listener);
     auto* event = static_cast<struct wlr_touch_down_event*>(data);
 
+    if (manager->m_server->get_idle_notifier()) {
+        wlr_idle_notifier_v1_notify_activity(manager->m_server->get_idle_notifier(), manager->m_seat);
+    }
+
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
 
@@ -646,6 +852,10 @@ void Keyboard::handle_key(struct wl_listener* listener, void* data) {
     Keyboard* kb = wl_container_of(listener, kb, m_key_listener);
     auto* event = static_cast<struct wlr_keyboard_key_event*>(data);
     struct wlr_seat* seat = kb->m_server->get_input_manager()->get_seat();
+
+    if (kb->m_server->get_idle_notifier()) {
+        wlr_idle_notifier_v1_notify_activity(kb->m_server->get_idle_notifier(), seat);
+    }
 
     uint32_t keycode = event->keycode + 8;
     const xkb_keysym_t* syms;

@@ -62,6 +62,16 @@ public:
     struct wlr_ext_workspace_group_handle_v1* get_ext_workspace_group() const { return m_ext_workspace_group; }
     struct wlr_pointer_gestures_v1* get_pointer_gestures() const { return m_pointer_gestures; }
     struct wlr_xwayland* get_xwayland() const { return m_xwayland; }
+    struct wlr_screencopy_manager_v1* get_screencopy_manager() const { return m_screencopy_manager; }
+    struct wlr_gamma_control_manager_v1* get_gamma_control_manager() const { return m_gamma_control_manager; }
+    struct wlr_output_power_manager_v1* get_output_power_manager() const { return m_output_power_manager; }
+    struct wlr_idle_notifier_v1* get_idle_notifier() const { return m_idle_notifier; }
+    struct wlr_idle_inhibit_manager_v1* get_idle_inhibit_manager() const { return m_idle_inhibit_manager; }
+    struct wlr_xdg_decoration_manager_v1* get_xdg_decoration_manager() const { return m_xdg_decoration_manager; }
+    struct wlr_xdg_activation_v1* get_xdg_activation() const { return m_xdg_activation; }
+    struct wlr_cursor_shape_manager_v1* get_cursor_shape_manager() const { return m_cursor_shape_manager; }
+    struct wlr_relative_pointer_manager_v1* get_relative_pointer_manager() const { return m_relative_pointer_manager; }
+    struct wlr_pointer_constraints_v1* get_pointer_constraints() const { return m_pointer_constraints; }
 
     void set_focused_view(View* view);
     View* get_focused_view() const { return m_focused_view; }
@@ -72,6 +82,7 @@ public:
     bool is_locked() const;
     SessionLock* get_session_lock() const;
     void unlock_session();
+    void handle_idle_inhibitor_destroy();
 
 private:
     static void handle_new_xdg_toplevel(struct wl_listener* listener, void* data);
@@ -108,6 +119,17 @@ private:
     struct wlr_foreign_toplevel_manager_v1* m_foreign_toplevel_manager = nullptr;
     struct wlr_pointer_gestures_v1* m_pointer_gestures = nullptr;
     struct wlr_xwayland* m_xwayland = nullptr;
+    struct wlr_screencopy_manager_v1* m_screencopy_manager = nullptr;
+    struct wlr_gamma_control_manager_v1* m_gamma_control_manager = nullptr;
+    struct wlr_output_power_manager_v1* m_output_power_manager = nullptr;
+    struct wlr_idle_notifier_v1* m_idle_notifier = nullptr;
+    struct wlr_idle_inhibit_manager_v1* m_idle_inhibit_manager = nullptr;
+    struct wlr_xdg_decoration_manager_v1* m_xdg_decoration_manager = nullptr;
+    struct wlr_xdg_activation_v1* m_xdg_activation = nullptr;
+    struct wlr_cursor_shape_manager_v1* m_cursor_shape_manager = nullptr;
+    struct wlr_relative_pointer_manager_v1* m_relative_pointer_manager = nullptr;
+    struct wlr_pointer_constraints_v1* m_pointer_constraints = nullptr;
+    size_t m_idle_inhibitor_count = 0;
 
     const char* m_socket_name = nullptr;
     std::string m_startup_cmd;
@@ -129,6 +151,12 @@ private:
     std::unique_ptr<SessionLock> m_session_lock;
 
     static void handle_new_session_lock(struct wl_listener* listener, void* data);
+    static void handle_gamma_set_gamma(struct wl_listener* listener, void* data);
+    static void handle_output_power_set_mode(struct wl_listener* listener, void* data);
+    static void handle_new_idle_inhibitor(struct wl_listener* listener, void* data);
+    static void handle_new_xdg_decoration(struct wl_listener* listener, void* data);
+    static void handle_xdg_activation_request_activate(struct wl_listener* listener, void* data);
+    static void handle_cursor_shape_request_set_shape(struct wl_listener* listener, void* data);
 
     struct wl_listener m_new_xdg_toplevel_listener;
     struct wl_listener m_new_layer_shell_surface_listener;
@@ -136,6 +164,12 @@ private:
     struct wl_listener m_ext_workspace_commit_listener;
     struct wl_listener m_xwayland_ready_listener;
     struct wl_listener m_xwayland_new_surface_listener;
+    struct wl_listener m_gamma_set_gamma_listener;
+    struct wl_listener m_output_power_set_mode_listener;
+    struct wl_listener m_new_idle_inhibitor_listener;
+    struct wl_listener m_new_xdg_decoration_listener;
+    struct wl_listener m_xdg_activation_request_activate_listener;
+    struct wl_listener m_cursor_shape_request_set_shape_listener;
 };
 
 } // namespace miquland

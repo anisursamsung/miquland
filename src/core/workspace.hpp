@@ -47,6 +47,8 @@ public:
 
     void swap_with_main(View* view);
     void swap_views(size_t idx1, size_t idx2);
+    bool swap_views(View* view1, View* view2);
+    void toggle_floating(View* view);
 
     void recalculate_layout(const struct wlr_box& usable_box);
     struct wlr_box calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const;
@@ -91,6 +93,7 @@ public:
     void swap_with_main();
     void toggle_layout_mode();
     void toggle_active_split();
+    void toggle_floating_active();
     void recalculate_layout();
 
     size_t get_active_workspace_id() const { return m_active_workspace_id; }
