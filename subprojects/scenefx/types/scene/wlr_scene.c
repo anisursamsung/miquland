@@ -2084,6 +2084,13 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
 			WLR_COLOR_TRANSFER_FUNCTION_SRGB, &srgb_lum);
 		float luminance_multiplier = get_luminance_multiplier(&src_lum, &srgb_lum);
 
+		bool has_corner_effects = !fx_corner_radii_is_empty(&buffer_corners);
+
+		enum wlr_render_blend_mode blend_mode =
+			has_corner_effects ? WLR_RENDER_BLEND_MODE_PREMULTIPLIED :
+			(!data->output->scene->calculate_visibility || !pixman_region32_empty(&opaque) ?
+				WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE);
+
 		struct fx_render_texture_options tex_options = {
 			.base = (struct wlr_render_texture_options){
 				.texture = texture,
@@ -2093,9 +2100,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
 				.clip = &render_region, // Render with the smaller region, clipping CSD
 				.alpha = &scene_buffer->opacity,
 				.filter_mode = scene_buffer->filter_mode,
-				.blend_mode = !data->output->scene->calculate_visibility ||
-					!pixman_region32_empty(&opaque) ?
-					WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
+				.blend_mode = blend_mode,
 				.transfer_function = scene_buffer->transfer_function,
 				.primaries = scene_buffer->primaries != 0 ? &primaries : NULL,
 				.color_encoding = scene_buffer->color_encoding,
@@ -2106,6 +2111,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
 			},
 			.clip_box = &dst_box,
 			.corners = fx_corner_radii_scale(buffer_corners, data->scale),
+			.discard_transparent = has_corner_effects,
 			.clipped_region = {0},
 		};
 

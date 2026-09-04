@@ -120,7 +120,7 @@ bool Server::init() {
 
     m_xdg_output_manager = wlr_xdg_output_manager_v1_create(m_wl_display, m_output_manager->get_layout());
 
-    m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 3);
+    m_xdg_shell = wlr_xdg_shell_create(m_wl_display, 6);
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
     wl_signal_add(&m_xdg_shell->events.new_toplevel, &m_new_xdg_toplevel_listener);
 

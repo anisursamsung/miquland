@@ -190,7 +190,9 @@ void Workspace::layout_spiral(int base_x, int base_y, int base_w, int base_h, in
 
     for (size_t i = 0; i < n; ++i) {
         if (i == n - 1) {
-            m_tiled_views[i]->set_geometry(cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h));
+            int final_w = std::clamp(cur_w, 20, std::max(20, base_x + base_w - cur_x));
+            int final_h = std::clamp(cur_h, 20, std::max(20, base_y + base_h - cur_y));
+            m_tiled_views[i]->set_geometry(cur_x, cur_y, final_w, final_h);
             break;
         }
 
@@ -304,8 +306,17 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
         } else {
             int dw = std::min(req_w, base_w);
             int dh = std::min(req_h, base_h);
-            int dx = base_x + (base_w - dw) / 2;
-            int dy = base_y + (base_h - dh) / 2;
+            int dx = fview->get_x();
+            int dy = fview->get_y();
+
+            // Only center if the floating window hasn't been placed on screen yet
+            if (dx <= 0 && dy <= 0) {
+                dx = base_x + (base_w - dw) / 2;
+                dy = base_y + (base_h - dh) / 2;
+            } else {
+                dx = std::clamp(dx, base_x, std::max(base_x, base_x + base_w - dw));
+                dy = std::clamp(dy, base_y, std::max(base_y, base_y + base_h - dh));
+            }
 
             fview->set_geometry(dx, dy, dw, dh);
         }
@@ -355,7 +366,9 @@ struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr
 
         for (size_t i = 0; i < n; ++i) {
             if (i == n - 1) {
-                return { cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h) };
+                int final_w = std::clamp(cur_w, 20, std::max(20, base_x + base_w - cur_x));
+                int final_h = std::clamp(cur_h, 20, std::max(20, base_y + base_h - cur_y));
+                return { cur_x, cur_y, final_w, final_h };
             }
 
             bool split_horizontal = (i % 2 == 0);

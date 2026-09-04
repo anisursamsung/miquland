@@ -347,8 +347,13 @@ void View::set_geometry(int x, int y, int width, int height) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
         if (m_xdg_toplevel) {
-            if (!is_dialog()) {
+            if (!is_dialog() && !is_floating()) {
                 wlr_xdg_toplevel_set_tiled(m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+            } else {
+                wlr_xdg_toplevel_set_tiled(m_xdg_toplevel, 0);
+            }
+            if (m_xdg_toplevel->resource && wl_resource_get_version(m_xdg_toplevel->resource) >= 4) {
+                wlr_xdg_toplevel_set_bounds(m_xdg_toplevel, client_w, client_h);
             }
             if (size_changed) {
                 wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
@@ -364,6 +369,7 @@ void View::set_geometry(int x, int y, int width, int height) {
     }
 
     update_border();
+    update_corner_radius();
     update_child_dialog_geometries();
 }
 
@@ -554,16 +560,35 @@ void View::update_opacity() {
 void View::update_corner_radius() {
     if (!m_mapped || !m_surface_scene_tree) return;
 
+    int bw = Config::get().get_window_border_width();
+    int client_w = std::max(1, m_width - 2 * bw);
+    int client_h = std::max(1, m_height - 2 * bw);
+
+    // Follow Sway / dwl standard wlroots clipping for window geometry & CSD
+    struct wlr_box clip = {
+        .x = 0,
+        .y = 0,
+        .width = client_w,
+        .height = client_h,
+    };
+
+    if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+        auto* xdg_surf = m_xdg_toplevel->base;
+        clip.x = xdg_surf->current.geometry.x;
+        clip.y = xdg_surf->current.geometry.y;
+    }
+
+    wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
+
     int radius = 0;
     if (!m_is_fullscreen && !m_is_override_redirect) {
         int r = Config::get().get_window_border_radius();
-        int bw = Config::get().get_window_border_width();
         radius = (bw > 0) ? std::max(0, r - bw) : std::max(0, r);
     }
 
-    wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buffer, int sx, int sy, void* data) {
-        int val = *static_cast<int*>(data);
-        wlr_scene_buffer_set_corner_radius(buffer, val);
+    wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buffer, int sx, int sy, void* user_data) {
+        int r = *static_cast<int*>(user_data);
+        wlr_scene_buffer_set_corner_radius(buffer, r);
     }, &radius);
 }
 
@@ -792,6 +817,9 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
                         wlr_scene_node_set_position(&view->m_surface_scene_tree->node, bw, bw);
                     }
                     wlr_xdg_toplevel_set_tiled(view->m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+                    if (view->m_xdg_toplevel->resource && wl_resource_get_version(view->m_xdg_toplevel->resource) >= 4) {
+                        wlr_xdg_toplevel_set_bounds(view->m_xdg_toplevel, client_w, client_h);
+                    }
                     wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, client_w, client_h);
                 } else {
                     wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
@@ -1044,11 +1072,21 @@ void View::set_parent_view(View* parent) {
     m_is_dialog = (parent != nullptr);
     if (m_parent_view) {
         m_parent_view->m_child_dialogs.push_back(this);
-        if (m_parent_view->get_workspace() && m_workspace != m_parent_view->get_workspace()) {
+        Workspace* target_ws = m_parent_view->get_workspace();
+        if (target_ws && m_workspace != target_ws) {
             if (m_workspace) {
                 m_workspace->remove_view(this);
             }
-            m_parent_view->get_workspace()->add_view(this);
+            target_ws->add_view(this);
+        } else if (m_workspace) {
+            // View was already on this workspace (likely added to m_tiled_views).
+            // Now that it has a parent and is a dialog, move it to m_floating_views!
+            m_workspace->remove_view(this);
+            m_workspace->add_view(this);
+            auto* out_mgr = m_server->get_output_manager();
+            if (out_mgr) {
+                m_workspace->recalculate_layout(out_mgr->get_primary_usable_geometry());
+            }
         }
     }
 }
