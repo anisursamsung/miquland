@@ -3,6 +3,7 @@
 #include "core/server.hpp"
 #include "core/output.hpp"
 #include "core/input/input.hpp"
+#include "core/config/config.hpp"
 #include <algorithm>
 
 namespace miquland {
@@ -48,6 +49,7 @@ LayerSurface::~LayerSurface() {
     wl_list_remove(&m_destroy_listener.link);
     wl_list_remove(&m_surface_commit_listener.link);
     wl_list_remove(&m_new_popup_listener.link);
+    m_blur_node = nullptr;
 }
 
 void LayerSurface::configure(const struct wlr_box* full_area, struct wlr_box* usable_area) {
@@ -67,10 +69,63 @@ void LayerSurface::update_tree() {
     }
 }
 
+void LayerSurface::update_blur() {
+    if (!Config::get().is_blur_enabled()) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
+    if (!m_scene_layer_surface || !m_wlr_layer_surface || !is_mapped()) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
+    // Wallpapers on BACKGROUND layer should not be blurred
+    if (m_current_layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
+    int w = m_wlr_layer_surface->surface->current.width;
+    int h = m_wlr_layer_surface->surface->current.height;
+    if (w <= 0 || h <= 0) return;
+
+    if (!m_blur_node) {
+        m_blur_node = wlr_scene_blur_create(m_scene_layer_surface->tree, w, h);
+        if (m_blur_node) {
+            wlr_scene_node_lower_to_bottom(&m_blur_node->node);
+        }
+    }
+
+    if (m_blur_node) {
+        wlr_scene_blur_set_size(m_blur_node, w, h);
+        wlr_scene_node_set_enabled(&m_blur_node->node, true);
+
+        // Find the scene buffer for this layer surface and hook transparency mask
+        struct wlr_scene_buffer* surf_buf = nullptr;
+        wlr_scene_node_for_each_buffer(&m_scene_layer_surface->tree->node,
+            [](struct wlr_scene_buffer* buffer, int sx, int sy, void* user_data) {
+                auto** out = static_cast<struct wlr_scene_buffer**>(user_data);
+                if (!*out) *out = buffer;
+            }, &surf_buf);
+
+        if (surf_buf) {
+            wlr_scene_blur_set_transparency_mask_source(m_blur_node, surf_buf);
+        }
+    }
+}
+
 void LayerSurface::handle_map(struct wl_listener* listener, void* data) {
     LayerSurface* surface = wl_container_of(listener, surface, m_map_listener);
 
     surface->m_server->arrange_layers(surface->m_wlr_layer_surface->output);
+    surface->update_blur();
 
     // If layer surface requires keyboard interaction (e.g. rofi, fuzzel, swaylock), focus it
     if (surface->m_wlr_layer_surface->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
@@ -83,6 +138,10 @@ void LayerSurface::handle_unmap(struct wl_listener* listener, void* data) {
 
     if (surface->m_server->get_focused_layer_surface() == surface) {
         surface->m_server->focus_layer_surface(nullptr);
+    }
+
+    if (surface->m_blur_node) {
+        wlr_scene_node_set_enabled(&surface->m_blur_node->node, false);
     }
 
     surface->m_server->arrange_layers(surface->m_wlr_layer_surface->output);
@@ -100,6 +159,7 @@ void LayerSurface::handle_surface_commit(struct wl_listener* listener, void* dat
     if (!wlr_surface->initialized) return;
 
     surface->update_tree();
+    surface->update_blur();
 
     uint32_t committed = wlr_surface->current.committed;
     if (committed & (WLR_LAYER_SURFACE_V1_STATE_LAYER |

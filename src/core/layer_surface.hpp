@@ -21,6 +21,7 @@ public:
 
     void configure(const struct wlr_box* full_area, struct wlr_box* usable_area);
     void update_tree();
+    void update_blur();
 
 private:
     static void handle_map(struct wl_listener* listener, void* data);
@@ -32,6 +33,7 @@ private:
     Server* m_server = nullptr;
     struct wlr_layer_surface_v1* m_wlr_layer_surface = nullptr;
     struct wlr_scene_layer_surface_v1* m_scene_layer_surface = nullptr;
+    struct wlr_scene_blur* m_blur_node = nullptr;
     struct wlr_scene_tree* m_popups_tree = nullptr;
     enum zwlr_layer_shell_v1_layer m_current_layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
 

@@ -103,6 +103,7 @@ private:
     static void handle_xwayland_set_override_redirect(struct wl_listener* listener, void* data);
 
     void setup_foreign_toplevel();
+    void update_blur();
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
@@ -115,6 +116,7 @@ private:
     struct wlr_scene_tree* m_scene_tree = nullptr;
     struct wlr_scene_buffer* m_border_scene_buffer = nullptr;
     struct wlr_scene_tree* m_surface_scene_tree = nullptr;
+    struct wlr_scene_blur* m_blur_node = nullptr;
     std::unique_ptr<CairoBuffer> m_border_buffer;
 
     bool m_mapped = false;

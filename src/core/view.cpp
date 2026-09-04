@@ -261,6 +261,7 @@ View::~View() {
         wlr_scene_node_destroy(&m_scene_tree->node);
         m_scene_tree = nullptr;
     }
+    m_blur_node = nullptr;
 }
 
 void View::setup_foreign_toplevel() {
@@ -514,6 +515,37 @@ void View::update_frame() {
     update_border();
     update_corner_radius();
     update_opacity();
+    update_blur();
+}
+
+void View::update_blur() {
+    if (!Config::get().is_blur_enabled()) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
+    if (!m_mapped || m_width <= 0 || m_height <= 0 || m_is_fullscreen) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
+    if (!m_blur_node && m_scene_tree) {
+        m_blur_node = wlr_scene_blur_create(m_scene_tree, m_width, m_height);
+        if (m_blur_node) {
+            wlr_scene_node_lower_to_bottom(&m_blur_node->node);
+        }
+    }
+
+    if (m_blur_node) {
+        wlr_scene_blur_set_size(m_blur_node, m_width, m_height);
+        int r = Config::get().get_window_border_radius();
+        wlr_scene_blur_set_corner_radius(m_blur_node, r);
+        wlr_scene_node_set_enabled(&m_blur_node->node, true);
+    }
 }
 
 void View::update_border() {
@@ -626,6 +658,10 @@ void View::update_corner_radius() {
         int r = *static_cast<int*>(user_data);
         wlr_scene_buffer_set_corner_radius(buffer, r);
     }, &radius);
+
+    if (m_blur_node) {
+        wlr_scene_blur_set_corner_radius(m_blur_node, radius);
+    }
 }
 
 void View::focus() {
@@ -789,6 +825,10 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
 
     if (view->m_scene_tree) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, false);
+    }
+
+    if (view->m_blur_node) {
+        wlr_scene_node_set_enabled(&view->m_blur_node->node, false);
     }
 
     if (!view->is_override_redirect()) {

@@ -41,6 +41,13 @@ void Config::set_defaults() {
     m_terminal = term;
     m_window_opacity_active = 1.0f;
     m_window_opacity_inactive = 0.85f;
+    m_blur_enabled = true;
+    m_blur_radius = 5;
+    m_blur_num_passes = 3;
+    m_blur_noise = 0.02f;
+    m_blur_brightness = 0.9f;
+    m_blur_contrast = 0.9f;
+    m_blur_saturation = 1.1f;
 
     // Material Design 3 Neon Light Theme Color Defaults
     m_theme_source = "";
@@ -527,6 +534,32 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
                 m_window_opacity_active = val;
                 m_window_opacity_inactive = val;
             } catch (...) {}
+        } else if (key == "blur" || key == "blur_enabled") {
+            m_blur_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "blur_radius") {
+            try {
+                m_blur_radius = std::max(1, std::stoi(value));
+            } catch (...) {}
+        } else if (key == "blur_passes" || key == "blur_num_passes") {
+            try {
+                m_blur_num_passes = std::max(1, std::stoi(value));
+            } catch (...) {}
+        } else if (key == "blur_noise") {
+            try {
+                m_blur_noise = std::stof(value);
+            } catch (...) {}
+        } else if (key == "blur_brightness") {
+            try {
+                m_blur_brightness = std::stof(value);
+            } catch (...) {}
+        } else if (key == "blur_contrast") {
+            try {
+                m_blur_contrast = std::stof(value);
+            } catch (...) {}
+        } else if (key == "blur_saturation") {
+            try {
+                m_blur_saturation = std::stof(value);
+            } catch (...) {}
         } else if (key == "bind") {
             // Format: bind = Super+F, firefox or bind = Super, K, kitty
             size_t comma = value.rfind(',');
@@ -600,6 +633,15 @@ void Config::save() {
     file << "screen_edge_padding = " << m_screen_edge_padding << "\n";
     file << "window_opacity_active = " << m_window_opacity_active << "\n";
     file << "window_opacity_inactive = " << m_window_opacity_inactive << "\n\n";
+
+    file << "# Blur Effects (SceneFX Dual Kawase)\n";
+    file << "blur = " << (m_blur_enabled ? "true" : "false") << "\n";
+    file << "blur_radius = " << m_blur_radius << "\n";
+    file << "blur_passes = " << m_blur_num_passes << "\n";
+    file << "blur_noise = " << m_blur_noise << "\n";
+    file << "blur_brightness = " << m_blur_brightness << "\n";
+    file << "blur_contrast = " << m_blur_contrast << "\n";
+    file << "blur_saturation = " << m_blur_saturation << "\n\n";
 
     file << "[applications]\n";
     file << "terminal = " << m_terminal << "\n\n";

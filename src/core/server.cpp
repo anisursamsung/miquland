@@ -92,6 +92,17 @@ bool Server::init() {
         return false;
     }
 
+    if (Config::get().is_blur_enabled()) {
+        wlr_scene_set_blur_data(m_scene,
+            Config::get().get_blur_num_passes(),
+            Config::get().get_blur_radius(),
+            Config::get().get_blur_noise(),
+            Config::get().get_blur_brightness(),
+            Config::get().get_blur_contrast(),
+            Config::get().get_blur_saturation());
+        log_info("SceneFX Dual Kawase background blur initialized");
+    }
+
     // Standard Layer Scene Tree Hierarchy:
     // Background -> Bottom -> Workspaces (Tiled Apps) -> Top -> Overlay -> Session Lock
     m_layer_background_tree = wlr_scene_tree_create(&m_scene->tree);

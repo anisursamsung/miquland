@@ -117,6 +117,27 @@ public:
     float get_window_opacity_inactive() const { return m_window_opacity_inactive; }
     void set_window_opacity_inactive(float op) { m_window_opacity_inactive = std::clamp(op, 0.0f, 1.0f); }
 
+    bool is_blur_enabled() const { return m_blur_enabled; }
+    void set_blur_enabled(bool enabled) { m_blur_enabled = enabled; }
+
+    int get_blur_radius() const { return m_blur_radius; }
+    void set_blur_radius(int r) { m_blur_radius = r; }
+
+    int get_blur_num_passes() const { return m_blur_num_passes; }
+    void set_blur_num_passes(int p) { m_blur_num_passes = p; }
+
+    float get_blur_noise() const { return m_blur_noise; }
+    void set_blur_noise(float n) { m_blur_noise = n; }
+
+    float get_blur_brightness() const { return m_blur_brightness; }
+    void set_blur_brightness(float b) { m_blur_brightness = b; }
+
+    float get_blur_contrast() const { return m_blur_contrast; }
+    void set_blur_contrast(float c) { m_blur_contrast = c; }
+
+    float get_blur_saturation() const { return m_blur_saturation; }
+    void set_blur_saturation(float s) { m_blur_saturation = s; }
+
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
@@ -154,6 +175,13 @@ private:
     int m_screen_edge_padding = 10;
     float m_window_opacity_active = 1.0f;
     float m_window_opacity_inactive = 0.85f;
+    bool m_blur_enabled = true;
+    int m_blur_radius = 5;
+    int m_blur_num_passes = 3;
+    float m_blur_noise = 0.02f;
+    float m_blur_brightness = 0.9f;
+    float m_blur_contrast = 0.9f;
+    float m_blur_saturation = 1.1f;
     LayoutMode m_layout_mode = LayoutMode::Spiral;
 
     // Material Design 3 Palette
