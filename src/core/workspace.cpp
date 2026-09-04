@@ -13,6 +13,8 @@ Workspace::Workspace(Server* server, size_t id)
 {
     m_scene_tree = wlr_scene_tree_create(m_server->get_workspaces_tree());
     wlr_scene_node_set_enabled(&m_scene_tree->node, false);
+    m_tiled_tree = wlr_scene_tree_create(m_scene_tree);
+    m_floating_tree = wlr_scene_tree_create(m_scene_tree);
 
     if (m_server->get_ext_workspace_manager()) {
         std::string id_str = std::to_string(m_id);
@@ -57,6 +59,10 @@ bool Workspace::add_view(View* view) {
         if (std::find(m_floating_views.begin(), m_floating_views.end(), view) == m_floating_views.end()) {
             m_floating_views.push_back(view);
             view->set_workspace(this);
+            if (view->get_scene_tree() && m_floating_tree) {
+                wlr_scene_node_reparent(&view->get_scene_tree()->node, m_floating_tree);
+                wlr_scene_node_raise_to_top(&view->get_scene_tree()->node);
+            }
             update_ext_state();
             return true;
         }
@@ -66,6 +72,9 @@ bool Workspace::add_view(View* view) {
     if (std::find(m_tiled_views.begin(), m_tiled_views.end(), view) == m_tiled_views.end()) {
         m_tiled_views.push_back(view);
         view->set_workspace(this);
+        if (view->get_scene_tree() && m_tiled_tree) {
+            wlr_scene_node_reparent(&view->get_scene_tree()->node, m_tiled_tree);
+        }
         update_ext_state();
         return true;
     }
@@ -152,7 +161,8 @@ void Workspace::toggle_floating(View* view) {
         m_floating_views.push_back(view);
         view->set_floating(true);
 
-        if (view->get_scene_tree()) {
+        if (view->get_scene_tree() && m_floating_tree) {
+            wlr_scene_node_reparent(&view->get_scene_tree()->node, m_floating_tree);
             wlr_scene_node_raise_to_top(&view->get_scene_tree()->node);
         }
 
@@ -167,6 +177,10 @@ void Workspace::toggle_floating(View* view) {
             m_tiled_views.push_back(view);
             view->set_floating(false);
 
+            if (view->get_scene_tree() && m_tiled_tree) {
+                wlr_scene_node_reparent(&view->get_scene_tree()->node, m_tiled_tree);
+            }
+
             auto* out_mgr = m_server->get_output_manager();
             if (out_mgr) {
                 recalculate_layout(out_mgr->get_primary_usable_geometry());
@@ -175,99 +189,68 @@ void Workspace::toggle_floating(View* view) {
     }
 }
 
-void Workspace::layout_spiral(int base_x, int base_y, int base_w, int base_h, int gap) {
-    size_t n = m_tiled_views.size();
-    if (n == 0) return;
-    if (n == 1) {
-        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
-        return;
-    }
-
-    int cur_x = base_x;
-    int cur_y = base_y;
-    int cur_w = base_w;
-    int cur_h = base_h;
-
-    for (size_t i = 0; i < n; ++i) {
-        if (i == n - 1) {
-            int final_w = std::clamp(cur_w, 20, std::max(20, base_x + base_w - cur_x));
-            int final_h = std::clamp(cur_h, 20, std::max(20, base_y + base_h - cur_y));
-            m_tiled_views[i]->set_geometry(cur_x, cur_y, final_w, final_h);
-            break;
-        }
-
-        bool split_horizontal = (i % 2 == 0);
-        if (m_split_mode == SplitMode::Vertical) {
-            split_horizontal = !split_horizontal;
-        }
-
-        if (split_horizontal) {
-            int total_w = std::max(40, cur_w - gap);
-            int half_w = total_w / 2;
-            int rest_w = total_w - half_w;
-
-            m_tiled_views[i]->set_geometry(cur_x, cur_y, half_w, cur_h);
-            cur_x += half_w + gap;
-            cur_w = rest_w;
-        } else {
-            int total_h = std::max(40, cur_h - gap);
-            int half_h = total_h / 2;
-            int rest_h = total_h - half_h;
-
-            m_tiled_views[i]->set_geometry(cur_x, cur_y, cur_w, half_h);
-            cur_y += half_h + gap;
-            cur_h = rest_h;
-        }
-    }
-}
-
-void Workspace::layout_stack(int base_x, int base_y, int base_w, int base_h, int gap) {
-    size_t n = m_tiled_views.size();
-    if (n == 0) return;
-    if (n == 1) {
-        m_tiled_views[0]->set_geometry(base_x, base_y, base_w, base_h);
-        return;
-    }
-
-    int total_w = std::max(50, base_w - gap);
-    int master_w = static_cast<int>(total_w * 0.55);
-    int stack_w = total_w - master_w;
-
-    m_tiled_views[0]->set_geometry(base_x, base_y, master_w, base_h);
-
-    size_t stack_count = n - 1;
-    int total_stack_gaps = static_cast<int>(stack_count - 1) * gap;
-    int avail_stack_h = std::max(20, base_h - total_stack_gaps);
-    int item_h = avail_stack_h / static_cast<int>(stack_count);
-
-    int cur_y = base_y;
-    int stack_x = base_x + master_w + gap;
-
-    for (size_t i = 1; i < n; ++i) {
-        int win_h = (i == n - 1) ? (base_y + base_h - cur_y) : item_h;
-        m_tiled_views[i]->set_geometry(stack_x, cur_y, stack_w, std::max(20, win_h));
-        cur_y += win_h + gap;
-    }
-}
-
 void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     int pad = Config::get().get_screen_edge_padding();
     int gap = Config::get().get_space_between_windows();
 
+    struct wlr_box inner_box = {
+        .x = usable_box.x + pad,
+        .y = usable_box.y + pad,
+        .width = std::max(50, usable_box.width - 2 * pad),
+        .height = std::max(50, usable_box.height - 2 * pad),
+    };
+
+    auto boxes = Layout::calculate(
+        Config::get().get_layout_mode(),
+        m_split_mode,
+        inner_box,
+        gap,
+        m_tiled_views.size(),
+        m_split_ratio,
+        m_secondary_split_ratio
+    );
+
+    for (size_t i = 0; i < m_tiled_views.size(); ++i) {
+        if (m_tiled_views[i]) {
+            m_tiled_views[i]->set_geometry(boxes[i].x, boxes[i].y, boxes[i].width, boxes[i].height);
+        }
+    }
+
+    arrange_floating_views(usable_box);
+}
+
+struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const {
+    int pad = Config::get().get_screen_edge_padding();
+    int gap = Config::get().get_space_between_windows();
+
+    struct wlr_box inner_box = {
+        .x = usable_box.x + pad,
+        .y = usable_box.y + pad,
+        .width = std::max(50, usable_box.width - 2 * pad),
+        .height = std::max(50, usable_box.height - 2 * pad),
+    };
+
+    auto boxes = Layout::calculate(
+        Config::get().get_layout_mode(),
+        m_split_mode,
+        inner_box,
+        gap,
+        m_tiled_views.size() + 1,
+        m_split_ratio,
+        m_secondary_split_ratio
+    );
+
+    return boxes.empty() ? inner_box : boxes.back();
+}
+
+void Workspace::arrange_floating_views(const struct wlr_box& usable_box) {
+    int pad = Config::get().get_screen_edge_padding();
     int base_x = usable_box.x + pad;
     int base_y = usable_box.y + pad;
     int base_w = std::max(50, usable_box.width - 2 * pad);
     int base_h = std::max(50, usable_box.height - 2 * pad);
-
-    if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
-        layout_stack(base_x, base_y, base_w, base_h, gap);
-    } else {
-        layout_spiral(base_x, base_y, base_w, base_h, gap);
-    }
-
     int bw = Config::get().get_window_border_width();
 
-    // Position floating / dialog windows
     for (auto* fview : m_floating_views) {
         if (!fview || !fview->is_mapped()) continue;
 
@@ -288,19 +271,14 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 
         View* parent = fview->get_parent_view();
         if (parent && parent->is_mapped() && parent->get_width() > 0 && parent->get_height() > 0) {
-            int pw = parent->get_width();
-            int ph = parent->get_height();
-            int px = parent->get_x();
-            int py = parent->get_y();
-
-            int max_w = std::max(50, pw - 20);
-            int max_h = std::max(50, ph - 20);
+            int max_w = std::max(50, parent->get_width() - 20);
+            int max_h = std::max(50, parent->get_height() - 20);
 
             int dw = std::min(req_w, max_w);
             int dh = std::min(req_h, max_h);
 
-            int dx = px + (pw - dw) / 2;
-            int dy = py + (ph - dh) / 2;
+            int dx = parent->get_x() + (parent->get_width() - dw) / 2;
+            int dy = parent->get_y() + (parent->get_height() - dh) / 2;
 
             fview->set_geometry(dx, dy, dw, dh);
         } else {
@@ -309,7 +287,6 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
             int dx = fview->get_x();
             int dy = fview->get_y();
 
-            // Only center if the floating window hasn't been placed on screen yet
             if (dx <= 0 && dy <= 0) {
                 dx = base_x + (base_w - dw) / 2;
                 dy = base_y + (base_h - dh) / 2;
@@ -320,79 +297,6 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 
             fview->set_geometry(dx, dy, dw, dh);
         }
-    }
-}
-
-struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const {
-    int pad = Config::get().get_screen_edge_padding();
-    int gap = Config::get().get_space_between_windows();
-
-    int base_x = usable_box.x + pad;
-    int base_y = usable_box.y + pad;
-    int base_w = std::max(50, usable_box.width - 2 * pad);
-    int base_h = std::max(50, usable_box.height - 2 * pad);
-
-    size_t n = m_tiled_views.size() + 1;
-    if (n == 1) {
-        return { base_x, base_y, base_w, base_h };
-    }
-
-    if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
-        int total_w = std::max(50, base_w - gap);
-        int master_w = static_cast<int>(total_w * 0.55);
-        int stack_w = total_w - master_w;
-
-        size_t stack_count = n - 1;
-        int total_stack_gaps = static_cast<int>(stack_count - 1) * gap;
-        int avail_stack_h = std::max(20, base_h - total_stack_gaps);
-        int item_h = avail_stack_h / static_cast<int>(stack_count);
-
-        int cur_y = base_y;
-        int stack_x = base_x + master_w + gap;
-
-        for (size_t i = 1; i < n; ++i) {
-            int win_h = (i == n - 1) ? (base_y + base_h - cur_y) : item_h;
-            if (i == n - 1) {
-                return { stack_x, cur_y, stack_w, std::max(20, win_h) };
-            }
-            cur_y += win_h + gap;
-        }
-        return { stack_x, cur_y, stack_w, std::max(20, base_y + base_h - cur_y) };
-    } else {
-        int cur_x = base_x;
-        int cur_y = base_y;
-        int cur_w = base_w;
-        int cur_h = base_h;
-
-        for (size_t i = 0; i < n; ++i) {
-            if (i == n - 1) {
-                int final_w = std::clamp(cur_w, 20, std::max(20, base_x + base_w - cur_x));
-                int final_h = std::clamp(cur_h, 20, std::max(20, base_y + base_h - cur_y));
-                return { cur_x, cur_y, final_w, final_h };
-            }
-
-            bool split_horizontal = (i % 2 == 0);
-            if (m_split_mode == SplitMode::Vertical) {
-                split_horizontal = !split_horizontal;
-            }
-
-            if (split_horizontal) {
-                int total_w = std::max(40, cur_w - gap);
-                int half_w = total_w / 2;
-                int rest_w = total_w - half_w;
-
-                cur_x += half_w + gap;
-                cur_w = rest_w;
-            } else {
-                int total_h = std::max(40, cur_h - gap);
-                int half_h = total_h / 2;
-                int rest_h = total_h - half_h;
-
-                cur_y += half_h + gap;
-                cur_h = rest_h;
-            }
-        }
-        return { cur_x, cur_y, std::max(20, cur_w), std::max(20, cur_h) };
     }
 }
 

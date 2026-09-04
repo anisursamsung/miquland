@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/common/util.hpp"
+#include "core/layout.hpp"
 #include <map>
 #include <vector>
 
@@ -9,11 +10,6 @@ namespace miquland {
 class Server;
 class View;
 
-enum class SplitMode {
-    Horizontal, // 50% Left | 50% Right
-    Vertical    // 50% Top  / 50% Bottom
-};
-
 class Workspace {
 public:
     Workspace(Server* server, size_t id);
@@ -21,6 +17,8 @@ public:
 
     size_t get_id() const { return m_id; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
+    struct wlr_scene_tree* get_tiled_tree() const { return m_tiled_tree; }
+    struct wlr_scene_tree* get_floating_tree() const { return m_floating_tree; }
 
     bool can_accept_view() const { return true; }
     size_t view_count() const { return m_tiled_views.size(); }
@@ -45,6 +43,12 @@ public:
         m_split_mode = (m_split_mode == SplitMode::Horizontal) ? SplitMode::Vertical : SplitMode::Horizontal;
     }
 
+    double get_split_ratio() const { return m_split_ratio; }
+    void set_split_ratio(double ratio) { m_split_ratio = std::clamp(ratio, 0.1, 0.9); }
+
+    double get_secondary_split_ratio() const { return m_secondary_split_ratio; }
+    void set_secondary_split_ratio(double ratio) { m_secondary_split_ratio = std::clamp(ratio, 0.1, 0.9); }
+
     void swap_with_main(View* view);
     void swap_views(size_t idx1, size_t idx2);
     bool swap_views(View* view1, View* view2);
@@ -52,22 +56,24 @@ public:
 
     void recalculate_layout(const struct wlr_box& usable_box);
     struct wlr_box calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const;
+    void arrange_floating_views(const struct wlr_box& usable_box);
 
     View* get_view(size_t index) const;
     struct wlr_ext_workspace_handle_v1* get_ext_handle() const { return m_ext_handle; }
 
 private:
-    void layout_spiral(int base_x, int base_y, int base_w, int base_h, int gap);
-    void layout_stack(int base_x, int base_y, int base_w, int base_h, int gap);
-
     Server* m_server = nullptr;
     size_t m_id = 1;
     struct wlr_scene_tree* m_scene_tree = nullptr;
+    struct wlr_scene_tree* m_tiled_tree = nullptr;
+    struct wlr_scene_tree* m_floating_tree = nullptr;
     struct wlr_ext_workspace_handle_v1* m_ext_handle = nullptr;
     std::vector<View*> m_tiled_views;
     std::vector<View*> m_floating_views;
     bool m_visible = false;
     SplitMode m_split_mode = SplitMode::Horizontal;
+    double m_split_ratio = 0.5;
+    double m_secondary_split_ratio = 0.5;
 };
 
 class WorkspaceManager {

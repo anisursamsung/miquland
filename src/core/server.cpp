@@ -250,8 +250,7 @@ void Server::reload_config() {
 
     for (const auto& v : m_views) {
         if (v && v->is_mapped()) {
-            v->update_border();
-            v->update_opacity();
+            v->update_frame();
         }
     }
 
@@ -325,12 +324,12 @@ void Server::set_focused_view(View* view) {
     View* prev = m_focused_view;
     m_focused_view = view;
     if (prev) {
-        prev->update_border();
+        prev->update_frame();
         if (view == nullptr && prev->get_foreign_toplevel()) {
             wlr_foreign_toplevel_handle_v1_set_activated(prev->get_foreign_toplevel(), false);
         }
     }
-    if (m_focused_view) m_focused_view->update_border();
+    if (m_focused_view) m_focused_view->update_frame();
 }
 
 View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy) {

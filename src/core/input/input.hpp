@@ -77,6 +77,9 @@ private:
     double m_grab_x = 0;
     double m_grab_y = 0;
     struct wlr_box m_grab_initial_view_box = { 0, 0, 0, 0 };
+    double m_grab_initial_split_ratio = 0.5;
+    double m_grab_initial_secondary_ratio = 0.5;
+    bool m_grab_resize_is_secondary = false;
     uint32_t m_resize_edges = 0;
 
     View* m_border_hover_view = nullptr;

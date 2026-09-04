@@ -315,7 +315,29 @@ void View::set_workspace(Workspace* ws) {
     if (m_workspace == ws) return;
     m_workspace = ws;
     if (m_workspace && m_scene_tree) {
-        wlr_scene_node_reparent(&m_scene_tree->node, m_workspace->get_scene_tree());
+        struct wlr_scene_tree* target_parent = (m_is_floating || m_is_dialog)
+            ? m_workspace->get_floating_tree()
+            : m_workspace->get_tiled_tree();
+        if (target_parent) {
+            wlr_scene_node_reparent(&m_scene_tree->node, target_parent);
+        } else {
+            wlr_scene_node_reparent(&m_scene_tree->node, m_workspace->get_scene_tree());
+        }
+    }
+}
+
+void View::set_floating(bool floating) {
+    m_is_floating = floating;
+    if (m_workspace && m_scene_tree) {
+        struct wlr_scene_tree* target_parent = (m_is_floating || m_is_dialog)
+            ? m_workspace->get_floating_tree()
+            : m_workspace->get_tiled_tree();
+        if (target_parent) {
+            wlr_scene_node_reparent(&m_scene_tree->node, target_parent);
+            if (m_is_floating) {
+                wlr_scene_node_raise_to_top(&m_scene_tree->node);
+            }
+        }
     }
 }
 
@@ -368,9 +390,14 @@ void View::set_geometry(int x, int y, int width, int height) {
         }
     }
 
-    update_border();
-    update_corner_radius();
-    update_child_dialog_geometries();
+    update_frame();
+
+    if (m_workspace && !m_child_dialogs.empty()) {
+        auto* out_mgr = m_server->get_output_manager();
+        if (out_mgr) {
+            m_workspace->arrange_floating_views(out_mgr->get_primary_usable_geometry());
+        }
+    }
 }
 
 void View::set_fullscreen(bool fullscreen) {
@@ -387,7 +414,9 @@ void View::set_fullscreen(bool fullscreen) {
         m_saved_geometry.y = m_y;
         m_saved_geometry.w = m_width;
         m_saved_geometry.h = m_height;
-        m_saved_geometry.workspace_tree = m_workspace ? m_workspace->get_scene_tree() : nullptr;
+        m_saved_geometry.workspace_tree = m_workspace ?
+            ((m_is_floating || m_is_dialog) ? m_workspace->get_floating_tree() : m_workspace->get_tiled_tree())
+            : nullptr;
 
         // Reparent to the overlay scene tree so it sits above everything
         if (m_scene_tree) {
@@ -442,7 +471,9 @@ void View::set_fullscreen(bool fullscreen) {
         // Reparent back to workspace scene tree
         struct wlr_scene_tree* parent_tree = m_saved_geometry.workspace_tree;
         if (!parent_tree && m_workspace) {
-            parent_tree = m_workspace->get_scene_tree();
+            parent_tree = (m_is_floating || m_is_dialog)
+                ? m_workspace->get_floating_tree()
+                : m_workspace->get_tiled_tree();
         }
         if (parent_tree && m_scene_tree) {
             wlr_scene_node_reparent(&m_scene_tree->node, parent_tree);
@@ -478,6 +509,12 @@ void View::set_fullscreen(bool fullscreen) {
     }
 }
 
+
+void View::update_frame() {
+    update_border();
+    update_corner_radius();
+    update_opacity();
+}
 
 void View::update_border() {
     if (m_is_override_redirect || !m_mapped || m_width <= 0 || m_height <= 0) {
@@ -539,7 +576,6 @@ void View::update_border() {
     }
 
     wlr_scene_buffer_set_buffer(m_border_scene_buffer, m_border_buffer->get_wlr_buffer());
-    update_corner_radius();
 }
 
 void View::update_opacity() {
@@ -658,11 +694,9 @@ void View::focus() {
     m_server->set_focused_view(this);
 
     if (prev && prev != this) {
-        prev->update_border();
-        prev->update_opacity();
+        prev->update_frame();
     }
-    update_border();
-    update_opacity();
+    update_frame();
 
     if (target_surface) {
         struct wlr_seat* seat = m_server->get_input_manager()->get_seat();
@@ -742,7 +776,9 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
         view->m_is_fullscreen = false;
         struct wlr_scene_tree* parent_tree = view->m_saved_geometry.workspace_tree;
         if (!parent_tree && view->m_workspace) {
-            parent_tree = view->m_workspace->get_scene_tree();
+            parent_tree = (view->is_floating() || view->is_dialog())
+                ? view->m_workspace->get_floating_tree()
+                : view->m_workspace->get_tiled_tree();
         }
         if (parent_tree && view->m_scene_tree) {
             wlr_scene_node_reparent(&view->m_scene_tree->node, parent_tree);
@@ -810,12 +846,6 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
                     int client_w = std::max(1, next_box.width - 2 * bw);
                     int client_h = std::max(1, next_box.height - 2 * bw);
 
-                    if (view->m_scene_tree) {
-                        wlr_scene_node_set_position(&view->m_scene_tree->node, next_box.x, next_box.y);
-                    }
-                    if (view->m_surface_scene_tree) {
-                        wlr_scene_node_set_position(&view->m_surface_scene_tree->node, bw, bw);
-                    }
                     wlr_xdg_toplevel_set_tiled(view->m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
                     if (view->m_xdg_toplevel->resource && wl_resource_get_version(view->m_xdg_toplevel->resource) >= 4) {
                         wlr_xdg_toplevel_set_bounds(view->m_xdg_toplevel, client_w, client_h);
@@ -846,8 +876,7 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
     }
 
     if (view->m_mapped) {
-        view->update_opacity();
-        view->update_corner_radius();
+        view->update_frame();
     }
 }
 
@@ -1118,42 +1147,6 @@ void View::update_parent_relationship() {
                 }
             }
         }
-    }
-}
-
-void View::update_child_dialog_geometries() {
-    if (m_child_dialogs.empty() || m_width <= 0 || m_height <= 0) return;
-
-    int bw = Config::get().get_window_border_width();
-
-    for (auto* dialog : m_child_dialogs) {
-        if (!dialog || !dialog->is_mapped()) continue;
-
-        int req_w = dialog->get_width() > 0 ? dialog->get_width() : 750;
-        int req_h = dialog->get_height() > 0 ? dialog->get_height() : 500;
-
-        if (dialog->get_type() == ViewType::Xdg && dialog->get_xdg_toplevel()) {
-            auto* xdg_surf = dialog->get_xdg_toplevel()->base;
-            int gw = xdg_surf->current.geometry.width;
-            int gh = xdg_surf->current.geometry.height;
-            if (gw <= 0 && xdg_surf->surface) {
-                gw = xdg_surf->surface->current.width;
-                gh = xdg_surf->surface->current.height;
-            }
-            if (gw > 0) req_w = gw + 2 * bw;
-            if (gh > 0) req_h = gh + 2 * bw;
-        }
-
-        int max_w = std::max(50, m_width - 20);
-        int max_h = std::max(50, m_height - 20);
-
-        int dw = std::min(req_w, max_w);
-        int dh = std::min(req_h, max_h);
-
-        int dx = m_x + (m_width - dw) / 2;
-        int dy = m_y + (m_height - dh) / 2;
-
-        dialog->set_geometry(dx, dy, dw, dh);
     }
 }
 

@@ -12,6 +12,73 @@
 
 namespace miquland {
 
+namespace {
+
+const char* edge_to_cursor_name(uint32_t edges) {
+    if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_LEFT)) return "nw-resize";
+    if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_RIGHT)) return "ne-resize";
+    if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_LEFT)) return "sw-resize";
+    if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_RIGHT)) return "se-resize";
+    if (edges & WLR_EDGE_TOP) return "n-resize";
+    if (edges & WLR_EDGE_BOTTOM) return "s-resize";
+    if (edges & WLR_EDGE_LEFT) return "w-resize";
+    if (edges & WLR_EDGE_RIGHT) return "e-resize";
+    return "se-resize";
+}
+
+uint32_t detect_border_edges(const View* view, double sx, double sy, int grab_area) {
+    if (!view) return 0;
+    uint32_t edges = 0;
+    if (sx < grab_area) edges |= WLR_EDGE_LEFT;
+    else if (sx >= view->get_width() - grab_area) edges |= WLR_EDGE_RIGHT;
+    if (sy < grab_area) edges |= WLR_EDGE_TOP;
+    else if (sy >= view->get_height() - grab_area) edges |= WLR_EDGE_BOTTOM;
+    return edges;
+}
+
+struct wlr_box calculate_interactive_move(const struct wlr_box& initial, double dx, double dy) {
+    return {
+        .x = initial.x + static_cast<int>(std::round(dx)),
+        .y = initial.y + static_cast<int>(std::round(dy)),
+        .width = initial.width,
+        .height = initial.height,
+    };
+}
+
+struct wlr_box calculate_interactive_resize(const struct wlr_box& initial, uint32_t edges, double dx, double dy, int min_w = 100, int min_h = 80) {
+    struct wlr_box box = initial;
+
+    if (edges & WLR_EDGE_RIGHT) {
+        box.width = std::max(min_w, initial.width + static_cast<int>(std::round(dx)));
+    } else if (edges & WLR_EDGE_LEFT) {
+        int w = initial.width - static_cast<int>(std::round(dx));
+        if (w >= min_w) {
+            box.width = w;
+            box.x = initial.x + static_cast<int>(std::round(dx));
+        } else {
+            box.width = min_w;
+            box.x = initial.x + initial.width - min_w;
+        }
+    }
+
+    if (edges & WLR_EDGE_BOTTOM) {
+        box.height = std::max(min_h, initial.height + static_cast<int>(std::round(dy)));
+    } else if (edges & WLR_EDGE_TOP) {
+        int h = initial.height - static_cast<int>(std::round(dy));
+        if (h >= min_h) {
+            box.height = h;
+            box.y = initial.y + static_cast<int>(std::round(dy));
+        } else {
+            box.height = min_h;
+            box.y = initial.y + initial.height - min_h;
+        }
+    }
+
+    return box;
+}
+
+} // namespace
+
 InputManager::InputManager(Server* server)
     : m_server(server)
 {
@@ -183,10 +250,21 @@ void InputManager::begin_interactive(View* view, CursorMode mode, uint32_t edges
     };
     m_resize_edges = edges;
 
-    // For interactive resize, pop to floating if tiled
-    if (mode == CursorMode::Resize && m_grabbed_view_was_tiled && view->get_workspace()) {
-        view->get_workspace()->toggle_floating(view);
-        m_grabbed_view_was_tiled = false;
+    if (m_grabbed_view_was_tiled && view->get_workspace()) {
+        Workspace* ws = view->get_workspace();
+        m_grab_initial_split_ratio = ws->get_split_ratio();
+        m_grab_initial_secondary_ratio = ws->get_secondary_split_ratio();
+
+        bool primary_is_horizontal = (ws->get_split_mode() == SplitMode::Horizontal);
+        if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
+            primary_is_horizontal = true;
+        }
+
+        if (primary_is_horizontal) {
+            m_grab_resize_is_secondary = ((edges & (WLR_EDGE_TOP | WLR_EDGE_BOTTOM)) != 0);
+        } else {
+            m_grab_resize_is_secondary = ((edges & (WLR_EDGE_LEFT | WLR_EDGE_RIGHT)) != 0);
+        }
     }
 
     view->focus();
@@ -197,17 +275,7 @@ void InputManager::begin_interactive(View* view, CursorMode mode, uint32_t edges
     if (mode == CursorMode::Move) {
         set_cursor_icon("grab");
     } else if (mode == CursorMode::Resize) {
-        const char* edge_name = "se-resize";
-        if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_LEFT)) edge_name = "nw-resize";
-        else if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_RIGHT)) edge_name = "ne-resize";
-        else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_LEFT)) edge_name = "sw-resize";
-        else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_RIGHT)) edge_name = "se-resize";
-        else if (edges & WLR_EDGE_TOP) edge_name = "n-resize";
-        else if (edges & WLR_EDGE_BOTTOM) edge_name = "s-resize";
-        else if (edges & WLR_EDGE_LEFT) edge_name = "w-resize";
-        else if (edges & WLR_EDGE_RIGHT) edge_name = "e-resize";
-
-        set_cursor_icon(edge_name);
+        set_cursor_icon(edge_to_cursor_name(edges));
     }
 }
 
@@ -405,51 +473,94 @@ void InputManager::process_cursor_motion(uint32_t time) {
     // Handle interactive Move & Resize
     if (m_cursor_mode == CursorMode::Move) {
         if (m_grabbed_view) {
-            int new_x = m_grab_initial_view_box.x + (int)std::round(m_cursor->x - m_grab_x);
-            int new_y = m_grab_initial_view_box.y + (int)std::round(m_cursor->y - m_grab_y);
-            m_grabbed_view->set_geometry(new_x, new_y, m_grab_initial_view_box.width, m_grab_initial_view_box.height);
+            struct wlr_box box = calculate_interactive_move(m_grab_initial_view_box, m_cursor->x - m_grab_x, m_cursor->y - m_grab_y);
+            m_grabbed_view->set_geometry(box.x, box.y, box.width, box.height);
         }
         return;
     } else if (m_cursor_mode == CursorMode::Resize) {
         if (m_grabbed_view) {
-            double dx = m_cursor->x - m_grab_x;
-            double dy = m_cursor->y - m_grab_y;
+            if (m_grabbed_view_was_tiled && m_grabbed_view->get_workspace()) {
+                Workspace* ws = m_grabbed_view->get_workspace();
+                auto* out_mgr = m_server->get_output_manager();
+                if (out_mgr && ws->get_tiled_views().size() >= 2) {
+                    struct wlr_box usable = out_mgr->get_primary_usable_geometry();
+                    int pad = Config::get().get_screen_edge_padding();
+                    int usable_w = std::max(50, usable.width - 2 * pad);
+                    int usable_h = std::max(50, usable.height - 2 * pad);
 
-            int new_x = m_grab_initial_view_box.x;
-            int new_y = m_grab_initial_view_box.y;
-            int new_w = m_grab_initial_view_box.width;
-            int new_h = m_grab_initial_view_box.height;
+                    bool primary_is_horizontal = (ws->get_split_mode() == SplitMode::Horizontal);
+                    if (Config::get().get_layout_mode() == Config::LayoutMode::Stack) {
+                        primary_is_horizontal = true;
+                    }
 
-            const int min_w = 100;
-            const int min_h = 80;
+                    double dx = m_cursor->x - m_grab_x;
+                    double dy = m_cursor->y - m_grab_y;
 
-            if (m_resize_edges & WLR_EDGE_RIGHT) {
-                new_w = std::max(min_w, (int)std::round(m_grab_initial_view_box.width + dx));
-            } else if (m_resize_edges & WLR_EDGE_LEFT) {
-                int potential_w = (int)std::round(m_grab_initial_view_box.width - dx);
-                if (potential_w >= min_w) {
-                    new_w = potential_w;
-                    new_x = (int)std::round(m_grab_initial_view_box.x + dx);
-                } else {
-                    new_w = min_w;
-                    new_x = m_grab_initial_view_box.x + m_grab_initial_view_box.width - min_w;
+                    if (m_grab_resize_is_secondary && ws->get_tiled_views().size() >= 3) {
+                        if (primary_is_horizontal) {
+                            double delta = dy / static_cast<double>(usable_h);
+                            bool is_top_of_stack = (ws->get_tiled_views().size() > 1 && ws->get_tiled_views()[1] == m_grabbed_view);
+                            double new_ratio = m_grab_initial_secondary_ratio;
+                            if (is_top_of_stack) {
+                                new_ratio = (m_resize_edges & WLR_EDGE_BOTTOM)
+                                    ? (m_grab_initial_secondary_ratio + delta)
+                                    : (m_grab_initial_secondary_ratio - delta);
+                            } else {
+                                new_ratio = (m_resize_edges & WLR_EDGE_TOP)
+                                    ? (m_grab_initial_secondary_ratio + delta)
+                                    : (m_grab_initial_secondary_ratio - delta);
+                            }
+                            ws->set_secondary_split_ratio(new_ratio);
+                        } else {
+                            double delta = dx / static_cast<double>(usable_w);
+                            bool is_left_of_stack = (ws->get_tiled_views().size() > 1 && ws->get_tiled_views()[1] == m_grabbed_view);
+                            double new_ratio = m_grab_initial_secondary_ratio;
+                            if (is_left_of_stack) {
+                                new_ratio = (m_resize_edges & WLR_EDGE_RIGHT)
+                                    ? (m_grab_initial_secondary_ratio + delta)
+                                    : (m_grab_initial_secondary_ratio - delta);
+                            } else {
+                                new_ratio = (m_resize_edges & WLR_EDGE_LEFT)
+                                    ? (m_grab_initial_secondary_ratio + delta)
+                                    : (m_grab_initial_secondary_ratio - delta);
+                            }
+                            ws->set_secondary_split_ratio(new_ratio);
+                        }
+                    } else {
+                        bool is_first_view = (!ws->get_tiled_views().empty() && ws->get_tiled_views().front() == m_grabbed_view);
+                        double new_ratio = m_grab_initial_split_ratio;
+                        if (primary_is_horizontal) {
+                            double delta = dx / static_cast<double>(usable_w);
+                            if (is_first_view) {
+                                new_ratio = m_grab_initial_split_ratio + delta;
+                            } else {
+                                if (m_resize_edges & WLR_EDGE_LEFT) {
+                                    new_ratio = m_grab_initial_split_ratio + delta;
+                                } else {
+                                    new_ratio = m_grab_initial_split_ratio - delta;
+                                }
+                            }
+                        } else {
+                            double delta = dy / static_cast<double>(usable_h);
+                            if (is_first_view) {
+                                new_ratio = m_grab_initial_split_ratio + delta;
+                            } else {
+                                if (m_resize_edges & WLR_EDGE_TOP) {
+                                    new_ratio = m_grab_initial_split_ratio + delta;
+                                } else {
+                                    new_ratio = m_grab_initial_split_ratio - delta;
+                                }
+                            }
+                        }
+                        ws->set_split_ratio(new_ratio);
+                    }
+
+                    ws->recalculate_layout(usable);
                 }
+            } else {
+                struct wlr_box box = calculate_interactive_resize(m_grab_initial_view_box, m_resize_edges, m_cursor->x - m_grab_x, m_cursor->y - m_grab_y);
+                m_grabbed_view->set_geometry(box.x, box.y, box.width, box.height);
             }
-
-            if (m_resize_edges & WLR_EDGE_BOTTOM) {
-                new_h = std::max(min_h, (int)std::round(m_grab_initial_view_box.height + dy));
-            } else if (m_resize_edges & WLR_EDGE_TOP) {
-                int potential_h = (int)std::round(m_grab_initial_view_box.height - dy);
-                if (potential_h >= min_h) {
-                    new_h = potential_h;
-                    new_y = (int)std::round(m_grab_initial_view_box.y + dy);
-                } else {
-                    new_h = min_h;
-                    new_y = m_grab_initial_view_box.y + m_grab_initial_view_box.height - min_h;
-                }
-            }
-
-            m_grabbed_view->set_geometry(new_x, new_y, new_w, new_h);
         }
         return;
     }
@@ -464,27 +575,12 @@ void InputManager::process_cursor_motion(uint32_t time) {
     if (!surface) {
         if (view && Config::get().is_resize_on_border_enabled() && !view->is_fullscreen() && !view->is_override_redirect()) {
             int grab = std::max(Config::get().get_window_border_width(), Config::get().get_border_grab_area());
-            uint32_t edges = 0;
-            if (sx < grab) edges |= WLR_EDGE_LEFT;
-            else if (sx >= view->get_width() - grab) edges |= WLR_EDGE_RIGHT;
-            if (sy < grab) edges |= WLR_EDGE_TOP;
-            else if (sy >= view->get_height() - grab) edges |= WLR_EDGE_BOTTOM;
+            uint32_t edges = detect_border_edges(view, sx, sy, grab);
 
             if (edges != 0) {
                 m_border_hover_view = view;
                 m_border_hover_edges = edges;
-
-                const char* edge_name = "se-resize";
-                if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_LEFT)) edge_name = "nw-resize";
-                else if ((edges & WLR_EDGE_TOP) && (edges & WLR_EDGE_RIGHT)) edge_name = "ne-resize";
-                else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_LEFT)) edge_name = "sw-resize";
-                else if ((edges & WLR_EDGE_BOTTOM) && (edges & WLR_EDGE_RIGHT)) edge_name = "se-resize";
-                else if (edges & WLR_EDGE_TOP) edge_name = "n-resize";
-                else if (edges & WLR_EDGE_BOTTOM) edge_name = "s-resize";
-                else if (edges & WLR_EDGE_LEFT) edge_name = "w-resize";
-                else if (edges & WLR_EDGE_RIGHT) edge_name = "e-resize";
-
-                set_cursor_icon(edge_name);
+                set_cursor_icon(edge_to_cursor_name(edges));
                 wlr_seat_pointer_clear_focus(m_seat);
                 return;
             }

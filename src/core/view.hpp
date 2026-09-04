@@ -37,6 +37,7 @@ public:
     void focus();
     void close();
 
+    void update_frame();
     void update_border();
     void update_opacity();
     void update_corner_radius();
@@ -47,11 +48,10 @@ public:
 
     bool is_dialog() const { return m_is_dialog; }
     bool is_floating() const { return m_is_floating; }
-    void set_floating(bool floating) { m_is_floating = floating; }
+    void set_floating(bool floating);
     View* get_parent_view() const { return m_parent_view; }
     void set_parent_view(View* parent);
     void update_parent_relationship();
-    void update_child_dialog_geometries();
     bool has_child_dialogs() const;
     View* get_top_dialog() const;
     const std::vector<View*>& get_child_dialogs() const { return m_child_dialogs; }
