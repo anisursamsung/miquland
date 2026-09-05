@@ -1,6 +1,7 @@
 #include "core/output.hpp"
 #include "core/server.hpp"
 #include "core/workspace.hpp"
+#include "core/input/input.hpp"
 #include <ctime>
 
 namespace miquland {
@@ -135,6 +136,9 @@ void OutputManager::add_output(Output* output) {
     if (m_server->get_workspace_manager()) {
         m_server->get_workspace_manager()->recalculate_layout();
     }
+    if (m_server->get_input_manager()) {
+        m_server->get_input_manager()->reapply_device_config();
+    }
     update_manager_config();
 }
 
@@ -150,6 +154,9 @@ void OutputManager::remove_output(Output* output) {
     }
     if (m_server->get_workspace_manager()) {
         m_server->get_workspace_manager()->recalculate_layout();
+    }
+    if (m_server->get_input_manager()) {
+        m_server->get_input_manager()->reapply_device_config();
     }
     update_manager_config();
 }

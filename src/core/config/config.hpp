@@ -29,6 +29,36 @@ public:
     bool is_natural_scroll_enabled() const { return m_natural_scroll; }
     void set_natural_scroll_enabled(bool enabled) { m_natural_scroll = enabled; }
 
+    bool is_dwt_enabled() const { return m_dwt; }
+    void set_dwt_enabled(bool enabled) { m_dwt = enabled; }
+
+    double get_accel_speed() const { return m_accel_speed; }
+    void set_accel_speed(double speed) { m_accel_speed = std::clamp(speed, -1.0, 1.0); }
+
+    const std::string& get_accel_profile() const { return m_accel_profile; }
+    void set_accel_profile(const std::string& profile) { m_accel_profile = profile; }
+
+    const std::string& get_touch_output() const { return m_touch_output; }
+    void set_touch_output(const std::string& output) { m_touch_output = output; }
+
+    const std::string& get_kb_layout() const { return m_kb_layout; }
+    void set_kb_layout(const std::string& l) { m_kb_layout = l; }
+
+    const std::string& get_kb_variant() const { return m_kb_variant; }
+    void set_kb_variant(const std::string& v) { m_kb_variant = v; }
+
+    const std::string& get_kb_options() const { return m_kb_options; }
+    void set_kb_options(const std::string& opt) { m_kb_options = opt; }
+
+    const std::string& get_kb_model() const { return m_kb_model; }
+    void set_kb_model(const std::string& m) { m_kb_model = m; }
+
+    int get_repeat_rate() const { return m_repeat_rate; }
+    void set_repeat_rate(int rate) { m_repeat_rate = std::max(1, rate); }
+
+    int get_repeat_delay() const { return m_repeat_delay; }
+    void set_repeat_delay(int delay) { m_repeat_delay = std::max(100, delay); }
+
     const std::string& get_icon_theme() const { return m_icon_theme; }
     void set_icon_theme(const std::string& theme) { m_icon_theme = theme; }
 
@@ -164,6 +194,16 @@ private:
 
     bool m_tap_to_click = true;
     bool m_natural_scroll = true;
+    bool m_dwt = true;
+    double m_accel_speed = 0.0;
+    std::string m_accel_profile = "adaptive";
+    std::string m_touch_output = "";
+    std::string m_kb_layout = "us";
+    std::string m_kb_variant = "";
+    std::string m_kb_options = "";
+    std::string m_kb_model = "";
+    int m_repeat_rate = 25;
+    int m_repeat_delay = 600;
     std::string m_icon_theme = "Papirus";
     std::string m_terminal = "foot";
 

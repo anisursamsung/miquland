@@ -55,8 +55,16 @@ Configuration is loaded from `~/.config/miquland/miquland.conf` (falls back to `
 
 ```ini
 # Input
+kb_layout = us
+# kb_options = grp:alt_shift_toggle,caps:escape
+repeat_rate = 25
+repeat_delay = 600
 tap_to_click = true
 natural_scroll = false
+disable_while_typing = true
+accel_speed = 0.0
+accel_profile = adaptive
+# touch_output = eDP-1
 
 # Colors
 [colors]

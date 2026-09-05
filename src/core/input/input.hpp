@@ -25,7 +25,11 @@ public:
     bool handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym);
     void spawn_command(const char* cmd);
     void remove_keyboard(Keyboard* kb);
+    void remove_pointer(struct wlr_input_device* device);
+    void remove_touch_device(struct wlr_input_device* device);
     void reapply_device_config();
+    void configure_pointer_device(struct wlr_input_device* device);
+    void map_touch_device_to_output(struct wlr_input_device* device);
     void set_cursor_icon(const char* name);
 
     void begin_interactive(View* view, CursorMode mode, uint32_t edges);
@@ -128,6 +132,8 @@ public:
 
     struct wlr_keyboard* get_wlr_keyboard() const { return m_keyboard; }
     struct wlr_input_device* get_device() const { return m_device; }
+
+    void reapply_keymap();
 
 private:
     static void handle_modifiers(struct wl_listener* listener, void* data);

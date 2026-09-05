@@ -39,6 +39,18 @@ void Config::set_defaults() {
 
     std::string term = (env_term && *env_term) ? env_term : "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
     m_terminal = term;
+    m_tap_to_click = true;
+    m_natural_scroll = false;
+    m_dwt = true;
+    m_accel_speed = 0.0;
+    m_accel_profile = "adaptive";
+    m_touch_output = "";
+    m_kb_layout = "us";
+    m_kb_variant = "";
+    m_kb_options = "";
+    m_kb_model = "";
+    m_repeat_rate = 25;
+    m_repeat_delay = 600;
     m_window_opacity_active = 1.0f;
     m_window_opacity_inactive = 0.85f;
     m_blur_enabled = true;
@@ -475,6 +487,32 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
             m_natural_scroll = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "disable_while_typing" || key == "dwt") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_dwt = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "accel_speed" || key == "pointer_speed" || key == "mouse_speed") {
+            try {
+                m_accel_speed = std::clamp(std::stod(value), -1.0, 1.0);
+            } catch (...) {}
+        } else if (key == "accel_profile" || key == "pointer_profile") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_accel_profile = (lower == "flat") ? "flat" : "adaptive";
+        } else if (key == "touch_output" || key == "touchscreen_output") {
+            m_touch_output = value;
+        } else if (key == "kb_layout" || key == "keyboard_layout" || key == "layout_keyboard") {
+            m_kb_layout = value;
+        } else if (key == "kb_variant" || key == "keyboard_variant") {
+            m_kb_variant = value;
+        } else if (key == "kb_options" || key == "keyboard_options" || key == "xkb_options") {
+            m_kb_options = value;
+        } else if (key == "kb_model" || key == "keyboard_model") {
+            m_kb_model = value;
+        } else if (key == "repeat_rate" || key == "keyboard_repeat_rate") {
+            try { m_repeat_rate = std::max(1, std::stoi(value)); } catch (...) {}
+        } else if (key == "repeat_delay" || key == "keyboard_repeat_delay") {
+            try { m_repeat_delay = std::max(100, std::stoi(value)); } catch (...) {}
         } else if (key == "icon_theme" || key == "icon-theme" || key == "icons_theme" ||
                    key == "icons-theme" || key == "icontheme" || key == "theme_icons" ||
                    key == "icon" || key == "icons") {
@@ -673,8 +711,21 @@ void Config::save() {
     file << "color_outline_variant = " << m_color_outline_variant << "\n\n";
 
     file << "[input]\n";
+    file << "kb_layout = " << m_kb_layout << "\n";
+    if (!m_kb_variant.empty()) file << "kb_variant = " << m_kb_variant << "\n";
+    if (!m_kb_options.empty()) file << "kb_options = " << m_kb_options << "\n";
+    if (!m_kb_model.empty()) file << "kb_model = " << m_kb_model << "\n";
+    file << "repeat_rate = " << m_repeat_rate << "\n";
+    file << "repeat_delay = " << m_repeat_delay << "\n";
     file << "tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";
-    file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n\n";
+    file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n";
+    file << "disable_while_typing = " << (m_dwt ? "true" : "false") << "\n";
+    file << "accel_speed = " << m_accel_speed << "\n";
+    file << "accel_profile = " << m_accel_profile << "\n";
+    if (!m_touch_output.empty()) {
+        file << "touch_output = " << m_touch_output << "\n";
+    }
+    file << "\n";
 
     file << "[windows]\n";
     file << "layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";

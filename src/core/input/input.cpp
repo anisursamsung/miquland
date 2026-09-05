@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cmath>
+#include <algorithm>
 #include <linux/input-event-codes.h>
 
 namespace miquland {
@@ -75,6 +76,24 @@ struct wlr_box calculate_interactive_resize(const struct wlr_box& initial, uint3
     }
 
     return box;
+}
+
+struct InputDeviceNode {
+    struct wlr_input_device* device = nullptr;
+    InputManager* manager = nullptr;
+    bool is_touch = false;
+    struct wl_listener destroy_listener;
+};
+
+void handle_input_device_destroy(struct wl_listener* listener, void* data) {
+    InputDeviceNode* node = wl_container_of(listener, node, destroy_listener);
+    wl_list_remove(&node->destroy_listener.link);
+    if (node->is_touch) {
+        node->manager->remove_touch_device(node->device);
+    } else {
+        node->manager->remove_pointer(node->device);
+    }
+    delete node;
 }
 
 } // namespace
@@ -213,18 +232,119 @@ void InputManager::remove_keyboard(Keyboard* kb) {
     }
 }
 
-void InputManager::reapply_device_config() {
-    bool natural_scroll = Config::get().is_natural_scroll_enabled();
-    for (auto* device : m_pointers) {
-        if (wlr_input_device_is_libinput(device)) {
-            struct libinput_device* libinput_dev = wlr_libinput_get_device_handle(device);
-            if (libinput_dev) {
-                if (libinput_device_config_scroll_has_natural_scroll(libinput_dev)) {
-                    libinput_device_config_scroll_set_natural_scroll_enabled(libinput_dev, natural_scroll ? 1 : 0);
-                    log_info(std::string("Live updated natural scroll: ") + (natural_scroll ? "true" : "false"));
+void InputManager::remove_pointer(struct wlr_input_device* device) {
+    auto it = std::find(m_pointers.begin(), m_pointers.end(), device);
+    if (it != m_pointers.end()) {
+        m_pointers.erase(it);
+    }
+}
+
+void InputManager::remove_touch_device(struct wlr_input_device* device) {
+    auto it = std::find(m_touch_devices.begin(), m_touch_devices.end(), device);
+    if (it != m_touch_devices.end()) {
+        m_touch_devices.erase(it);
+    }
+}
+
+void InputManager::configure_pointer_device(struct wlr_input_device* device) {
+    if (!device || !wlr_input_device_is_libinput(device)) return;
+
+    struct libinput_device* libinput_dev = wlr_libinput_get_device_handle(device);
+    if (!libinput_dev) return;
+
+    // 1. Tap-to-click & Tap-and-drag
+    if (libinput_device_config_tap_get_finger_count(libinput_dev) > 0) {
+        bool tap_enabled = Config::get().is_tap_to_click_enabled();
+        libinput_device_config_tap_set_enabled(libinput_dev, tap_enabled ? LIBINPUT_CONFIG_TAP_ENABLED : LIBINPUT_CONFIG_TAP_DISABLED);
+        libinput_device_config_tap_set_drag_enabled(libinput_dev, tap_enabled ? LIBINPUT_CONFIG_DRAG_ENABLED : LIBINPUT_CONFIG_DRAG_DISABLED);
+    }
+
+    // 2. Natural scrolling
+    if (libinput_device_config_scroll_has_natural_scroll(libinput_dev)) {
+        bool natural_scroll = Config::get().is_natural_scroll_enabled();
+        libinput_device_config_scroll_set_natural_scroll_enabled(libinput_dev, natural_scroll ? 1 : 0);
+    }
+
+    // 3. Disable-While-Typing (DWT)
+    if (libinput_device_config_dwt_is_available(libinput_dev)) {
+        bool dwt = Config::get().is_dwt_enabled();
+        libinput_device_config_dwt_set_enabled(libinput_dev, dwt ? LIBINPUT_CONFIG_DWT_ENABLED : LIBINPUT_CONFIG_DWT_DISABLED);
+    }
+
+    // 4. Pointer Acceleration Speed and Profile
+    if (libinput_device_config_accel_is_available(libinput_dev)) {
+        double speed = Config::get().get_accel_speed();
+        libinput_device_config_accel_set_speed(libinput_dev, speed);
+
+        const std::string& profile = Config::get().get_accel_profile();
+        enum libinput_config_accel_profile prof_enum = (profile == "flat")
+            ? LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT
+            : LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+        libinput_device_config_accel_set_profile(libinput_dev, prof_enum);
+    }
+}
+
+void InputManager::map_touch_device_to_output(struct wlr_input_device* device) {
+    if (!device || device->type != WLR_INPUT_DEVICE_TOUCH) return;
+
+    auto* out_mgr = m_server->get_output_manager();
+    if (!out_mgr) return;
+
+    struct wlr_output* target_wlr_out = nullptr;
+    const std::string& user_target = Config::get().get_touch_output();
+    const auto& outputs = out_mgr->get_outputs();
+
+    if (outputs.empty()) return;
+
+    // 1. Explicit user target in config (e.g. touch_output = eDP-1)
+    if (!user_target.empty()) {
+        for (const auto& out : outputs) {
+            if (out && out->get_wlr_output() && out->get_wlr_output()->name) {
+                if (user_target == out->get_wlr_output()->name) {
+                    target_wlr_out = out->get_wlr_output();
+                    break;
                 }
             }
         }
+    }
+
+    // 2. Auto-detect internal laptop display (eDP, LVDS, DSI)
+    if (!target_wlr_out) {
+        for (const auto& out : outputs) {
+            if (out && out->get_wlr_output() && out->get_wlr_output()->name) {
+                std::string name = out->get_wlr_output()->name;
+                if (name.rfind("eDP", 0) == 0 || name.rfind("LVDS", 0) == 0 || name.rfind("DSI", 0) == 0) {
+                    target_wlr_out = out->get_wlr_output();
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to primary output
+    if (!target_wlr_out) {
+        auto* primary = out_mgr->get_primary_output();
+        if (primary) {
+            target_wlr_out = primary->get_wlr_output();
+        }
+    }
+
+    if (target_wlr_out) {
+        wlr_cursor_map_input_to_output(m_cursor, device, target_wlr_out);
+        log_info("Touchscreen '" + std::string(device->name ? device->name : "touch") +
+                 "' mapped to output: " + std::string(target_wlr_out->name ? target_wlr_out->name : "unnamed"));
+    }
+}
+
+void InputManager::reapply_device_config() {
+    for (auto& kb : m_keyboards) {
+        if (kb) kb->reapply_keymap();
+    }
+    for (auto* device : m_pointers) {
+        configure_pointer_device(device);
+    }
+    for (auto* device : m_touch_devices) {
+        map_touch_device_to_output(device);
     }
 }
 
@@ -617,28 +737,22 @@ void InputManager::handle_new_input(struct wl_listener* listener, void* data) {
     if (device->type == WLR_INPUT_DEVICE_KEYBOARD) {
         manager->m_keyboards.emplace_back(std::make_unique<Keyboard>(manager->m_server, device));
     } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
-        if (wlr_input_device_is_libinput(device)) {
-            struct libinput_device* libinput_dev = wlr_libinput_get_device_handle(device);
-            if (libinput_dev) {
-                // Hardcode Tap-To-Click and Tap Drag enabled by default
-                if (libinput_device_config_tap_get_finger_count(libinput_dev) > 0) {
-                    libinput_device_config_tap_set_enabled(libinput_dev, LIBINPUT_CONFIG_TAP_ENABLED);
-                    libinput_device_config_tap_set_drag_enabled(libinput_dev, LIBINPUT_CONFIG_DRAG_ENABLED);
-                }
-
-                // Configure Natural Scroll if supported
-                if (libinput_device_config_scroll_has_natural_scroll(libinput_dev)) {
-                    bool natural_scroll = Config::get().is_natural_scroll_enabled();
-                    libinput_device_config_scroll_set_natural_scroll_enabled(libinput_dev, natural_scroll ? 1 : 0);
-                }
-            }
-        }
-
+        manager->configure_pointer_device(device);
         wlr_cursor_attach_input_device(manager->m_cursor, device);
         manager->m_pointers.push_back(device);
+
+        auto* node = new InputDeviceNode{ device, manager, false, {} };
+        node->destroy_listener.notify = handle_input_device_destroy;
+        wl_signal_add(&device->events.destroy, &node->destroy_listener);
     } else if (device->type == WLR_INPUT_DEVICE_TOUCH) {
         wlr_cursor_attach_input_device(manager->m_cursor, device);
+        manager->map_touch_device_to_output(device);
         manager->m_touch_devices.push_back(device);
+
+        auto* node = new InputDeviceNode{ device, manager, true, {} };
+        node->destroy_listener.notify = handle_input_device_destroy;
+        wl_signal_add(&device->events.destroy, &node->destroy_listener);
+
         log_info("Touchscreen device attached: " + std::string(device->name ? device->name : "unnamed"));
     }
 
@@ -950,14 +1064,7 @@ Keyboard::Keyboard(Server* server, struct wlr_input_device* device)
 {
     m_keyboard = wlr_keyboard_from_input_device(device);
 
-    struct xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    struct xkb_rule_names rules = {};
-    struct xkb_keymap* keymap = xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
-
-    wlr_keyboard_set_keymap(m_keyboard, keymap);
-    xkb_keymap_unref(keymap);
-    xkb_context_unref(context);
-    wlr_keyboard_set_repeat_info(m_keyboard, 25, 600);
+    reapply_keymap();
 
     m_modifiers_listener.notify = handle_modifiers;
     wl_signal_add(&m_keyboard->events.modifiers, &m_modifiers_listener);
@@ -969,6 +1076,33 @@ Keyboard::Keyboard(Server* server, struct wlr_input_device* device)
     wl_signal_add(&device->events.destroy, &m_destroy_listener);
 
     wlr_seat_set_keyboard(server->get_input_manager()->get_seat(), m_keyboard);
+}
+
+void Keyboard::reapply_keymap() {
+    if (!m_keyboard) return;
+
+    struct xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    const auto& conf = Config::get();
+
+    struct xkb_rule_names rules = {};
+    if (!conf.get_kb_layout().empty()) rules.layout = conf.get_kb_layout().c_str();
+    if (!conf.get_kb_variant().empty()) rules.variant = conf.get_kb_variant().c_str();
+    if (!conf.get_kb_options().empty()) rules.options = conf.get_kb_options().c_str();
+    if (!conf.get_kb_model().empty()) rules.model = conf.get_kb_model().c_str();
+
+    struct xkb_keymap* keymap = xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    if (keymap) {
+        wlr_keyboard_set_keymap(m_keyboard, keymap);
+        xkb_keymap_unref(keymap);
+        log_info("Applied XKB keymap (layout: " + conf.get_kb_layout() +
+                 ", options: " + conf.get_kb_options() + ")");
+    } else {
+        log_error("Failed to compile XKB keymap with layout '" + conf.get_kb_layout() +
+                  "', options '" + conf.get_kb_options() + "'");
+    }
+    xkb_context_unref(context);
+
+    wlr_keyboard_set_repeat_info(m_keyboard, conf.get_repeat_rate(), conf.get_repeat_delay());
 }
 
 Keyboard::~Keyboard() {
