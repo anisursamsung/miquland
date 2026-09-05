@@ -92,6 +92,15 @@ void LayerSurface::update_blur() {
         return;
     }
 
+    // For layer surfaces, blur is opt-in via layer rules (matching namespace)
+    const char* ns = m_wlr_layer_surface->_namespace;
+    if (!ns || !Config::get().is_layer_blur_enabled(ns)) {
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        return;
+    }
+
     int w = m_wlr_layer_surface->surface->current.width;
     int h = m_wlr_layer_surface->surface->current.height;
     if (w <= 0 || h <= 0) return;

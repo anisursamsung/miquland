@@ -48,6 +48,7 @@ void Config::set_defaults() {
     m_blur_brightness = 0.9f;
     m_blur_contrast = 0.9f;
     m_blur_saturation = 1.1f;
+    m_blurred_layers.clear();
 
     // Material Design 3 Neon Light Theme Color Defaults
     m_theme_source = "";
@@ -132,6 +133,28 @@ void Config::add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::s
         }
     }
     m_keybindings.push_back({ mods, norm_sym, action, combo });
+}
+
+bool Config::is_layer_blur_enabled(const std::string& ns) const {
+    if (ns.empty()) return false;
+    std::string lower_ns = ns;
+    std::transform(lower_ns.begin(), lower_ns.end(), lower_ns.begin(), ::tolower);
+
+    for (const auto& layer : m_blurred_layers) {
+        std::string lower_layer = layer;
+        std::transform(lower_layer.begin(), lower_layer.end(), lower_layer.begin(), ::tolower);
+        if (lower_layer == lower_ns) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Config::add_blurred_layer(const std::string& ns) {
+    if (ns.empty()) return;
+    if (!is_layer_blur_enabled(ns)) {
+        m_blurred_layers.push_back(ns);
+    }
 }
 
 bool Config::parse_binding_combo(const std::string& combo, uint32_t& out_modifiers, xkb_keysym_t& out_keysym) {
@@ -560,6 +583,26 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_blur_saturation = std::stof(value);
             } catch (...) {}
+        } else if (key == "layerrule") {
+            // Hyprland syntax: layerrule = blur, waybar
+            size_t comma = value.find(',');
+            if (comma != std::string::npos) {
+                std::string rule = trim(value.substr(0, comma));
+                std::string ns = trim(value.substr(comma + 1));
+                std::transform(rule.begin(), rule.end(), rule.begin(), ::tolower);
+                if (rule == "blur" && !ns.empty()) {
+                    add_blurred_layer(ns);
+                }
+            }
+        } else if (key == "blur_layers") {
+            std::stringstream ss(value);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+                item = trim(item);
+                if (!item.empty()) {
+                    add_blurred_layer(item);
+                }
+            }
         } else if (key == "bind") {
             // Format: bind = Super+F, firefox or bind = Super, K, kitty
             size_t comma = value.rfind(',');
@@ -586,6 +629,7 @@ void Config::load() {
     std::vector<KeyBinding> file_bindings;
     std::vector<std::string> file_exec_cmds;
     std::vector<std::string> file_exec_once_cmds;
+    m_blurred_layers.clear();
 
     load_file(path, file_bindings, has_bindings_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
@@ -642,6 +686,12 @@ void Config::save() {
     file << "blur_brightness = " << m_blur_brightness << "\n";
     file << "blur_contrast = " << m_blur_contrast << "\n";
     file << "blur_saturation = " << m_blur_saturation << "\n\n";
+
+    file << "# Layer Rules (Blur is opt-in per namespace)\n";
+    for (const auto& layer : m_blurred_layers) {
+        file << "layerrule = blur, " << layer << "\n";
+    }
+    file << "\n";
 
     file << "[applications]\n";
     file << "terminal = " << m_terminal << "\n\n";

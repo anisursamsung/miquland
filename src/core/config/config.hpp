@@ -138,6 +138,10 @@ public:
     float get_blur_saturation() const { return m_blur_saturation; }
     void set_blur_saturation(float s) { m_blur_saturation = s; }
 
+    bool is_layer_blur_enabled(const std::string& ns) const;
+    void add_blurred_layer(const std::string& ns);
+    const std::vector<std::string>& get_blurred_layers() const { return m_blurred_layers; }
+
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
@@ -182,6 +186,7 @@ private:
     float m_blur_brightness = 0.9f;
     float m_blur_contrast = 0.9f;
     float m_blur_saturation = 1.1f;
+    std::vector<std::string> m_blurred_layers;
     LayoutMode m_layout_mode = LayoutMode::Spiral;
 
     // Material Design 3 Palette
