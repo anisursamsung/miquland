@@ -51,7 +51,6 @@ void Config::set_defaults() {
     m_blurred_layers.clear();
 
     // Material Design 3 Neon Light Theme Color Defaults
-    m_theme_source = "";
     m_color_primary = "#0066ff";
     m_color_on_primary = "#ffffff";
     m_color_primary_container = "#cce5ff";
@@ -451,7 +450,6 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         }
 
         if (key == "source" || key == "include") {
-            m_theme_source = value;
             std::string resolved = resolve_path(value);
             if (!resolved.empty() && fs::exists(resolved)) {
                 log_info("Sourcing configuration from " + resolved);
@@ -659,9 +657,20 @@ void Config::save() {
     file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
     file << "icon_theme = " << m_icon_theme << "\n\n";
 
-    file << "[theme]\n";
-    file << "# Source a color theme file (e.g. source = light.conf, dark.conf, or absolute path)\n";
-    file << "source = " << m_theme_source << "\n\n";
+    file << "[colors]\n";
+    file << "color_primary = " << m_color_primary << "\n";
+    file << "color_on_primary = " << m_color_on_primary << "\n";
+    file << "color_primary_container = " << m_color_primary_container << "\n";
+    file << "color_on_primary_container = " << m_color_on_primary_container << "\n";
+    file << "color_secondary = " << m_color_secondary << "\n";
+    file << "color_on_secondary = " << m_color_on_secondary << "\n";
+    file << "color_background = " << m_color_background << "\n";
+    file << "color_surface = " << m_color_surface << "\n";
+    file << "color_surface_variant = " << m_color_surface_variant << "\n";
+    file << "color_on_surface = " << m_color_on_surface << "\n";
+    file << "color_on_surface_variant = " << m_color_on_surface_variant << "\n";
+    file << "color_outline = " << m_color_outline << "\n";
+    file << "color_outline_variant = " << m_color_outline_variant << "\n\n";
 
     file << "[input]\n";
     file << "tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";

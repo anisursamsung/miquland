@@ -93,9 +93,6 @@ public:
     const std::string& get_color_outline_variant() const { return m_color_outline_variant; }
     void set_color_outline_variant(const std::string& c) { m_color_outline_variant = c; }
 
-    const std::string& get_theme_source() const { return m_theme_source; }
-    void set_theme_source(const std::string& src) { m_theme_source = src; }
-
     enum class LayoutMode {
         Spiral, // Recursive binary space partitioning (Fibonacci / BSP)
         Stack   // Main prominent window on left, vertical stack on right
@@ -169,7 +166,6 @@ private:
     bool m_natural_scroll = true;
     std::string m_icon_theme = "Papirus";
     std::string m_terminal = "foot";
-    std::string m_theme_source = "~/.config/miquland/light.conf";
 
     int m_window_border_width = 2;
     int m_window_border_radius = 8;
