@@ -187,12 +187,20 @@ bool Server::init() {
 
     m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
     if (m_xwayland) {
+        wlr_xwayland_set_seat(m_xwayland, m_input_manager->get_seat());
+
         m_xwayland_ready_listener.notify = handle_xwayland_ready;
         wl_signal_add(&m_xwayland->events.ready, &m_xwayland_ready_listener);
 
         m_xwayland_new_surface_listener.notify = handle_xwayland_new_surface;
         wl_signal_add(&m_xwayland->events.new_surface, &m_xwayland_new_surface_listener);
-        log_info("Xwayland support initialized");
+
+        if (m_xwayland->display_name) {
+            setenv("DISPLAY", m_xwayland->display_name, 1);
+            log_info("Xwayland support initialized on DISPLAY=" + std::string(m_xwayland->display_name));
+        } else {
+            log_info("Xwayland support initialized");
+        }
     }
 
     m_socket_name = wl_display_add_socket_auto(m_wl_display);
@@ -204,7 +212,7 @@ bool Server::init() {
     log_info("Wayland compositor running on WAYLAND_DISPLAY=" + std::string(m_socket_name));
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     setenv("XDG_CURRENT_DESKTOP", "miquland", 1);
-    system("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null");
+    system("systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null");
 
     setup_config_watcher();
 
