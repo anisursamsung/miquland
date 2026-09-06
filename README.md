@@ -71,26 +71,13 @@ accel_profile = adaptive
 focus_follows_mouse = true
 # touch_output = eDP-1
 
-# Colors
-color_primary              = #0066ff
-color_on_primary           = #ffffff
-color_primary_container    = #cce5ff
-color_on_primary_container = #002b66
-color_secondary            = #e6f0fa
-color_on_secondary         = #0f172a
-color_background           = #f4f8fc
-color_surface              = #ffffff
-color_surface_variant      = #e6eff8
-color_on_surface           = #0f172a
-color_on_surface_variant   = #475569
-color_outline              = #99c2ff
-color_outline_variant      = #dbeafe
-
 # Windows
 layout = spiral
 default_split_ratio = 0.5
 window_border_width = 2
 window_border_radius = 10
+window_border_color_active = #0066ff
+window_border_color_inactive = #99c2ff
 space_between_windows = 8
 screen_edge_padding = 12
 smart_gaps = false

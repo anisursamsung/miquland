@@ -62,20 +62,8 @@ void Config::set_defaults() {
     m_blur_saturation = 1.1f;
     m_blurred_layers.clear();
 
-    // Material Design 3 Neon Light Theme Color Defaults
-    m_color_primary = "#0066ff";
-    m_color_on_primary = "#ffffff";
-    m_color_primary_container = "#cce5ff";
-    m_color_on_primary_container = "#002b66";
-    m_color_secondary = "#e6f0fa";
-    m_color_on_secondary = "#0f172a";
-    m_color_background = "#f4f8fc";
-    m_color_surface = "#ffffff";
-    m_color_surface_variant = "#e6eff8";
-    m_color_on_surface = "#0f172a";
-    m_color_on_surface_variant = "#475569";
-    m_color_outline = "#99c2ff";
-    m_color_outline_variant = "#dbeafe";
+    m_window_border_color_active = "#0066ff";
+    m_window_border_color_inactive = "#99c2ff";
 
     // Application Launchers
     m_keybindings.push_back({ mod, XKB_KEY_space, "menu", "Super+Space" });
@@ -664,34 +652,10 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_border_grab_area = std::clamp(std::stoi(value), 1, 30);
             } catch (...) {}
-        } else if (key == "color_primary" || key == "primary" || key == "accent" ||
-                   key == "window_border_color_active" || key == "border_color_active") {
-            m_color_primary = value;
-        } else if (key == "color_on_primary" || key == "on_primary") {
-            m_color_on_primary = value;
-        } else if (key == "color_primary_container" || key == "primary_container") {
-            m_color_primary_container = value;
-        } else if (key == "color_on_primary_container" || key == "on_primary_container") {
-            m_color_on_primary_container = value;
-        } else if (key == "color_secondary" || key == "secondary") {
-            m_color_secondary = value;
-        } else if (key == "color_on_secondary" || key == "on_secondary") {
-            m_color_on_secondary = value;
-        } else if (key == "color_background" || key == "background" || key == "bg_color") {
-            m_color_background = value;
-        } else if (key == "color_surface" || key == "surface" || key == "menu_bg") {
-            m_color_surface = value;
-        } else if (key == "color_surface_variant" || key == "surface_variant") {
-            m_color_surface_variant = value;
-        } else if (key == "color_on_surface" || key == "on_surface" || key == "text_color" || key == "text") {
-            m_color_on_surface = value;
-        } else if (key == "color_on_surface_variant" || key == "on_surface_variant" || key == "text_muted") {
-            m_color_on_surface_variant = value;
-        } else if (key == "color_outline" || key == "outline" || key == "border" ||
-                   key == "window_border_color_inactive" || key == "border_color_inactive") {
-            m_color_outline = value;
-        } else if (key == "color_outline_variant" || key == "outline_variant") {
-            m_color_outline_variant = value;
+        } else if (key == "window_border_color_active" || key == "border_color_active") {
+            m_window_border_color_active = value;
+        } else if (key == "window_border_color_inactive" || key == "border_color_inactive") {
+            m_window_border_color_inactive = value;
         } else if (key == "space_between_windows" || key == "window_spacing" || key == "inner_gap") {
             try {
                 m_space_between_windows = std::max(0, std::stoi(value));
@@ -871,23 +835,6 @@ void Config::save() {
     file << "cursor_size = " << m_cursor_size << "\n\n";
 
     file << "# ==========================================\n";
-    file << "# Colors Configuration\n";
-    file << "# ==========================================\n";
-    file << "color_primary = " << m_color_primary << "\n";
-    file << "color_on_primary = " << m_color_on_primary << "\n";
-    file << "color_primary_container = " << m_color_primary_container << "\n";
-    file << "color_on_primary_container = " << m_color_on_primary_container << "\n";
-    file << "color_secondary = " << m_color_secondary << "\n";
-    file << "color_on_secondary = " << m_color_on_secondary << "\n";
-    file << "color_background = " << m_color_background << "\n";
-    file << "color_surface = " << m_color_surface << "\n";
-    file << "color_surface_variant = " << m_color_surface_variant << "\n";
-    file << "color_on_surface = " << m_color_on_surface << "\n";
-    file << "color_on_surface_variant = " << m_color_on_surface_variant << "\n";
-    file << "color_outline = " << m_color_outline << "\n";
-    file << "color_outline_variant = " << m_color_outline_variant << "\n\n";
-
-    file << "# ==========================================\n";
     file << "# Input Settings\n";
     file << "# ==========================================\n";
     file << "focus_follows_mouse = " << (m_focus_follows_mouse ? "true" : "false") << "\n";
@@ -916,6 +863,8 @@ void Config::save() {
     file << "workspace_cycle = " << (m_workspace_cycle ? "true" : "false") << "\n";
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
+    file << "window_border_color_active = " << m_window_border_color_active << "\n";
+    file << "window_border_color_inactive = " << m_window_border_color_inactive << "\n";
     file << "resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
     file << "border_grab_area = " << m_border_grab_area << "\n";
     file << "space_between_windows = " << m_space_between_windows << "\n";

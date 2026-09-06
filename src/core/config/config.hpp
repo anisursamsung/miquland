@@ -106,51 +106,11 @@ public:
     int get_border_grab_area() const { return m_border_grab_area; }
     void set_border_grab_area(int area) { m_border_grab_area = area; }
 
-    const std::string& get_window_border_color_active() const { return m_color_primary; }
-    void set_window_border_color_active(const std::string& color) { m_color_primary = color; }
+    const std::string& get_window_border_color_active() const { return m_window_border_color_active; }
+    void set_window_border_color_active(const std::string& color) { m_window_border_color_active = color; }
 
-    const std::string& get_window_border_color_inactive() const { return m_color_outline; }
-    void set_window_border_color_inactive(const std::string& color) { m_color_outline = color; }
-
-    // Material Color Roles
-    const std::string& get_color_primary() const { return m_color_primary; }
-    void set_color_primary(const std::string& c) { m_color_primary = c; }
-
-    const std::string& get_color_on_primary() const { return m_color_on_primary; }
-    void set_color_on_primary(const std::string& c) { m_color_on_primary = c; }
-
-    const std::string& get_color_primary_container() const { return m_color_primary_container; }
-    void set_color_primary_container(const std::string& c) { m_color_primary_container = c; }
-
-    const std::string& get_color_on_primary_container() const { return m_color_on_primary_container; }
-    void set_color_on_primary_container(const std::string& c) { m_color_on_primary_container = c; }
-
-    const std::string& get_color_secondary() const { return m_color_secondary; }
-    void set_color_secondary(const std::string& c) { m_color_secondary = c; }
-
-    const std::string& get_color_on_secondary() const { return m_color_on_secondary; }
-    void set_color_on_secondary(const std::string& c) { m_color_on_secondary = c; }
-
-    const std::string& get_color_background() const { return m_color_background; }
-    void set_color_background(const std::string& c) { m_color_background = c; }
-
-    const std::string& get_color_surface() const { return m_color_surface; }
-    void set_color_surface(const std::string& c) { m_color_surface = c; }
-
-    const std::string& get_color_surface_variant() const { return m_color_surface_variant; }
-    void set_color_surface_variant(const std::string& c) { m_color_surface_variant = c; }
-
-    const std::string& get_color_on_surface() const { return m_color_on_surface; }
-    void set_color_on_surface(const std::string& c) { m_color_on_surface = c; }
-
-    const std::string& get_color_on_surface_variant() const { return m_color_on_surface_variant; }
-    void set_color_on_surface_variant(const std::string& c) { m_color_on_surface_variant = c; }
-
-    const std::string& get_color_outline() const { return m_color_outline; }
-    void set_color_outline(const std::string& c) { m_color_outline = c; }
-
-    const std::string& get_color_outline_variant() const { return m_color_outline_variant; }
-    void set_color_outline_variant(const std::string& c) { m_color_outline_variant = c; }
+    const std::string& get_window_border_color_inactive() const { return m_window_border_color_inactive; }
+    void set_window_border_color_inactive(const std::string& color) { m_window_border_color_inactive = color; }
 
     enum class LayoutMode {
         Spiral, // Recursive binary space partitioning (Fibonacci / BSP)
@@ -276,20 +236,8 @@ private:
     std::vector<std::string> m_blurred_layers;
     LayoutMode m_layout_mode = LayoutMode::Spiral;
 
-    // Material Design 3 Palette
-    std::string m_color_primary = "#0066ff";
-    std::string m_color_on_primary = "#ffffff";
-    std::string m_color_primary_container = "#cce5ff";
-    std::string m_color_on_primary_container = "#002b66";
-    std::string m_color_secondary = "#e6f0fa";
-    std::string m_color_on_secondary = "#0f172a";
-    std::string m_color_background = "#f4f8fc";
-    std::string m_color_surface = "#ffffff";
-    std::string m_color_surface_variant = "#e6eff8";
-    std::string m_color_on_surface = "#0f172a";
-    std::string m_color_on_surface_variant = "#475569";
-    std::string m_color_outline = "#99c2ff";
-    std::string m_color_outline_variant = "#dbeafe";
+    std::string m_window_border_color_active = "#0066ff";
+    std::string m_window_border_color_inactive = "#99c2ff";
 
     std::vector<KeyBinding> m_keybindings;
     double m_swipe_threshold = 50.0;
