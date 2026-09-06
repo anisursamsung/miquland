@@ -266,6 +266,10 @@ int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
 void Server::reload_config() {
     Config::get().load();
 
+    if (m_output_manager) {
+        m_output_manager->reapply_all_configs();
+    }
+
     if (m_input_manager) {
         m_input_manager->reapply_device_config();
     }

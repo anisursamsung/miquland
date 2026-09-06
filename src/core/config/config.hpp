@@ -6,8 +6,21 @@
 #include <cstdint>
 #include <algorithm>
 #include <xkbcommon/xkbcommon.h>
+#include <wayland-server-protocol.h>
 
 namespace miquland {
+
+struct MonitorRule {
+    std::string name;             // eDP-1, HDMI-A-1, or "" / "*" for default
+    bool disabled = false;        // true if "disable"
+    int width = 0;                // 0 = preferred
+    int height = 0;
+    double refresh_rate = 0.0;    // 0 = preferred, e.g. 60.0
+    int x = -1;                   // -1 = auto placement
+    int y = -1;
+    double scale = 1.0;
+    enum wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
+};
 
 struct KeyBinding {
     uint32_t modifiers = 0;
@@ -177,6 +190,10 @@ public:
     int get_target_workspace(const std::string& app_id, const std::string& title) const;
     float get_rule_opacity(const std::string& app_id, const std::string& title, float default_val) const;
 
+    const std::vector<MonitorRule>& get_monitor_rules() const { return m_monitor_rules; }
+    void add_monitor_rule(const MonitorRule& rule) { m_monitor_rules.push_back(rule); }
+    const MonitorRule* find_monitor_rule(const std::string& name) const;
+
     const std::vector<std::string>& get_exec_commands() const { return m_exec_commands; }
     const std::vector<std::string>& get_exec_once_commands() const { return m_exec_once_commands; }
 
@@ -193,9 +210,11 @@ private:
     void load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
                    std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file,
                    std::vector<WindowRule>& file_rules, bool& has_rules_in_file,
+                   std::vector<MonitorRule>& file_monitors, bool& has_monitors_in_file,
                    std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth = 0);
     std::string resolve_path(const std::string& path) const;
 
+    std::vector<MonitorRule> m_monitor_rules;
     std::vector<std::string> m_exec_commands;
     std::vector<std::string> m_exec_once_commands;
 

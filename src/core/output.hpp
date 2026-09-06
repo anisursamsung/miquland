@@ -16,6 +16,8 @@ public:
     struct wlr_output* get_wlr_output() const { return m_wlr_output; }
     struct wlr_scene_output* get_scene_output() const { return m_scene_output; }
 
+    void apply_config();
+
     const struct wlr_box& get_usable_area() const { return m_usable_area; }
     void set_usable_area(const struct wlr_box& area) { m_usable_area = area; }
 
@@ -52,6 +54,8 @@ public:
     void add_output(Output* output);
     void remove_output(Output* output);
 
+    void apply_all_configs();
+    void reapply_all_configs();
     void update_manager_config();
 
 private:

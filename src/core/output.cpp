@@ -2,6 +2,7 @@
 #include "core/server.hpp"
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
+#include "core/config/config.hpp"
 #include <ctime>
 
 namespace miquland {
@@ -11,27 +12,7 @@ Output::Output(Server* server, struct wlr_output* wlr_output)
 {
     wlr_output_init_render(wlr_output, server->get_allocator(), server->get_renderer());
 
-    struct wlr_output_state state;
-    wlr_output_state_init(&state);
-    wlr_output_state_set_enabled(&state, true);
-
-    struct wlr_output_mode* mode = wlr_output_preferred_mode(wlr_output);
-    if (mode != nullptr) {
-        wlr_output_state_set_mode(&state, mode);
-    }
-
-    wlr_output_commit_state(wlr_output, &state);
-    wlr_output_state_finish(&state);
-
-    m_usable_area = {
-        .x = 0,
-        .y = 0,
-        .width = wlr_output->width,
-        .height = wlr_output->height
-    };
-
-    m_scene_output = wlr_scene_output_create(server->get_scene(), wlr_output);
-    wlr_output_layout_add_auto(server->get_output_manager()->get_layout(), wlr_output);
+    apply_config();
 
     m_frame_listener.notify = handle_frame;
     wl_signal_add(&wlr_output->events.frame, &m_frame_listener);
@@ -41,6 +22,84 @@ Output::Output(Server* server, struct wlr_output* wlr_output)
 
     m_destroy_listener.notify = handle_destroy;
     wl_signal_add(&wlr_output->events.destroy, &m_destroy_listener);
+}
+
+void Output::apply_config() {
+    const MonitorRule* rule = Config::get().find_monitor_rule(m_wlr_output->name ? m_wlr_output->name : "");
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+
+    if (rule && rule->disabled) {
+        wlr_output_state_set_enabled(&state, false);
+        wlr_output_commit_state(m_wlr_output, &state);
+        wlr_output_state_finish(&state);
+
+        wlr_output_layout_remove(m_server->get_output_manager()->get_layout(), m_wlr_output);
+        return;
+    }
+
+    wlr_output_state_set_enabled(&state, true);
+
+    // Mode resolution and refresh rate
+    struct wlr_output_mode* best_mode = nullptr;
+    if (rule && rule->width > 0 && rule->height > 0) {
+        int32_t target_refresh_mHz = (int32_t)(rule->refresh_rate * 1000.0);
+        struct wlr_output_mode* m;
+        wl_list_for_each(m, &m_wlr_output->modes, link) {
+            if (m->width == rule->width && m->height == rule->height) {
+                if (target_refresh_mHz > 0) {
+                    if (std::abs(m->refresh - target_refresh_mHz) < 1000) {
+                        best_mode = m;
+                        break;
+                    }
+                } else {
+                    if (!best_mode || m->refresh > best_mode->refresh) {
+                        best_mode = m;
+                    }
+                }
+            }
+        }
+        if (best_mode) {
+            wlr_output_state_set_mode(&state, best_mode);
+        } else {
+            wlr_output_state_set_custom_mode(&state, rule->width, rule->height, target_refresh_mHz);
+        }
+    } else {
+        struct wlr_output_mode* mode = wlr_output_preferred_mode(m_wlr_output);
+        if (mode != nullptr) {
+            wlr_output_state_set_mode(&state, mode);
+        }
+    }
+
+    // Scale
+    float scale = (rule && rule->scale > 0.0) ? (float)rule->scale : 1.0f;
+    wlr_output_state_set_scale(&state, scale);
+
+    // Transform
+    enum wl_output_transform transform = rule ? rule->transform : WL_OUTPUT_TRANSFORM_NORMAL;
+    wlr_output_state_set_transform(&state, transform);
+
+    wlr_output_commit_state(m_wlr_output, &state);
+    wlr_output_state_finish(&state);
+
+    m_usable_area = {
+        .x = 0,
+        .y = 0,
+        .width = m_wlr_output->width,
+        .height = m_wlr_output->height
+    };
+
+    if (!m_scene_output) {
+        m_scene_output = wlr_scene_output_create(m_server->get_scene(), m_wlr_output);
+    }
+
+    struct wlr_output_layout* layout = m_server->get_output_manager()->get_layout();
+    if (rule && rule->x >= 0 && rule->y >= 0) {
+        wlr_output_layout_add(layout, m_wlr_output, rule->x, rule->y);
+    } else {
+        wlr_output_layout_add_auto(layout, m_wlr_output);
+    }
 }
 
 Output::~Output() {
@@ -167,6 +226,25 @@ void OutputManager::handle_new_output(struct wl_listener* listener, void* data) 
 
     Output* output = new Output(manager->m_server, wlr_output);
     manager->add_output(output);
+}
+
+void OutputManager::reapply_all_configs() {
+    for (const auto& out : m_outputs) {
+        if (out) {
+            out->apply_config();
+        }
+    }
+    update_manager_config();
+    if (m_server->get_workspace_manager()) {
+        m_server->get_workspace_manager()->recalculate_layout();
+    }
+    if (m_server->get_input_manager()) {
+        m_server->get_input_manager()->reapply_device_config();
+    }
+}
+
+void OutputManager::apply_all_configs() {
+    reapply_all_configs();
 }
 
 void OutputManager::update_manager_config() {

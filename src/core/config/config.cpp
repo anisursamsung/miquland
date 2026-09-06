@@ -243,6 +243,19 @@ float Config::get_rule_opacity(const std::string& app_id, const std::string& tit
     return default_val;
 }
 
+const MonitorRule* Config::find_monitor_rule(const std::string& name) const {
+    const MonitorRule* fallback = nullptr;
+    for (const auto& r : m_monitor_rules) {
+        if (r.name == name) {
+            return &r;
+        }
+        if ((r.name.empty() || r.name == "*") && !fallback) {
+            fallback = &r;
+        }
+    }
+    return fallback;
+}
+
 bool Config::is_layer_blur_enabled(const std::string& ns) const {
     if (ns.empty()) return false;
     std::string lower_ns = ns;
@@ -516,6 +529,7 @@ static std::string resolve_exec_command(const std::string& raw_cmd) {
 void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
                        std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file,
                        std::vector<WindowRule>& file_rules, bool& has_rules_in_file,
+                       std::vector<MonitorRule>& file_monitors, bool& has_monitors_in_file,
                        std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth) {
     if (depth > 5) {
         log_error("Maximum config include depth exceeded for " + path);
@@ -558,6 +572,7 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         std::string value = trim(trimmed.substr(eq_pos + 1));
 
         if (key != "bind" && key != "gesture" && key != "windowrule" && key != "window_rule" &&
+            key != "monitor" && key != "output" &&
             key != "exec" && key != "exec_once" && key != "exec-once" &&
             key != "exec_always" && key != "exec-always" && key != "autostart") {
             size_t comment_pos = std::string::npos;
@@ -579,7 +594,7 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string resolved = resolve_path(value);
             if (!resolved.empty() && fs::exists(resolved)) {
                 log_info("Sourcing configuration from " + resolved);
-                load_file(resolved, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
+                load_file(resolved, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
             } else {
                 log_error("Config source file not found: " + value + " (resolved to " + resolved + ")");
             }
@@ -797,6 +812,107 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
                     has_rules_in_file = true;
                 }
             }
+        } else if (key == "monitor" || key == "output") {
+            // Hyprland format: monitor = name, resolution@refresh, position, scale, [transform]
+            // or: monitor = name, disable
+            // or: monitor = , preferred, auto, 1
+            std::vector<std::string> tokens;
+            std::stringstream ss(value);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) {
+                tokens.push_back(trim(tok));
+            }
+            if (!tokens.empty()) {
+                MonitorRule rule;
+                rule.name = tokens[0];
+                if (rule.name == "*") rule.name = "";
+
+                if (tokens.size() >= 2) {
+                    std::string mode_str = tokens[1];
+                    std::string lower_mode = mode_str;
+                    std::transform(lower_mode.begin(), lower_mode.end(), lower_mode.begin(), ::tolower);
+                    if (lower_mode == "disable" || lower_mode == "off") {
+                        rule.disabled = true;
+                    } else if (lower_mode == "preferred" || lower_mode == "auto" || lower_mode.empty() || lower_mode == "highrr" || lower_mode == "highres") {
+                        rule.width = 0;
+                        rule.height = 0;
+                        rule.refresh_rate = 0.0;
+                    } else {
+                        size_t x_idx = lower_mode.find('x');
+                        if (x_idx != std::string::npos) {
+                            try {
+                                rule.width = std::stoi(lower_mode.substr(0, x_idx));
+                                size_t at_idx = lower_mode.find('@', x_idx);
+                                if (at_idx != std::string::npos) {
+                                    rule.height = std::stoi(lower_mode.substr(x_idx + 1, at_idx - x_idx - 1));
+                                    rule.refresh_rate = std::stod(lower_mode.substr(at_idx + 1));
+                                } else {
+                                    rule.height = std::stoi(lower_mode.substr(x_idx + 1));
+                                    rule.refresh_rate = 0.0;
+                                }
+                            } catch (...) {}
+                        }
+                    }
+                }
+
+                if (!rule.disabled && tokens.size() >= 3) {
+                    std::string pos_str = tokens[2];
+                    std::string lower_pos = pos_str;
+                    std::transform(lower_pos.begin(), lower_pos.end(), lower_pos.begin(), ::tolower);
+                    if (lower_pos == "auto" || lower_pos.empty()) {
+                        rule.x = -1;
+                        rule.y = -1;
+                    } else {
+                        size_t x_idx = lower_pos.find('x');
+                        if (x_idx != std::string::npos) {
+                            try {
+                                rule.x = std::stoi(lower_pos.substr(0, x_idx));
+                                rule.y = std::stoi(lower_pos.substr(x_idx + 1));
+                            } catch (...) {}
+                        }
+                    }
+                }
+
+                if (!rule.disabled && tokens.size() >= 4) {
+                    std::string scale_str = tokens[3];
+                    std::string lower_scale = scale_str;
+                    std::transform(lower_scale.begin(), lower_scale.end(), lower_scale.begin(), ::tolower);
+                    if (lower_scale == "auto" || lower_scale.empty()) {
+                        rule.scale = 1.0;
+                    } else {
+                        try {
+                            rule.scale = std::stod(scale_str);
+                            if (rule.scale <= 0.0) rule.scale = 1.0;
+                        } catch (...) {}
+                    }
+                }
+
+                if (!rule.disabled && tokens.size() >= 5) {
+                    std::string trans_str = tokens[4];
+                    std::string lower_trans = trans_str;
+                    std::transform(lower_trans.begin(), lower_trans.end(), lower_trans.begin(), ::tolower);
+                    if (lower_trans == "90" || lower_trans == "1") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_90;
+                    } else if (lower_trans == "180" || lower_trans == "2") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_180;
+                    } else if (lower_trans == "270" || lower_trans == "3") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_270;
+                    } else if (lower_trans == "flipped" || lower_trans == "4") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED;
+                    } else if (lower_trans == "flipped-90" || lower_trans == "5") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_90;
+                    } else if (lower_trans == "flipped-180" || lower_trans == "6") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_180;
+                    } else if (lower_trans == "flipped-270" || lower_trans == "7") {
+                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_270;
+                    } else {
+                        rule.transform = WL_OUTPUT_TRANSFORM_NORMAL;
+                    }
+                }
+
+                has_monitors_in_file = true;
+                file_monitors.push_back(rule);
+            }
         }
     }
 }
@@ -808,14 +924,16 @@ void Config::load() {
     bool has_bindings_in_file = false;
     bool has_gestures_in_file = false;
     bool has_rules_in_file = false;
+    bool has_monitors_in_file = false;
     std::vector<KeyBinding> file_bindings;
     std::vector<GestureBinding> file_gestures;
     std::vector<WindowRule> file_rules;
+    std::vector<MonitorRule> file_monitors;
     std::vector<std::string> file_exec_cmds;
     std::vector<std::string> file_exec_once_cmds;
     m_blurred_layers.clear();
 
-    load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_exec_cmds, file_exec_once_cmds, 0);
+    load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
     if (has_bindings_in_file) {
         m_keybindings = std::move(file_bindings);
@@ -827,6 +945,11 @@ void Config::load() {
     }
     if (has_rules_in_file) {
         m_window_rules = std::move(file_rules);
+    }
+    if (has_monitors_in_file) {
+        m_monitor_rules = std::move(file_monitors);
+    } else {
+        m_monitor_rules.clear();
     }
     m_exec_commands = std::move(file_exec_cmds);
     m_exec_once_commands = std::move(file_exec_once_cmds);
@@ -854,6 +977,38 @@ void Config::save() {
     file << "icon_theme = " << m_icon_theme << "\n";
     if (!m_cursor_theme.empty()) file << "cursor_theme = " << m_cursor_theme << "\n";
     file << "cursor_size = " << m_cursor_size << "\n\n";
+
+    file << "# ==========================================\n";
+    file << "# Monitors & Display Configuration\n";
+    file << "# Format: monitor = <name>, <resolution>@<refresh_rate>, <position>, <scale>, [transform]\n";
+    file << "# ==========================================\n";
+    for (const auto& m : m_monitor_rules) {
+        if (m.disabled) {
+            file << "monitor = " << (m.name.empty() ? "" : m.name) << ", disable\n";
+        } else {
+            file << "monitor = " << (m.name.empty() ? "" : m.name) << ", ";
+            if (m.width > 0 && m.height > 0) {
+                file << m.width << "x" << m.height;
+                if (m.refresh_rate > 0.0) {
+                    file << "@" << m.refresh_rate;
+                }
+            } else {
+                file << "preferred";
+            }
+            file << ", ";
+            if (m.x >= 0 && m.y >= 0) {
+                file << m.x << "x" << m.y;
+            } else {
+                file << "auto";
+            }
+            file << ", " << m.scale;
+            if (m.transform != WL_OUTPUT_TRANSFORM_NORMAL) {
+                file << ", " << (int)m.transform;
+            }
+            file << "\n";
+        }
+    }
+    file << "\n";
 
     file << "# ==========================================\n";
     file << "# Input Settings\n";
