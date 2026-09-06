@@ -129,8 +129,29 @@ void Config::set_defaults() {
         m_keybindings.push_back({ mod_ctrl_alt, sym, "move_ws_" + std::to_string(i + 10), "Super+Ctrl+Alt+" + std::to_string(i) });
     }
     m_keybindings.push_back({ mod_ctrl_alt, XKB_KEY_0, "move_ws_20", "Super+Ctrl+Alt+0" });
-}
 
+    // Configurable System Bindings (Super+Shift+Q -> exit, Super+T -> terminal)
+    m_keybindings.push_back({ mod_shift, XKB_KEY_q, "exit", "Super+Shift+Q" });
+    m_keybindings.push_back({ mod, XKB_KEY_t, "terminal", "Super+T" });
+
+    // Ergonomics & window defaults
+    m_focus_follows_mouse = true;
+    m_smart_gaps = false;
+    m_cursor_theme = "";
+    m_cursor_size = 24;
+    m_default_split_ratio = 0.5;
+    m_workspace_cycle = true;
+
+    // Window Rules defaults
+    m_window_rules.clear();
+    m_window_rules.push_back({ "float", "xdg-desktop-portal-gtk", "" });
+    m_window_rules.push_back({ "float", "org.freedesktop.impl.portal.desktop.gtk", "" });
+    m_window_rules.push_back({ "float", "zenity", "" });
+    
+    // Gestures have NO hardcoded defaults or fallback (strictly loaded from config)
+    m_swipe_threshold = 50.0;
+    m_gesture_bindings.clear();
+}
 
 void Config::add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::string& action, const std::string& combo) {
     xkb_keysym_t norm_sym = (sym >= XKB_KEY_A && sym <= XKB_KEY_Z) ? (sym - XKB_KEY_A + XKB_KEY_a) : sym;
@@ -144,6 +165,93 @@ void Config::add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::s
         }
     }
     m_keybindings.push_back({ mods, norm_sym, action, combo });
+}
+
+std::string Config::find_gesture_action(const std::string& pattern) const {
+    std::string lower_pat = pattern;
+    std::transform(lower_pat.begin(), lower_pat.end(), lower_pat.begin(), ::tolower);
+
+    for (const auto& g : m_gesture_bindings) {
+        std::string cur_pat = g.pattern;
+        std::transform(cur_pat.begin(), cur_pat.end(), cur_pat.begin(), ::tolower);
+        if (cur_pat == lower_pat) {
+            return g.action;
+        }
+    }
+    return "";
+}
+
+bool Config::has_gesture_for_fingers(int fingers) const {
+    std::string prefix = "swipe:" + std::to_string(fingers) + ":";
+    for (const auto& g : m_gesture_bindings) {
+        std::string cur_pat = g.pattern;
+        std::transform(cur_pat.begin(), cur_pat.end(), cur_pat.begin(), ::tolower);
+        if (cur_pat.rfind(prefix, 0) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Config::add_or_update_gesture_binding(const std::string& pattern, const std::string& action) {
+    std::string lower_pat = pattern;
+    std::transform(lower_pat.begin(), lower_pat.end(), lower_pat.begin(), ::tolower);
+
+    for (auto& g : m_gesture_bindings) {
+        std::string cur_pat = g.pattern;
+        std::transform(cur_pat.begin(), cur_pat.end(), cur_pat.begin(), ::tolower);
+        if (cur_pat == lower_pat) {
+            g.action = action;
+            return;
+        }
+    }
+    m_gesture_bindings.push_back({ pattern, action });
+}
+
+static bool matches_target(const std::string& pattern, const std::string& value) {
+    if (pattern.empty() || value.empty()) return false;
+    std::string l_pat = pattern;
+    std::string l_val = value;
+    std::transform(l_pat.begin(), l_pat.end(), l_pat.begin(), ::tolower);
+    std::transform(l_val.begin(), l_val.end(), l_val.begin(), ::tolower);
+    return (l_val.find(l_pat) != std::string::npos);
+}
+
+bool Config::should_float(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "float") {
+            if (matches_target(r.target, app_id) || matches_target(r.target, title)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int Config::get_target_workspace(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "workspace") {
+            if (matches_target(r.target, app_id) || matches_target(r.target, title)) {
+                try {
+                    return std::stoi(r.extra);
+                } catch (...) {}
+            }
+        }
+    }
+    return 0;
+}
+
+float Config::get_rule_opacity(const std::string& app_id, const std::string& title, float default_val) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "opacity") {
+            if (matches_target(r.target, app_id) || matches_target(r.target, title)) {
+                try {
+                    return std::clamp(std::stof(r.extra), 0.0f, 1.0f);
+                } catch (...) {}
+            }
+        }
+    }
+    return default_val;
 }
 
 bool Config::is_layer_blur_enabled(const std::string& ns) const {
@@ -417,6 +525,8 @@ static std::string resolve_exec_command(const std::string& raw_cmd) {
 }
 
 void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
+                       std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file,
+                       std::vector<WindowRule>& file_rules, bool& has_rules_in_file,
                        std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth) {
     if (depth > 5) {
         log_error("Maximum config include depth exceeded for " + path);
@@ -444,7 +554,8 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         std::string key = trim(trimmed.substr(0, eq_pos));
         std::string value = trim(trimmed.substr(eq_pos + 1));
 
-        if (key != "bind" && key != "exec" && key != "exec_once" && key != "exec-once" &&
+        if (key != "bind" && key != "gesture" && key != "windowrule" && key != "window_rule" &&
+            key != "exec" && key != "exec_once" && key != "exec-once" &&
             key != "exec_always" && key != "exec-always" && key != "autostart") {
             size_t comment_pos = std::string::npos;
             if (!value.empty() && value[0] == '#') {
@@ -465,7 +576,7 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string resolved = resolve_path(value);
             if (!resolved.empty() && fs::exists(resolved)) {
                 log_info("Sourcing configuration from " + resolved);
-                load_file(resolved, file_bindings, has_bindings_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
+                load_file(resolved, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
             } else {
                 log_error("Config source file not found: " + value + " (resolved to " + resolved + ")");
             }
@@ -479,6 +590,24 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             if (!resolved_cmd.empty()) {
                 file_exec_once_cmds.push_back(resolved_cmd);
             }
+        } else if (key == "focus_follows_mouse" || key == "focus_mouse") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_focus_follows_mouse = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "smart_gaps" || key == "smart_gap") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_smart_gaps = (lower == "true" || lower == "1" || lower == "yes");
+        } else if (key == "cursor_theme" || key == "xcursor_theme") {
+            m_cursor_theme = value;
+        } else if (key == "cursor_size" || key == "xcursor_size") {
+            try { m_cursor_size = std::clamp(std::stoi(value), 8, 128); } catch (...) {}
+        } else if (key == "default_split_ratio" || key == "split_ratio") {
+            try { m_default_split_ratio = std::clamp(std::stod(value), 0.1, 0.9); } catch (...) {}
+        } else if (key == "workspace_cycle" || key == "cycle_workspaces") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_workspace_cycle = (lower == "true" || lower == "1" || lower == "yes");
         } else if (key == "tap_to_click") {
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -653,6 +782,36 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
                     file_bindings.push_back({ mods, norm_sym, action, combo });
                 }
             }
+        } else if (key == "gesture") {
+            // Format: gesture = swipe:3:left, next_ws
+            size_t comma = value.rfind(',');
+            if (comma != std::string::npos) {
+                std::string pattern = trim(value.substr(0, comma));
+                std::string action = trim(value.substr(comma + 1));
+                std::transform(pattern.begin(), pattern.end(), pattern.begin(), ::tolower);
+                if (!pattern.empty() && !action.empty()) {
+                    has_gestures_in_file = true;
+                    file_gestures.push_back({ pattern, action });
+                }
+            }
+        } else if (key == "swipe_threshold" || key == "gesture_threshold" || key == "gesture_distance") {
+            try {
+                m_swipe_threshold = std::max(10.0, std::stod(value));
+            } catch (...) {}
+        } else if (key == "windowrule" || key == "window_rule") {
+            size_t comma = value.find(',');
+            if (comma != std::string::npos) {
+                std::string left = trim(value.substr(0, comma));
+                std::string target = trim(value.substr(comma + 1));
+                size_t space_pos = left.find(' ');
+                std::string rule_name = (space_pos == std::string::npos) ? left : left.substr(0, space_pos);
+                std::string extra = (space_pos == std::string::npos) ? "" : trim(left.substr(space_pos + 1));
+                std::transform(rule_name.begin(), rule_name.end(), rule_name.begin(), ::tolower);
+                if (!rule_name.empty() && !target.empty()) {
+                    file_rules.push_back({ rule_name, target, extra });
+                    has_rules_in_file = true;
+                }
+            }
         }
     }
 }
@@ -662,15 +821,27 @@ void Config::load() {
 
     std::string path = get_config_file_path();
     bool has_bindings_in_file = false;
+    bool has_gestures_in_file = false;
+    bool has_rules_in_file = false;
     std::vector<KeyBinding> file_bindings;
+    std::vector<GestureBinding> file_gestures;
+    std::vector<WindowRule> file_rules;
     std::vector<std::string> file_exec_cmds;
     std::vector<std::string> file_exec_once_cmds;
     m_blurred_layers.clear();
 
-    load_file(path, file_bindings, has_bindings_in_file, file_exec_cmds, file_exec_once_cmds, 0);
+    load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
     if (has_bindings_in_file) {
         m_keybindings = std::move(file_bindings);
+    }
+    if (has_gestures_in_file) {
+        m_gesture_bindings = std::move(file_gestures);
+    } else {
+        m_gesture_bindings.clear();
+    }
+    if (has_rules_in_file) {
+        m_window_rules = std::move(file_rules);
     }
     m_exec_commands = std::move(file_exec_cmds);
     m_exec_once_commands = std::move(file_exec_once_cmds);
@@ -691,11 +862,17 @@ void Config::save() {
     }
 
     file << "# miquland configuration file\n\n";
-    file << "[appearance]\n";
+    file << "# ==========================================\n";
+    file << "# Appearance & Icons\n";
+    file << "# ==========================================\n";
     file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
-    file << "icon_theme = " << m_icon_theme << "\n\n";
+    file << "icon_theme = " << m_icon_theme << "\n";
+    if (!m_cursor_theme.empty()) file << "cursor_theme = " << m_cursor_theme << "\n";
+    file << "cursor_size = " << m_cursor_size << "\n\n";
 
-    file << "[colors]\n";
+    file << "# ==========================================\n";
+    file << "# Colors Configuration\n";
+    file << "# ==========================================\n";
     file << "color_primary = " << m_color_primary << "\n";
     file << "color_on_primary = " << m_color_on_primary << "\n";
     file << "color_primary_container = " << m_color_primary_container << "\n";
@@ -710,7 +887,10 @@ void Config::save() {
     file << "color_outline = " << m_color_outline << "\n";
     file << "color_outline_variant = " << m_color_outline_variant << "\n\n";
 
-    file << "[input]\n";
+    file << "# ==========================================\n";
+    file << "# Input Settings\n";
+    file << "# ==========================================\n";
+    file << "focus_follows_mouse = " << (m_focus_follows_mouse ? "true" : "false") << "\n";
     file << "kb_layout = " << m_kb_layout << "\n";
     if (!m_kb_variant.empty()) file << "kb_variant = " << m_kb_variant << "\n";
     if (!m_kb_options.empty()) file << "kb_options = " << m_kb_options << "\n";
@@ -727,8 +907,13 @@ void Config::save() {
     }
     file << "\n";
 
-    file << "[windows]\n";
+    file << "# ==========================================\n";
+    file << "# Window Tiling, Borders & Gaps\n";
+    file << "# ==========================================\n";
     file << "layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
+    file << "default_split_ratio = " << m_default_split_ratio << "\n";
+    file << "smart_gaps = " << (m_smart_gaps ? "true" : "false") << "\n";
+    file << "workspace_cycle = " << (m_workspace_cycle ? "true" : "false") << "\n";
     file << "window_border_width = " << m_window_border_width << "\n";
     file << "window_border_radius = " << m_window_border_radius << "\n";
     file << "resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
@@ -738,7 +923,9 @@ void Config::save() {
     file << "window_opacity_active = " << m_window_opacity_active << "\n";
     file << "window_opacity_inactive = " << m_window_opacity_inactive << "\n\n";
 
+    file << "# ==========================================\n";
     file << "# Blur Effects (SceneFX Dual Kawase)\n";
+    file << "# ==========================================\n";
     file << "blur = " << (m_blur_enabled ? "true" : "false") << "\n";
     file << "blur_radius = " << m_blur_radius << "\n";
     file << "blur_passes = " << m_blur_num_passes << "\n";
@@ -753,13 +940,37 @@ void Config::save() {
     }
     file << "\n";
 
-    file << "[applications]\n";
+    file << "# ==========================================\n";
+    file << "# Window Rules\n";
+    file << "# ==========================================\n";
+    for (const auto& r : m_window_rules) {
+        if (!r.extra.empty()) {
+            file << "windowrule = " << r.rule << " " << r.extra << ", " << r.target << "\n";
+        } else {
+            file << "windowrule = " << r.rule << ", " << r.target << "\n";
+        }
+    }
+    file << "\n";
+
+    file << "# ==========================================\n";
+    file << "# Applications\n";
+    file << "# ==========================================\n";
     file << "terminal = " << m_terminal << "\n\n";
 
-    file << "[keybindings]\n";
-    file << "# Keybindings format: bind = Combo, command_or_action\n";
+    file << "# ==========================================\n";
+    file << "# Keybindings\n";
+    file << "# ==========================================\n";
     for (const auto& kb : m_keybindings) {
         file << "bind = " << kb.combo_str << ", " << kb.action << "\n";
+    }
+    file << "\n";
+
+    file << "# ==========================================\n";
+    file << "# Touchpad & Touchscreen Gestures\n";
+    file << "# ==========================================\n";
+    file << "swipe_threshold = " << m_swipe_threshold << "\n";
+    for (const auto& g : m_gesture_bindings) {
+        file << "gesture = " << g.pattern << ", " << g.action << "\n";
     }
 
     log_info("Saved configuration to " + path);

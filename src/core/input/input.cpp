@@ -106,7 +106,14 @@ InputManager::InputManager(Server* server)
     m_cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(m_cursor, server->get_output_manager()->get_layout());
 
-    m_cursor_mgr = wlr_xcursor_manager_create(nullptr, 24);
+    const std::string& ctheme = Config::get().get_cursor_theme();
+    int csize = Config::get().get_cursor_size();
+    const char* theme_name = ctheme.empty() ? nullptr : ctheme.c_str();
+    m_cursor_mgr = wlr_xcursor_manager_create(theme_name, csize);
+    if (!ctheme.empty()) {
+        setenv("XCURSOR_THEME", ctheme.c_str(), 1);
+    }
+    setenv("XCURSOR_SIZE", std::to_string(csize).c_str(), 1);
 
     m_new_input_listener.notify = handle_new_input;
     wl_signal_add(&server->get_backend()->events.new_input, &m_new_input_listener);
@@ -479,93 +486,86 @@ bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     if (ctrl) active_mods |= WLR_MODIFIER_CTRL;
     if (alt) active_mods |= WLR_MODIFIER_ALT;
 
-    // 2. Reserved System Bindings
-    // Safe Exit compositor: Super + Shift + Q
-    if (mod && shift && norm_sym == XKB_KEY_q) {
-        log_info("System exit keybinding triggered (Super+Shift+Q)");
-        m_server->terminate();
-        return true;
-    }
-
-    // Terminal: Super + T
-    if (mod && !shift && !ctrl && !alt && norm_sym == XKB_KEY_t) {
-        std::string term = Config::get().get_terminal();
-        if (term.empty()) term = "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
-        log_info("Terminal keybinding triggered: " + term);
-        spawn_command(term.c_str());
-        return true;
-    }
-
-    // 3. User & Default Configurable Bindings
+    // Configurable Bindings (from miquland.conf)
     for (const auto& kb : Config::get().get_keybindings()) {
         xkb_keysym_t kb_norm = (kb.keysym >= XKB_KEY_A && kb.keysym <= XKB_KEY_Z) ? (kb.keysym - XKB_KEY_A + XKB_KEY_a) : kb.keysym;
 
         if (kb.modifiers == active_mods && kb_norm == norm_sym) {
-            const std::string& action = kb.action;
-            log_info("Keybinding matched: " + kb.combo_str + " -> " + action);
-
-            if (action == "menu" || action == "app_launcher") {
-                spawn_command("miqulauncher");
-            } else if (action == "close" || action == "close_window") {
-                View* focused = m_server->get_focused_view();
-                if (focused) focused->close();
-            } else if (action == "toggle_fullscreen" || action == "fullscreen") {
-                View* focused = m_server->get_focused_view();
-                if (focused) {
-                    focused->set_fullscreen(!focused->is_fullscreen());
-                }
-            } else if (action == "toggle_floating" || action == "toggle_float" || action == "floating_toggle") {
-                m_server->get_workspace_manager()->toggle_floating_active();
-            } else if (action == "toggle_layout" || action == "layout_toggle") {
-                m_server->get_workspace_manager()->toggle_layout_mode();
-            } else if (action == "swap_main" || action == "swap_master" || action == "swap_with_main") {
-                m_server->get_workspace_manager()->swap_with_main();
-            } else if (action == "toggle_split" || action == "split_toggle") {
-                m_server->get_workspace_manager()->toggle_active_split();
-            } else if (action == "focus_win_1" || action == "window_1") {
-                m_server->get_workspace_manager()->focus_window_index(0);
-            } else if (action == "focus_win_2" || action == "window_2") {
-                m_server->get_workspace_manager()->focus_window_index(1);
-            } else if (action == "toggle_focus" || action == "next_window" || action == "focus_next") {
-                m_server->get_workspace_manager()->focus_next_view();
-            } else if (action == "prev_window" || action == "focus_prev") {
-                m_server->get_workspace_manager()->focus_prev_view();
-            } else if (action == "prev_ws" || action == "prev_workspace") {
-                m_server->get_workspace_manager()->prev_workspace();
-            } else if (action == "next_ws" || action == "next_workspace") {
-                m_server->get_workspace_manager()->next_workspace();
-            } else if (action.rfind("ws_", 0) == 0) {
-                try {
-                    size_t ws_id = std::stoul(action.substr(3));
-                    m_server->get_workspace_manager()->switch_to_workspace(ws_id);
-                } catch (...) {}
-            } else if (action.rfind("move_ws_", 0) == 0) {
-                try {
-                    size_t ws_id = std::stoul(action.substr(8));
-                    View* focused = m_server->get_focused_view();
-                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
-                } catch (...) {}
-            } else if (action.rfind("move_to_ws_", 0) == 0) {
-                try {
-                    size_t ws_id = std::stoul(action.substr(11));
-                    View* focused = m_server->get_focused_view();
-                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
-                } catch (...) {}
-            } else if (action.rfind("movetoworkspace_", 0) == 0) {
-                try {
-                    size_t ws_id = std::stoul(action.substr(16));
-                    View* focused = m_server->get_focused_view();
-                    if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
-                } catch (...) {}
-            } else if (action == "exit" || action == "quit") {
-                m_server->terminate();
-            } else {
-                spawn_command(action.c_str());
-            }
-            return true;
+            log_info("Keybinding matched: " + kb.combo_str + " -> " + kb.action);
+            return execute_action(kb.action);
         }
     }
     return false;
+}
+
+bool InputManager::execute_action(const std::string& action) {
+    if (action.empty()) {
+        return false;
+    }
+
+    if (action == "terminal") {
+        std::string term = Config::get().get_terminal();
+        if (term.empty()) term = "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
+        spawn_command(term.c_str());
+    } else if (action == "menu" || action == "app_launcher") {
+        spawn_command("miqulauncher");
+    } else if (action == "close" || action == "close_window") {
+        View* focused = m_server->get_focused_view();
+        if (focused) focused->close();
+    } else if (action == "toggle_fullscreen" || action == "fullscreen") {
+        View* focused = m_server->get_focused_view();
+        if (focused) {
+            focused->set_fullscreen(!focused->is_fullscreen());
+        }
+    } else if (action == "toggle_floating" || action == "toggle_float" || action == "floating_toggle") {
+        m_server->get_workspace_manager()->toggle_floating_active();
+    } else if (action == "toggle_layout" || action == "layout_toggle") {
+        m_server->get_workspace_manager()->toggle_layout_mode();
+    } else if (action == "swap_main" || action == "swap_master" || action == "swap_with_main") {
+        m_server->get_workspace_manager()->swap_with_main();
+    } else if (action == "toggle_split" || action == "split_toggle") {
+        m_server->get_workspace_manager()->toggle_active_split();
+    } else if (action == "focus_win_1" || action == "window_1") {
+        m_server->get_workspace_manager()->focus_window_index(0);
+    } else if (action == "focus_win_2" || action == "window_2") {
+        m_server->get_workspace_manager()->focus_window_index(1);
+    } else if (action == "toggle_focus" || action == "next_window" || action == "focus_next") {
+        m_server->get_workspace_manager()->focus_next_view();
+    } else if (action == "prev_window" || action == "focus_prev") {
+        m_server->get_workspace_manager()->focus_prev_view();
+    } else if (action == "prev_ws" || action == "prev_workspace") {
+        m_server->get_workspace_manager()->prev_workspace();
+    } else if (action == "next_ws" || action == "next_workspace") {
+        m_server->get_workspace_manager()->next_workspace();
+    } else if (action.rfind("ws_", 0) == 0) {
+        try {
+            size_t ws_id = std::stoul(action.substr(3));
+            m_server->get_workspace_manager()->switch_to_workspace(ws_id);
+        } catch (...) {}
+    } else if (action.rfind("move_ws_", 0) == 0) {
+        try {
+            size_t ws_id = std::stoul(action.substr(8));
+            View* focused = m_server->get_focused_view();
+            if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+        } catch (...) {}
+    } else if (action.rfind("move_to_ws_", 0) == 0) {
+        try {
+            size_t ws_id = std::stoul(action.substr(11));
+            View* focused = m_server->get_focused_view();
+            if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+        } catch (...) {}
+    } else if (action.rfind("movetoworkspace_", 0) == 0) {
+        try {
+            size_t ws_id = std::stoul(action.substr(16));
+            View* focused = m_server->get_focused_view();
+            if (focused) m_server->get_workspace_manager()->move_view_to_workspace(focused, ws_id);
+        } catch (...) {}
+    } else if (action == "exit" || action == "quit") {
+        m_server->terminate();
+    } else {
+        spawn_command(action.c_str());
+    }
+    return true;
 }
 
 void InputManager::process_cursor_motion(uint32_t time) {
@@ -724,9 +724,11 @@ void InputManager::process_cursor_motion(uint32_t time) {
         }
     }
 
-    // Hover to focus: if cursor hovers over a view, focus it!
-    if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
-        target_view->focus();
+    // Hover to focus: if enabled and cursor hovers over a view, focus it!
+    if (Config::get().is_focus_follows_mouse_enabled()) {
+        if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
+            target_view->focus();
+        }
     }
 }
 
@@ -910,6 +912,7 @@ void InputManager::handle_selection_destroy(struct wl_listener* listener, void* 
 void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_begin_listener);
     manager->m_swipe_dx = 0.0;
+    manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
 }
 
@@ -917,26 +920,37 @@ void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_update_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_update_event*>(data);
 
-    if (event->fingers == 3 && !manager->m_swipe_triggered) {
-        manager->m_swipe_dx += event->dx;
-        const double threshold = 50.0;
+    if (manager->m_swipe_triggered) {
+        return;
+    }
 
-        if (manager->m_swipe_dx > threshold) {
-            // Swiped Right -> Switch to previous workspace
-            manager->m_server->get_workspace_manager()->prev_workspace();
-            manager->m_swipe_triggered = true;
-        } else if (manager->m_swipe_dx < -threshold) {
-            // Swiped Left -> Switch to next workspace
-            manager->m_server->get_workspace_manager()->next_workspace();
-            manager->m_swipe_triggered = true;
+    manager->m_swipe_dx += event->dx;
+    manager->m_swipe_dy += event->dy;
+    double threshold = Config::get().get_swipe_threshold();
+
+    if (std::abs(manager->m_swipe_dx) >= threshold || std::abs(manager->m_swipe_dy) >= threshold) {
+        std::string direction;
+        if (std::abs(manager->m_swipe_dx) >= std::abs(manager->m_swipe_dy)) {
+            direction = (manager->m_swipe_dx > 0) ? "right" : "left";
+        } else {
+            direction = (manager->m_swipe_dy > 0) ? "down" : "up";
         }
 
+        std::string pattern = "swipe:" + std::to_string(event->fingers) + ":" + direction;
+        std::string action = Config::get().find_gesture_action(pattern);
+
+        if (!action.empty()) {
+            log_info("Touchpad gesture triggered: " + pattern + " -> " + action);
+            manager->execute_action(action);
+        }
+        manager->m_swipe_triggered = true;
     }
 }
 
 void InputManager::handle_cursor_swipe_end(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_end_listener);
     manager->m_swipe_dx = 0.0;
+    manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
 }
 
@@ -1007,6 +1021,26 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
         return;
     }
 
+    // Register touch point
+    manager->m_touch_points[event->touch_id] = { event->touch_id, lx, ly, lx, ly };
+    int finger_count = static_cast<int>(manager->m_touch_points.size());
+
+    // Check if multi-finger gesture should be handled by compositor
+    if (finger_count >= 3 || (finger_count >= 2 && Config::get().has_gesture_for_fingers(finger_count))) {
+        // Reset origin points for all fingers to current coordinates when multi-touch is grounded
+        for (auto& [id, pt] : manager->m_touch_points) {
+            pt.start_lx = pt.current_lx;
+            pt.start_ly = pt.current_ly;
+            // Clear any client focus from previous fingers so app doesn't receive conflicting touch input
+            wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, id);
+        }
+        return;
+    }
+
+    if (manager->m_touch_gesture_active) {
+        return;
+    }
+
     double sx = 0.0, sy = 0.0;
     struct wlr_surface* surface = nullptr;
     View* view = manager->m_server->view_at(lx, ly, &surface, &sx, &sy);
@@ -1029,7 +1063,16 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
 void InputManager::handle_cursor_touch_up(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_up_listener);
     auto* event = static_cast<struct wlr_touch_up_event*>(data);
-    wlr_seat_touch_notify_up(manager->m_seat, event->time_msec, event->touch_id);
+
+    manager->m_touch_points.erase(event->touch_id);
+
+    if (manager->m_touch_points.empty()) {
+        manager->m_touch_gesture_active = false;
+    }
+
+    if (!manager->m_touch_gesture_active) {
+        wlr_seat_touch_notify_up(manager->m_seat, event->time_msec, event->touch_id);
+    }
 }
 
 void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void* data) {
@@ -1038,6 +1081,52 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
 
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+
+    auto it = manager->m_touch_points.find(event->touch_id);
+    if (it != manager->m_touch_points.end()) {
+        it->second.current_lx = lx;
+        it->second.current_ly = ly;
+    }
+
+    int finger_count = static_cast<int>(manager->m_touch_points.size());
+
+    // Multi-finger gesture recognition on touchscreen
+    if (!manager->m_touch_gesture_active &&
+        (finger_count >= 3 || (finger_count >= 2 && Config::get().has_gesture_for_fingers(finger_count)))) {
+
+        double total_dx = 0.0;
+        double total_dy = 0.0;
+        for (const auto& [id, pt] : manager->m_touch_points) {
+            total_dx += (pt.current_lx - pt.start_lx);
+            total_dy += (pt.current_ly - pt.start_ly);
+        }
+        double avg_dx = total_dx / finger_count;
+        double avg_dy = total_dy / finger_count;
+        double threshold = Config::get().get_swipe_threshold();
+
+        if (std::abs(avg_dx) >= threshold || std::abs(avg_dy) >= threshold) {
+            std::string direction;
+            if (std::abs(avg_dx) >= std::abs(avg_dy)) {
+                direction = (avg_dx > 0) ? "right" : "left";
+            } else {
+                direction = (avg_dy > 0) ? "down" : "up";
+            }
+
+            std::string pattern = "swipe:" + std::to_string(finger_count) + ":" + direction;
+            std::string action = Config::get().find_gesture_action(pattern);
+
+            if (!action.empty()) {
+                log_info("Touchscreen gesture triggered: " + pattern + " -> " + action);
+                manager->execute_action(action);
+            }
+            manager->m_touch_gesture_active = true;
+        }
+        return;
+    }
+
+    if (manager->m_touch_gesture_active) {
+        return;
+    }
 
     double sx = 0.0, sy = 0.0;
     struct wlr_surface* surface = nullptr;
@@ -1051,12 +1140,21 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
 void InputManager::handle_cursor_touch_cancel(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_cancel_listener);
     auto* event = static_cast<struct wlr_touch_cancel_event*>(data);
+
+    manager->m_touch_points.erase(event->touch_id);
+
+    if (manager->m_touch_points.empty()) {
+        manager->m_touch_gesture_active = false;
+    }
+
     wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, event->touch_id);
 }
 
 void InputManager::handle_cursor_touch_frame(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_frame_listener);
-    wlr_seat_touch_notify_frame(manager->m_seat);
+    if (!manager->m_touch_gesture_active) {
+        wlr_seat_touch_notify_frame(manager->m_seat);
+    }
 }
 
 Keyboard::Keyboard(Server* server, struct wlr_input_device* device)

@@ -16,12 +16,41 @@ struct KeyBinding {
     std::string combo_str;
 };
 
+struct GestureBinding {
+    std::string pattern; // e.g. "swipe:3:left"
+    std::string action;  // e.g. "next_ws"
+};
+
+struct WindowRule {
+    std::string rule;    // e.g. "float", "workspace", "opacity"
+    std::string target;  // app_id or title
+    std::string extra;   // e.g. workspace id or opacity float string
+};
+
 class Config {
 public:
     static Config& get();
 
     void load();
     void save();
+
+    bool is_focus_follows_mouse_enabled() const { return m_focus_follows_mouse; }
+    void set_focus_follows_mouse_enabled(bool enabled) { m_focus_follows_mouse = enabled; }
+
+    bool is_smart_gaps_enabled() const { return m_smart_gaps; }
+    void set_smart_gaps_enabled(bool enabled) { m_smart_gaps = enabled; }
+
+    const std::string& get_cursor_theme() const { return m_cursor_theme; }
+    void set_cursor_theme(const std::string& theme) { m_cursor_theme = theme; }
+
+    int get_cursor_size() const { return m_cursor_size; }
+    void set_cursor_size(int size) { m_cursor_size = std::clamp(size, 8, 128); }
+
+    double get_default_split_ratio() const { return m_default_split_ratio; }
+    void set_default_split_ratio(double ratio) { m_default_split_ratio = std::clamp(ratio, 0.1, 0.9); }
+
+    bool is_workspace_cycle_enabled() const { return m_workspace_cycle; }
+    void set_workspace_cycle_enabled(bool enabled) { m_workspace_cycle = enabled; }
 
     bool is_tap_to_click_enabled() const { return m_tap_to_click; }
     void set_tap_to_click_enabled(bool enabled) { m_tap_to_click = enabled; }
@@ -172,6 +201,19 @@ public:
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
+    const std::vector<GestureBinding>& get_gesture_bindings() const { return m_gesture_bindings; }
+    std::string find_gesture_action(const std::string& pattern) const;
+    bool has_gesture_for_fingers(int fingers) const;
+    void add_or_update_gesture_binding(const std::string& pattern, const std::string& action);
+    double get_swipe_threshold() const { return m_swipe_threshold; }
+    void set_swipe_threshold(double threshold) { m_swipe_threshold = threshold; }
+
+    const std::vector<WindowRule>& get_window_rules() const { return m_window_rules; }
+    void add_window_rule(const WindowRule& rule) { m_window_rules.push_back(rule); }
+    bool should_float(const std::string& app_id, const std::string& title) const;
+    int get_target_workspace(const std::string& app_id, const std::string& title) const;
+    float get_rule_opacity(const std::string& app_id, const std::string& title, float default_val) const;
+
     const std::vector<std::string>& get_exec_commands() const { return m_exec_commands; }
     const std::vector<std::string>& get_exec_once_commands() const { return m_exec_once_commands; }
 
@@ -186,11 +228,20 @@ private:
     void set_defaults();
     void ensure_default_files();
     void load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
+                   std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file,
+                   std::vector<WindowRule>& file_rules, bool& has_rules_in_file,
                    std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth = 0);
     std::string resolve_path(const std::string& path) const;
 
     std::vector<std::string> m_exec_commands;
     std::vector<std::string> m_exec_once_commands;
+
+    bool m_focus_follows_mouse = true;
+    bool m_smart_gaps = false;
+    std::string m_cursor_theme = "";
+    int m_cursor_size = 24;
+    double m_default_split_ratio = 0.5;
+    bool m_workspace_cycle = true;
 
     bool m_tap_to_click = true;
     bool m_natural_scroll = true;
@@ -241,6 +292,9 @@ private:
     std::string m_color_outline_variant = "#dbeafe";
 
     std::vector<KeyBinding> m_keybindings;
+    double m_swipe_threshold = 50.0;
+    std::vector<GestureBinding> m_gesture_bindings;
+    std::vector<WindowRule> m_window_rules;
 };
 
 } // namespace miquland

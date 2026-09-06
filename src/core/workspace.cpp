@@ -16,6 +16,9 @@ Workspace::Workspace(Server* server, size_t id)
     m_tiled_tree = wlr_scene_tree_create(m_scene_tree);
     m_floating_tree = wlr_scene_tree_create(m_scene_tree);
 
+    m_split_ratio = Config::get().get_default_split_ratio();
+    m_secondary_split_ratio = Config::get().get_default_split_ratio();
+
     if (m_server->get_ext_workspace_manager()) {
         std::string id_str = std::to_string(m_id);
         m_ext_handle = wlr_ext_workspace_handle_v1_create(
@@ -193,6 +196,11 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
     int pad = Config::get().get_screen_edge_padding();
     int gap = Config::get().get_space_between_windows();
 
+    if (Config::get().is_smart_gaps_enabled() && m_tiled_views.size() <= 1) {
+        pad = 0;
+        gap = 0;
+    }
+
     struct wlr_box inner_box = {
         .x = usable_box.x + pad,
         .y = usable_box.y + pad,
@@ -222,6 +230,11 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
 struct wlr_box Workspace::calculate_tiled_geometry_for_new_view(const struct wlr_box& usable_box) const {
     int pad = Config::get().get_screen_edge_padding();
     int gap = Config::get().get_space_between_windows();
+
+    if (Config::get().is_smart_gaps_enabled() && (m_tiled_views.size() + 1) <= 1) {
+        pad = 0;
+        gap = 0;
+    }
 
     struct wlr_box inner_box = {
         .x = usable_box.x + pad,
@@ -384,6 +397,14 @@ void WorkspaceManager::prev_workspace() {
     auto it = m_workspaces.find(m_active_workspace_id);
     if (it != m_workspaces.end() && it != m_workspaces.begin()) {
         switch_to_workspace(std::prev(it)->first);
+    } else if (Config::get().is_workspace_cycle_enabled()) {
+        if (!m_workspaces.empty() && m_workspaces.rbegin()->first != m_active_workspace_id) {
+            switch_to_workspace(m_workspaces.rbegin()->first);
+        } else if (m_active_workspace_id > 1) {
+            switch_to_workspace(m_active_workspace_id - 1);
+        } else {
+            switch_to_workspace(10);
+        }
     } else if (m_active_workspace_id > 1) {
         switch_to_workspace(m_active_workspace_id - 1);
     }
@@ -393,6 +414,14 @@ void WorkspaceManager::next_workspace() {
     auto it = m_workspaces.find(m_active_workspace_id);
     if (it != m_workspaces.end() && std::next(it) != m_workspaces.end()) {
         switch_to_workspace(std::next(it)->first);
+    } else if (Config::get().is_workspace_cycle_enabled()) {
+        if (!m_workspaces.empty() && m_workspaces.begin()->first != m_active_workspace_id) {
+            switch_to_workspace(m_workspaces.begin()->first);
+        } else if (m_active_workspace_id >= 10) {
+            switch_to_workspace(1);
+        } else {
+            switch_to_workspace(m_active_workspace_id + 1);
+        }
     } else {
         switch_to_workspace(m_active_workspace_id + 1);
     }

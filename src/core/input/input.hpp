@@ -1,6 +1,7 @@
 #pragma once
 #include "core/common/util.hpp"
 #include <vector>
+#include <map>
 
 namespace miquland {
 
@@ -36,6 +37,7 @@ public:
     void end_interactive();
     void notify_view_destroyed(View* view);
     CursorMode get_cursor_mode() const { return m_cursor_mode; }
+    bool execute_action(const std::string& action);
 
 private:
     static void handle_new_input(struct wl_listener* listener, void* data);
@@ -93,9 +95,21 @@ private:
     std::vector<struct wlr_input_device*> m_pointers;
     std::vector<struct wlr_input_device*> m_touch_devices;
 
-    // Gesture tracking state
+    // Gesture tracking state (touchpad)
     double m_swipe_dx = 0.0;
+    double m_swipe_dy = 0.0;
     bool m_swipe_triggered = false;
+
+    // Touchscreen multi-finger gesture tracking
+    struct TouchPoint {
+        int32_t id = 0;
+        double start_lx = 0.0;
+        double start_ly = 0.0;
+        double current_lx = 0.0;
+        double current_ly = 0.0;
+    };
+    std::map<int32_t, TouchPoint> m_touch_points;
+    bool m_touch_gesture_active = false;
 
     struct wl_listener m_new_input_listener;
     struct wl_listener m_cursor_motion_listener;

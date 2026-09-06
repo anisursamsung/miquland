@@ -54,6 +54,10 @@ sudo ./make.sh
 Configuration is loaded from `~/.config/miquland/miquland.conf` (falls back to `/usr/share/miquland/miquland.conf`).
 
 ```ini
+# Appearance & Cursor
+cursor_theme = default
+cursor_size = 24
+
 # Input
 kb_layout = us
 # kb_options = grp:alt_shift_toggle,caps:escape
@@ -64,10 +68,10 @@ natural_scroll = false
 disable_while_typing = true
 accel_speed = 0.0
 accel_profile = adaptive
+focus_follows_mouse = true
 # touch_output = eDP-1
 
 # Colors
-[colors]
 color_primary              = #0066ff
 color_on_primary           = #ffffff
 color_primary_container    = #cce5ff
@@ -83,21 +87,40 @@ color_outline              = #99c2ff
 color_outline_variant      = #dbeafe
 
 # Windows
-[windows]
 layout = spiral
+default_split_ratio = 0.5
 window_border_width = 2
 window_border_radius = 10
 space_between_windows = 8
 screen_edge_padding = 12
+smart_gaps = false
+workspace_cycle = true
+
+# Window Rules
+windowrule = float, xdg-desktop-portal-gtk
+windowrule = float, org.freedesktop.impl.portal.desktop.gtk
+windowrule = float, zenity
+# windowrule = workspace 2, class:firefox
+# windowrule = opacity 0.85, class:kitty
 
 # Blur
-[blur]
 blur = true
 blur_radius = 5
 blur_passes = 3
 layerrule = blur, miqulauncher
 
 # Keybindings
+bind = Super+Shift+Q, exit
+bind = Super+T, terminal
 bind = Super+Space, miqulauncher
 bind = Super+Return, swap_main
+
+# Touchpad & Touchscreen Gestures (swipe:<fingers>:<direction>)
+gesture = swipe:3:left, next_ws
+gesture = swipe:3:right, prev_ws
+gesture = swipe:3:up, toggle_fullscreen
+gesture = swipe:3:down, toggle_floating
+gesture = swipe:4:up, miqulauncher
+gesture = swipe:4:down, miqulock
 ```
+

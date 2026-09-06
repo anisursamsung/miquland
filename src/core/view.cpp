@@ -617,6 +617,7 @@ void View::update_opacity() {
         ? Config::get().get_window_opacity_active()
         : Config::get().get_window_opacity_inactive();
 
+    opacity = Config::get().get_rule_opacity(get_app_id(), get_title(), opacity);
     opacity = std::clamp(opacity, 0.0f, 1.0f);
 
     wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buffer, int sx, int sy, void* data) {
@@ -795,7 +796,22 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         }
     }
 
-    view->m_server->get_workspace_manager()->add_view_auto(view);
+    std::string app_id = view->get_app_id();
+    std::string title = view->get_title();
+
+    if (Config::get().should_float(app_id, title)) {
+        view->set_floating(true);
+    }
+
+    int target_ws_id = Config::get().get_target_workspace(app_id, title);
+    if (target_ws_id > 0) {
+        Workspace* target_ws = view->m_server->get_workspace_manager()->get_or_create_workspace(target_ws_id);
+        target_ws->add_view(view);
+        view->m_server->get_workspace_manager()->switch_to_workspace(target_ws_id, view);
+    } else {
+        view->m_server->get_workspace_manager()->add_view_auto(view);
+    }
+
     if (view->m_workspace && view->m_workspace->is_visible()) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
     }
@@ -1172,7 +1188,7 @@ void View::update_parent_relationship() {
         }
         // Heuristic fallback for portal / dialog window app_ids
         std::string app = get_app_id();
-        if (app == "xdg-desktop-portal-gtk" || app == "org.freedesktop.impl.portal.desktop.gtk" || app == "zenity") {
+        if (app == "xdg-desktop-portal-gtk" || app == "org.freedesktop.impl.portal.desktop.gtk" || app == "zenity" || Config::get().should_float(app, get_title())) {
             if (!m_parent_view && m_server->get_focused_view() && m_server->get_focused_view() != this) {
                 set_parent_view(m_server->get_focused_view());
                 return;
