@@ -185,6 +185,9 @@ bool Server::init() {
     m_relative_pointer_manager = wlr_relative_pointer_manager_v1_create(m_wl_display);
     m_pointer_constraints = wlr_pointer_constraints_v1_create(m_wl_display);
 
+    m_viewporter = wlr_viewporter_create(m_wl_display);
+    m_fractional_scale_manager = wlr_fractional_scale_manager_v1_create(m_wl_display, 1);
+
     m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
     if (m_xwayland) {
         wlr_xwayland_set_seat(m_xwayland, m_input_manager->get_seat());

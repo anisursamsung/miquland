@@ -129,6 +129,8 @@ private:
     struct wlr_cursor_shape_manager_v1* m_cursor_shape_manager = nullptr;
     struct wlr_relative_pointer_manager_v1* m_relative_pointer_manager = nullptr;
     struct wlr_pointer_constraints_v1* m_pointer_constraints = nullptr;
+    struct wlr_viewporter* m_viewporter = nullptr;
+    struct wlr_fractional_scale_manager_v1* m_fractional_scale_manager = nullptr;
     size_t m_idle_inhibitor_count = 0;
 
     const char* m_socket_name = nullptr;
