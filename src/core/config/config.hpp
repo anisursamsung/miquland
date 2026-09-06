@@ -40,6 +40,9 @@ public:
     bool is_smart_gaps_enabled() const { return m_smart_gaps; }
     void set_smart_gaps_enabled(bool enabled) { m_smart_gaps = enabled; }
 
+    bool is_xwayland_force_zero_scaling_enabled() const { return m_xwayland_force_zero_scaling; }
+    void set_xwayland_force_zero_scaling_enabled(bool enabled) { m_xwayland_force_zero_scaling = enabled; }
+
     const std::string& get_cursor_theme() const { return m_cursor_theme; }
     void set_cursor_theme(const std::string& theme) { m_cursor_theme = theme; }
 
@@ -198,6 +201,7 @@ private:
 
     bool m_focus_follows_mouse = true;
     bool m_smart_gaps = false;
+    bool m_xwayland_force_zero_scaling = false;
     std::string m_cursor_theme = "";
     int m_cursor_size = 24;
     double m_default_split_ratio = 0.5;

@@ -125,6 +125,7 @@ void Config::set_defaults() {
     // Ergonomics & window defaults
     m_focus_follows_mouse = true;
     m_smart_gaps = false;
+    m_xwayland_force_zero_scaling = false;
     m_cursor_theme = "";
     m_cursor_size = 24;
     m_default_split_ratio = 0.5;
@@ -527,10 +528,24 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         return;
     }
 
+    std::string current_section = "";
     std::string line;
     while (std::getline(file, line)) {
         std::string trimmed = trim(line);
-        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == '[') {
+        if (trimmed.empty() || trimmed[0] == '#') {
+            continue;
+        }
+
+        if (trimmed.back() == '{') {
+            current_section = trim(trimmed.substr(0, trimmed.size() - 1));
+            std::transform(current_section.begin(), current_section.end(), current_section.begin(), ::tolower);
+            continue;
+        } else if (trimmed == "}") {
+            current_section = "";
+            continue;
+        } else if (trimmed.front() == '[' && trimmed.back() == ']') {
+            current_section = trim(trimmed.substr(1, trimmed.size() - 2));
+            std::transform(current_section.begin(), current_section.end(), current_section.begin(), ::tolower);
             continue;
         }
 
@@ -586,6 +601,12 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
             m_smart_gaps = (lower == "true" || lower == "1" || lower == "yes");
+        } else if ((current_section == "xwayland" && (key == "force_zero_scaling" || key == "force_zero_scale")) ||
+                   key == "xwayland_force_zero_scaling" || key == "xwayland:force_zero_scaling" ||
+                   key == "force_zero_scaling") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_xwayland_force_zero_scaling = (lower == "true" || lower == "1" || lower == "yes");
         } else if (key == "cursor_theme" || key == "xcursor_theme") {
             m_cursor_theme = value;
         } else if (key == "cursor_size" || key == "xcursor_size") {
@@ -913,6 +934,13 @@ void Config::save() {
         file << "bind = " << kb.combo_str << ", " << kb.action << "\n";
     }
     file << "\n";
+
+    file << "# ==========================================\n";
+    file << "# XWayland Settings\n";
+    file << "# ==========================================\n";
+    file << "xwayland {\n";
+    file << "    force_zero_scaling = " << (m_xwayland_force_zero_scaling ? "true" : "false") << "\n";
+    file << "}\n\n";
 
     file << "# ==========================================\n";
     file << "# Touchpad & Touchscreen Gestures\n";

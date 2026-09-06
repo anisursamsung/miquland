@@ -72,6 +72,7 @@ public:
     int get_y() const { return m_y; }
     int get_width() const { return m_width; }
     int get_height() const { return m_height; }
+    float get_output_scale() const;
 
 private:
     // XDG Handlers

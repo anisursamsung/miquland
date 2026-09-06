@@ -346,6 +346,16 @@ bool View::is_focused() const {
     return m_server && m_server->get_focused_view() == this;
 }
 
+float View::get_output_scale() const {
+    if (m_server && m_server->get_output_manager()) {
+        auto* out = m_server->get_output_manager()->get_primary_output();
+        if (out && out->get_wlr_output() && out->get_wlr_output()->scale > 0.0f) {
+            return out->get_wlr_output()->scale;
+        }
+    }
+    return 1.0f;
+}
+
 void View::set_geometry(int x, int y, int width, int height) {
     if (m_x == x && m_y == y && m_width == width && m_height == height && m_mapped) {
         return;
@@ -387,7 +397,20 @@ void View::set_geometry(int x, int y, int width, int height) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
         if (m_xwayland_surface && size_changed) {
-            wlr_xwayland_surface_configure(m_xwayland_surface, x + bw, y + bw, client_w, client_h);
+            int conf_x = x + bw;
+            int conf_y = y + bw;
+            int conf_w = client_w;
+            int conf_h = client_h;
+            if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+                float scale = get_output_scale();
+                if (scale > 1.001f) {
+                    conf_w = std::max(1, (int)std::round(client_w * scale));
+                    conf_h = std::max(1, (int)std::round(client_h * scale));
+                    conf_x = (int)std::round(conf_x * scale);
+                    conf_y = (int)std::round(conf_y * scale);
+                }
+            }
+            wlr_xwayland_surface_configure(m_xwayland_surface, conf_x, conf_y, conf_w, conf_h);
         }
     }
 
@@ -453,7 +476,20 @@ void View::set_fullscreen(bool fullscreen) {
                 wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
             }
             wlr_xwayland_surface_set_fullscreen(m_xwayland_surface, true);
-            wlr_xwayland_surface_configure(m_xwayland_surface, m_x, m_y, m_width, m_height);
+            int conf_x = m_x;
+            int conf_y = m_y;
+            int conf_w = m_width;
+            int conf_h = m_height;
+            if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+                float scale = get_output_scale();
+                if (scale > 1.001f) {
+                    conf_w = std::max(1, (int)std::round(m_width * scale));
+                    conf_h = std::max(1, (int)std::round(m_height * scale));
+                    conf_x = (int)std::round(m_x * scale);
+                    conf_y = (int)std::round(m_y * scale);
+                }
+            }
+            wlr_xwayland_surface_configure(m_xwayland_surface, conf_x, conf_y, conf_w, conf_h);
         }
 
         // Disable border in fullscreen
@@ -781,7 +817,16 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         }
 
         if (view->is_override_redirect()) {
-            wlr_scene_node_set_position(&view->m_scene_tree->node, view->m_xwayland_surface->x, view->m_xwayland_surface->y);
+            int lx = view->m_xwayland_surface->x;
+            int ly = view->m_xwayland_surface->y;
+            if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+                float scale = view->get_output_scale();
+                if (scale > 1.001f) {
+                    lx = (int)std::round(lx / scale);
+                    ly = (int)std::round(ly / scale);
+                }
+            }
+            wlr_scene_node_set_position(&view->m_scene_tree->node, lx, ly);
             wlr_scene_node_raise_to_top(&view->m_scene_tree->node);
             wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
             if (wlr_xwayland_surface_override_redirect_wants_focus(view->m_xwayland_surface)) {
@@ -929,6 +974,19 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
                 }
             }
         }
+    } else if (view->m_type == ViewType::XWayland && Config::get().is_xwayland_force_zero_scaling_enabled()) {
+        float scale = view->get_output_scale();
+        if (scale > 1.001f && view->m_surface_scene_tree) {
+            wlr_scene_node_for_each_buffer(&view->m_surface_scene_tree->node,
+                [](struct wlr_scene_buffer* buffer, int sx, int sy, void* data) {
+                    float s = *static_cast<float*>(data);
+                    if (buffer && buffer->buffer_width > 0 && buffer->buffer_height > 0 && s > 0.0f) {
+                        int dst_w = std::max(1, (int)std::round(buffer->buffer_width / s));
+                        int dst_h = std::max(1, (int)std::round(buffer->buffer_height / s));
+                        wlr_scene_buffer_set_dest_size(buffer, dst_w, dst_h);
+                    }
+                }, &scale);
+        }
     }
 
     if (view->m_mapped) {
@@ -1072,14 +1130,34 @@ void View::handle_xwayland_request_configure(struct wl_listener* listener, void*
         int bw = Config::get().get_window_border_width();
         int client_w = std::max(1, view->m_width - 2 * bw);
         int client_h = std::max(1, view->m_height - 2 * bw);
-        wlr_xwayland_surface_configure(view->m_xwayland_surface, view->m_x + bw, view->m_y + bw, client_w, client_h);
+        int client_x = view->m_x + bw;
+        int client_y = view->m_y + bw;
+        if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+            float scale = view->get_output_scale();
+            if (scale > 1.001f) {
+                client_w = std::max(1, (int)std::round(client_w * scale));
+                client_h = std::max(1, (int)std::round(client_h * scale));
+                client_x = (int)std::round(client_x * scale);
+                client_y = (int)std::round(client_y * scale);
+            }
+        }
+        wlr_xwayland_surface_configure(view->m_xwayland_surface, client_x, client_y, client_w, client_h);
     } else {
         view->m_x = ev->x;
         view->m_y = ev->y;
         view->m_width = ev->width;
         view->m_height = ev->height;
         if (view->m_scene_tree) {
-            wlr_scene_node_set_position(&view->m_scene_tree->node, ev->x, ev->y);
+            int lx = ev->x;
+            int ly = ev->y;
+            if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+                float scale = view->get_output_scale();
+                if (scale > 1.001f) {
+                    lx = (int)std::round(lx / scale);
+                    ly = (int)std::round(ly / scale);
+                }
+            }
+            wlr_scene_node_set_position(&view->m_scene_tree->node, lx, ly);
         }
         wlr_xwayland_surface_configure(view->m_xwayland_surface, ev->x, ev->y, ev->width, ev->height);
     }
@@ -1098,7 +1176,16 @@ void View::handle_xwayland_set_geometry(struct wl_listener* listener, void* data
         view->m_y = view->m_xwayland_surface->y;
         view->m_width = view->m_xwayland_surface->width;
         view->m_height = view->m_xwayland_surface->height;
-        wlr_scene_node_set_position(&view->m_scene_tree->node, view->m_x, view->m_y);
+        int lx = view->m_x;
+        int ly = view->m_y;
+        if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+            float scale = view->get_output_scale();
+            if (scale > 1.001f) {
+                lx = (int)std::round(lx / scale);
+                ly = (int)std::round(ly / scale);
+            }
+        }
+        wlr_scene_node_set_position(&view->m_scene_tree->node, lx, ly);
     }
 }
 
