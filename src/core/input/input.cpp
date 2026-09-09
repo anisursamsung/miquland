@@ -106,14 +106,7 @@ InputManager::InputManager(Server* server)
     m_cursor = wlr_cursor_create();
     wlr_cursor_attach_output_layout(m_cursor, server->get_output_manager()->get_layout());
 
-    const std::string& ctheme = Config::get().get_cursor_theme();
-    int csize = Config::get().get_cursor_size();
-    const char* theme_name = ctheme.empty() ? nullptr : ctheme.c_str();
-    m_cursor_mgr = wlr_xcursor_manager_create(theme_name, csize);
-    if (!ctheme.empty()) {
-        setenv("XCURSOR_THEME", ctheme.c_str(), 1);
-    }
-    setenv("XCURSOR_SIZE", std::to_string(csize).c_str(), 1);
+    reapply_cursor_config();
 
     m_new_input_listener.notify = handle_new_input;
     wl_signal_add(&server->get_backend()->events.new_input, &m_new_input_listener);
@@ -344,6 +337,7 @@ void InputManager::map_touch_device_to_output(struct wlr_input_device* device) {
 }
 
 void InputManager::reapply_device_config() {
+    reapply_cursor_config();
     for (auto& kb : m_keyboards) {
         if (kb) kb->reapply_keymap();
     }
@@ -355,9 +349,75 @@ void InputManager::reapply_device_config() {
     }
 }
 
-void InputManager::set_cursor_icon(const char* name) {
+void InputManager::reapply_cursor_config() {
+    const std::string& ctheme = Config::get().get_cursor_theme();
+    int csize = Config::get().get_cursor_size();
+    const char* theme_name = ctheme.empty() ? nullptr : ctheme.c_str();
+
+    log_info("Applying cursor config: theme='" + ctheme + "', size=" + std::to_string(csize));
+
+    if (m_cursor_mgr) {
+        wlr_xcursor_manager_destroy(m_cursor_mgr);
+        m_cursor_mgr = nullptr;
+    }
+
+    m_cursor_mgr = wlr_xcursor_manager_create(theme_name, csize);
+    if (!m_cursor_mgr) {
+        log_error("Failed to create xcursor manager for theme: " + ctheme);
+        return;
+    }
+
+    if (!ctheme.empty()) {
+        setenv("XCURSOR_THEME", ctheme.c_str(), 1);
+    } else {
+        unsetenv("XCURSOR_THEME");
+    }
+    setenv("XCURSOR_SIZE", std::to_string(csize).c_str(), 1);
+    system("systemctl --user import-environment XCURSOR_THEME XCURSOR_SIZE 2>/dev/null");
+
+    wlr_xcursor_manager_load(m_cursor_mgr, 1.0f);
+    if (m_server && m_server->get_output_manager()) {
+        for (const auto& out : m_server->get_output_manager()->get_outputs()) {
+            if (out && out->get_wlr_output() && out->get_wlr_output()->scale > 0.0f) {
+                wlr_xcursor_manager_load(m_cursor_mgr, out->get_wlr_output()->scale);
+            }
+        }
+    }
+
     if (m_cursor && m_cursor_mgr) {
-        wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, name ? name : "default");
+        if (m_cursor_mode == CursorMode::Move) {
+            set_cursor_icon("grab");
+        } else if (m_cursor_mode == CursorMode::Resize) {
+            set_cursor_icon(edge_to_cursor_name(m_resize_edges));
+        } else if (m_border_hover_edges != 0) {
+            set_cursor_icon(edge_to_cursor_name(m_border_hover_edges));
+        } else {
+            const char* cur_icon = m_current_cursor_name.empty() ? "default" : m_current_cursor_name.c_str();
+            set_cursor_icon(cur_icon);
+        }
+    }
+
+    if (m_seat) {
+        if (m_seat->pointer_state.focused_surface) {
+            wlr_seat_pointer_clear_focus(m_seat);
+        }
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        uint32_t time_ms = static_cast<uint32_t>(now.tv_sec * 1000 + now.tv_nsec / 1000000);
+        process_cursor_motion(time_ms);
+    }
+}
+
+void InputManager::load_cursor_scale(float scale) {
+    if (m_cursor_mgr && scale > 0.0f) {
+        wlr_xcursor_manager_load(m_cursor_mgr, scale);
+    }
+}
+
+void InputManager::set_cursor_icon(const char* name) {
+    m_current_cursor_name = name ? name : "default";
+    if (m_cursor && m_cursor_mgr) {
+        wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, m_current_cursor_name.c_str());
     }
 }
 
@@ -580,7 +640,7 @@ void InputManager::process_cursor_motion(uint32_t time) {
             wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
             lock_surf->focus();
         } else {
-            wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
+            set_cursor_icon("default");
             wlr_seat_pointer_clear_focus(m_seat);
         }
         return;
@@ -706,13 +766,14 @@ void InputManager::process_cursor_motion(uint32_t time) {
             }
         }
 
-        wlr_cursor_set_xcursor(m_cursor, m_cursor_mgr, "default");
+        set_cursor_icon("default");
         wlr_seat_pointer_clear_focus(m_seat);
         return;
     }
 
     if (m_seat->pointer_state.focused_surface != surface) {
         wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
+        set_cursor_icon("default");
     }
     wlr_seat_pointer_notify_motion(m_seat, time, sx, sy);
 

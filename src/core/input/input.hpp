@@ -29,6 +29,8 @@ public:
     void remove_pointer(struct wlr_input_device* device);
     void remove_touch_device(struct wlr_input_device* device);
     void reapply_device_config();
+    void reapply_cursor_config();
+    void load_cursor_scale(float scale);
     void configure_pointer_device(struct wlr_input_device* device);
     void map_touch_device_to_output(struct wlr_input_device* device);
     void set_cursor_icon(const char* name);
@@ -76,6 +78,7 @@ private:
     struct wlr_seat* m_seat = nullptr;
     struct wlr_cursor* m_cursor = nullptr;
     struct wlr_xcursor_manager* m_cursor_mgr = nullptr;
+    std::string m_current_cursor_name = "default";
 
     CursorMode m_cursor_mode = CursorMode::Passthrough;
     View* m_grabbed_view = nullptr;

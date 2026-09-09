@@ -75,6 +75,9 @@ void Output::apply_config() {
     // Scale
     float scale = (rule && rule->scale > 0.0) ? (float)rule->scale : 1.0f;
     wlr_output_state_set_scale(&state, scale);
+    if (m_server && m_server->get_input_manager()) {
+        m_server->get_input_manager()->load_cursor_scale(scale);
+    }
 
     // Transform
     enum wl_output_transform transform = rule ? rule->transform : WL_OUTPUT_TRANSFORM_NORMAL;
@@ -95,10 +98,16 @@ void Output::apply_config() {
     }
 
     struct wlr_output_layout* layout = m_server->get_output_manager()->get_layout();
-    if (rule && rule->x >= 0 && rule->y >= 0) {
-        wlr_output_layout_add(layout, m_wlr_output, rule->x, rule->y);
-    } else {
-        wlr_output_layout_add_auto(layout, m_wlr_output);
+    if (layout) {
+        if (rule && rule->x >= 0 && rule->y >= 0) {
+            wlr_output_layout_add(layout, m_wlr_output, rule->x, rule->y);
+        } else {
+            wlr_output_layout_add_auto(layout, m_wlr_output);
+        }
+    }
+
+    if (m_server) {
+        m_server->arrange_layers(m_wlr_output);
     }
 }
 
@@ -319,14 +328,8 @@ bool OutputManager::apply_config(struct wlr_output_configuration_v1* config, boo
         }
 
         Output* out = find_output(wlr_out);
-        if (out) {
-            struct wlr_box usable = {
-                .x = 0,
-                .y = 0,
-                .width = wlr_out->width,
-                .height = wlr_out->height
-            };
-            out->set_usable_area(usable);
+        if (out && m_server) {
+            m_server->arrange_layers(wlr_out);
         }
     }
 

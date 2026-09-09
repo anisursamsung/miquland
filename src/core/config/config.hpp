@@ -104,9 +104,6 @@ public:
     int get_repeat_delay() const { return m_repeat_delay; }
     void set_repeat_delay(int delay) { m_repeat_delay = std::max(100, delay); }
 
-    const std::string& get_icon_theme() const { return m_icon_theme; }
-    void set_icon_theme(const std::string& theme) { m_icon_theme = theme; }
-
     const std::string& get_terminal() const { return m_terminal; }
     void set_terminal(const std::string& term) { m_terminal = term; }
 
@@ -238,7 +235,6 @@ private:
     std::string m_kb_model = "";
     int m_repeat_rate = 25;
     int m_repeat_delay = 600;
-    std::string m_icon_theme = "Papirus";
     std::string m_terminal = "foot";
 
     int m_window_border_width = 2;

@@ -21,7 +21,9 @@ namespace miquland {
 Server::Server() = default;
 
 Server::~Server() {
+    if (m_config_reload_timer) wl_event_source_remove(m_config_reload_timer);
     if (m_config_event_source) wl_event_source_remove(m_config_event_source);
+    if (m_inotify_file_wd >= 0 && m_inotify_fd >= 0) inotify_rm_watch(m_inotify_fd, m_inotify_file_wd);
     if (m_inotify_wd >= 0 && m_inotify_fd >= 0) inotify_rm_watch(m_inotify_fd, m_inotify_wd);
     if (m_inotify_fd >= 0) ::close(m_inotify_fd);
 
@@ -215,7 +217,7 @@ bool Server::init() {
     log_info("Wayland compositor running on WAYLAND_DISPLAY=" + std::string(m_socket_name));
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     setenv("XDG_CURRENT_DESKTOP", "miquland", 1);
-    system("systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP 2>/dev/null");
+    system("systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XCURSOR_THEME XCURSOR_SIZE 2>/dev/null");
 
     setup_config_watcher();
 
@@ -235,9 +237,18 @@ void Server::setup_config_watcher() {
     if (m_inotify_fd < 0) return;
 
     std::string config_dir = Config::get_config_dir_path();
-    m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
+    m_inotify_wd = inotify_add_watch(m_inotify_fd, config_dir.c_str(), IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE);
+    if (m_inotify_wd < 0) {
+        log_warn("Failed to watch config directory: " + config_dir);
+    } else {
+        log_info("Watching config directory for live reload: " + config_dir);
+    }
+
+    std::string config_file = Config::get_config_file_path();
+    m_inotify_file_wd = inotify_add_watch(m_inotify_fd, config_file.c_str(), IN_MODIFY | IN_CLOSE_WRITE);
 
     m_config_event_source = wl_event_loop_add_fd(m_wl_event_loop, m_inotify_fd, WL_EVENT_READABLE, handle_config_inotify, this);
+    m_config_reload_timer = wl_event_loop_add_timer(m_wl_event_loop, handle_config_reload_timer, this);
 }
 
 int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
@@ -250,16 +261,42 @@ int Server::handle_config_inotify(int fd, uint32_t mask, void* data) {
         const struct inotify_event* event;
         for (char* ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
             event = reinterpret_cast<const struct inotify_event*>(ptr);
-            if (event->len > 0) {
+            if (server->m_inotify_file_wd >= 0 && event->wd == server->m_inotify_file_wd) {
                 should_reload = true;
+                if (event->mask & (IN_IGNORED | IN_DELETE_SELF | IN_MOVE_SELF)) {
+                    server->m_inotify_file_wd = -1;
+                }
+            } else if (event->len > 0) {
+                std::string filename(event->name);
+                if ((filename == "miquland.conf" || filename.ends_with(".conf")) &&
+                    !filename.starts_with(".") && !filename.ends_with("~")) {
+                    should_reload = true;
+                }
             }
         }
     }
 
-    if (should_reload) {
-        log_info("Detected config file change, reloading...");
-        server->reload_config();
+    // Re-arm file watch if it was removed by atomic editor rewrite
+    if (server->m_inotify_file_wd < 0 && server->m_inotify_fd >= 0) {
+        std::string config_file = Config::get_config_file_path();
+        server->m_inotify_file_wd = inotify_add_watch(server->m_inotify_fd, config_file.c_str(), IN_MODIFY | IN_CLOSE_WRITE);
     }
+
+    if (should_reload) {
+        // Debounce: wait 250ms for rapid inotify events / editor write flushes to settle
+        if (server->m_config_reload_timer) {
+            wl_event_source_timer_update(server->m_config_reload_timer, 250);
+        } else {
+            server->reload_config();
+        }
+    }
+    return 0;
+}
+
+int Server::handle_config_reload_timer(void* data) {
+    auto* server = static_cast<Server*>(data);
+    log_info("Detected config file change, reloading...");
+    server->reload_config();
     return 0;
 }
 
@@ -277,6 +314,14 @@ void Server::reload_config() {
     for (const auto& v : m_views) {
         if (v && v->is_mapped()) {
             v->update_frame();
+        }
+    }
+
+    if (m_output_manager) {
+        for (const auto& out : m_output_manager->get_outputs()) {
+            if (out && out->get_wlr_output()) {
+                arrange_layers(out->get_wlr_output());
+            }
         }
     }
 
@@ -459,7 +504,12 @@ void Server::arrange_layers(struct wlr_output* output) {
     for (auto layer : layers_order) {
         for (auto& l_surf : m_layer_surfaces) {
             if (l_surf->get_layer() == layer && l_surf->get_wlr_layer_surface()->output == output) {
-                l_surf->configure(&full_area, &usable_area);
+                if (layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
+                    struct wlr_box bg_usable = full_area;
+                    l_surf->configure(&full_area, &bg_usable);
+                } else {
+                    l_surf->configure(&full_area, &usable_area);
+                }
             }
         }
     }

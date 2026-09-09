@@ -666,10 +666,6 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try { m_repeat_rate = std::max(1, std::stoi(value)); } catch (...) {}
         } else if (key == "repeat_delay" || key == "keyboard_repeat_delay") {
             try { m_repeat_delay = std::max(100, std::stoi(value)); } catch (...) {}
-        } else if (key == "icon_theme" || key == "icon-theme" || key == "icons_theme" ||
-                   key == "icons-theme" || key == "icontheme" || key == "theme_icons" ||
-                   key == "icon" || key == "icons") {
-            m_icon_theme = value;
         } else if (key == "terminal") {
             m_terminal = value;
         } else if (key == "window_border_width" || key == "border_width") {
@@ -971,10 +967,8 @@ void Config::save() {
 
     file << "# miquland configuration file\n\n";
     file << "# ==========================================\n";
-    file << "# Appearance & Icons\n";
+    file << "# Appearance & Cursor\n";
     file << "# ==========================================\n";
-    file << "# Icon Theme (e.g. Papirus, Adwaita, Tela-circle; falls back to hicolor/pixmaps)\n";
-    file << "icon_theme = " << m_icon_theme << "\n";
     if (!m_cursor_theme.empty()) file << "cursor_theme = " << m_cursor_theme << "\n";
     file << "cursor_size = " << m_cursor_size << "\n\n";
 

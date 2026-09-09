@@ -91,6 +91,7 @@ private:
     static void handle_xwayland_ready(struct wl_listener* listener, void* data);
     static void handle_xwayland_new_surface(struct wl_listener* listener, void* data);
     static int handle_config_inotify(int fd, uint32_t mask, void* data);
+    static int handle_config_reload_timer(void* data);
     void setup_config_watcher();
 
     struct wl_display* m_wl_display = nullptr;
@@ -138,7 +139,9 @@ private:
 
     int m_inotify_fd = -1;
     int m_inotify_wd = -1;
+    int m_inotify_file_wd = -1;
     struct wl_event_source* m_config_event_source = nullptr;
+    struct wl_event_source* m_config_reload_timer = nullptr;
 
     std::unique_ptr<OutputManager> m_output_manager;
     std::unique_ptr<WorkspaceManager> m_workspace_manager;
