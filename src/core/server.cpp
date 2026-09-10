@@ -137,7 +137,7 @@ bool Server::init() {
     m_new_xdg_toplevel_listener.notify = handle_new_xdg_toplevel;
     wl_signal_add(&m_xdg_shell->events.new_toplevel, &m_new_xdg_toplevel_listener);
 
-    m_layer_shell = wlr_layer_shell_v1_create(m_wl_display, 4);
+    m_layer_shell = wlr_layer_shell_v1_create(m_wl_display, 5);
     m_new_layer_shell_surface_listener.notify = handle_new_layer_shell_surface;
     wl_signal_add(&m_layer_shell->events.new_surface, &m_new_layer_shell_surface_listener);
 
