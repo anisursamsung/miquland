@@ -75,6 +75,7 @@ add_executable(miquland
     src/core/session_lock.cpp
     src/core/common/cairo_buffer.cpp
     src/core/plugin_manager.cpp
+    src/core/animation/animation_manager.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h

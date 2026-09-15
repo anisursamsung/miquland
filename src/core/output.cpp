@@ -3,6 +3,7 @@
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
 #include "core/config/config.hpp"
+#include "core/animation/animation_manager.hpp"
 #include <ctime>
 
 namespace miquland {
@@ -120,10 +121,16 @@ Output::~Output() {
 void Output::handle_frame(struct wl_listener* listener, void* data) {
     Output* output = wl_container_of(listener, output, m_frame_listener);
 
-    wlr_scene_output_commit(output->m_scene_output, nullptr);
-
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
+    uint64_t now_ms = static_cast<uint64_t>(now.tv_sec) * 1000 + static_cast<uint64_t>(now.tv_nsec) / 1000000;
+
+    if (output->m_server && output->m_server->get_animation_manager()) {
+        output->m_server->get_animation_manager()->tick(now_ms);
+    }
+
+    wlr_scene_output_commit(output->m_scene_output, nullptr);
+
     wlr_scene_output_send_frame_done(output->m_scene_output, &now);
 }
 

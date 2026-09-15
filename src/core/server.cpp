@@ -7,6 +7,7 @@
 #include "core/popup.hpp"
 #include "core/session_lock.hpp"
 #include "core/plugin_manager.hpp"
+#include "core/animation/animation_manager.hpp"
 #include "core/config/config.hpp"
 extern "C" {
 #include <scenefx/render/fx_renderer/fx_renderer.h>
@@ -36,6 +37,7 @@ Server::~Server() {
     m_layer_surfaces.clear();
     m_views.clear();
 
+    m_animation_manager.reset();
     m_input_manager.reset();
     m_workspace_manager.reset();
     m_output_manager.reset();
@@ -136,6 +138,7 @@ bool Server::init() {
     m_output_manager = std::make_unique<OutputManager>(this);
     m_workspace_manager = std::make_unique<WorkspaceManager>(this);
     m_input_manager = std::make_unique<InputManager>(this);
+    m_animation_manager = std::make_unique<AnimationManager>(this);
 
     m_xdg_output_manager = wlr_xdg_output_manager_v1_create(m_wl_display, m_output_manager->get_layout());
 

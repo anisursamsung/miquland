@@ -746,6 +746,14 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_blur_saturation = std::stof(value);
             } catch (...) {}
+        } else if (key == "animations" || key == "animation" || key == "animations_enabled") {
+            m_animations_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "animation_duration" || key == "animation_duration_ms") {
+            try {
+                m_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "animation_curve" || key == "animation_easing") {
+            m_animation_curve = value;
         } else if (key == "layerrule") {
             // Hyprland syntax: layerrule = blur, waybar
             size_t comma = value.find(',');

@@ -14,6 +14,7 @@ class View;
 class LayerSurface;
 class SessionLock;
 class PluginManager;
+class AnimationManager;
 
 class Server {
 public:
@@ -45,6 +46,7 @@ public:
     WorkspaceManager* get_workspace_manager() const { return m_workspace_manager.get(); }
     InputManager* get_input_manager() const { return m_input_manager.get(); }
     PluginManager* get_plugin_manager() const { return m_plugin_manager.get(); }
+    AnimationManager* get_animation_manager() const { return m_animation_manager.get(); }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
@@ -158,6 +160,7 @@ private:
 
     std::unique_ptr<SessionLock> m_session_lock;
     std::unique_ptr<PluginManager> m_plugin_manager;
+    std::unique_ptr<AnimationManager> m_animation_manager;
 
     static void handle_new_session_lock(struct wl_listener* listener, void* data);
     static void handle_gamma_set_gamma(struct wl_listener* listener, void* data);

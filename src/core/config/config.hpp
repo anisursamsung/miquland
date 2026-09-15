@@ -53,6 +53,15 @@ public:
     bool is_smart_gaps_enabled() const { return m_smart_gaps; }
     void set_smart_gaps_enabled(bool enabled) { m_smart_gaps = enabled; }
 
+    bool is_animations_enabled() const { return m_animations_enabled; }
+    void set_animations_enabled(bool enabled) { m_animations_enabled = enabled; }
+
+    int get_animation_duration_ms() const { return m_animation_duration_ms; }
+    void set_animation_duration_ms(int ms) { m_animation_duration_ms = std::clamp(ms, 10, 2000); }
+
+    const std::string& get_animation_curve() const { return m_animation_curve; }
+    void set_animation_curve(const std::string& curve) { m_animation_curve = curve; }
+
     bool is_xwayland_force_zero_scaling_enabled() const { return m_xwayland_force_zero_scaling; }
     void set_xwayland_force_zero_scaling_enabled(bool enabled) { m_xwayland_force_zero_scaling = enabled; }
 
@@ -218,6 +227,9 @@ private:
 
     bool m_focus_follows_mouse = true;
     bool m_smart_gaps = false;
+    bool m_animations_enabled = true;
+    int m_animation_duration_ms = 200;
+    std::string m_animation_curve = "ease_out_cubic";
     bool m_xwayland_force_zero_scaling = false;
     std::string m_cursor_theme = "";
     int m_cursor_size = 24;

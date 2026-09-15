@@ -6,6 +6,7 @@
 #include "core/input/input.hpp"
 #include "core/config/config.hpp"
 #include "core/plugin_manager.hpp"
+#include "core/animation/animation_manager.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -207,6 +208,10 @@ View::~View() {
 
     if (m_server && m_server->get_input_manager()) {
         m_server->get_input_manager()->notify_view_destroyed(this);
+    }
+
+    if (m_server && m_server->get_animation_manager()) {
+        m_server->get_animation_manager()->cancel_for_view(this);
     }
 
     if (m_workspace) {
@@ -982,6 +987,10 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
     }
 
     view->m_mapped = false;
+
+    if (view->m_server && view->m_server->get_animation_manager()) {
+        view->m_server->get_animation_manager()->cancel_for_view(view);
+    }
 
     if (view->m_scene_tree) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, false);

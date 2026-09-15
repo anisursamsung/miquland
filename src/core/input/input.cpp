@@ -5,6 +5,7 @@
 #include "core/output.hpp"
 #include "core/session_lock.hpp"
 #include "core/plugin_manager.hpp"
+#include "core/animation/animation_manager.hpp"
 #include "core/config/config.hpp"
 #include <unistd.h>
 #include <cstdlib>
@@ -519,6 +520,10 @@ void InputManager::notify_view_destroyed(View* view) {
     }
 }
 
+void InputManager::recheck_cursor_focus() {
+    process_cursor_motion(0);
+}
+
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
     // 0. If session is locked, NEVER process any shortcuts (all keys go directly to locker)
     if (m_server->is_locked()) {
@@ -656,6 +661,11 @@ void InputManager::process_cursor_motion(uint32_t time) {
     }
 
     if (m_server->get_plugin_manager() && m_server->get_plugin_manager()->dispatch_pointer_motion(m_cursor->x, m_cursor->y)) {
+        return;
+    }
+
+    // If a workspace transition or interactive swipe is active, do not evaluate hover focus on sliding views
+    if (m_server->get_animation_manager() && m_server->get_animation_manager()->is_workspace_animating()) {
         return;
     }
 
@@ -987,14 +997,32 @@ void InputManager::handle_selection_destroy(struct wl_listener* listener, void* 
 
 void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_begin_listener);
+    auto* event = static_cast<struct wlr_pointer_swipe_begin_event*>(data);
     manager->m_swipe_dx = 0.0;
     manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
+    manager->m_touchpad_workspace_swipe_active = false;
+
+    if (event->fingers == 3 && Config::get().is_animations_enabled() && manager->m_server->get_animation_manager()) {
+        manager->m_touchpad_workspace_swipe_active = true;
+        manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
+    }
 }
 
 void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_update_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_update_event*>(data);
+
+    if (manager->m_touchpad_workspace_swipe_active) {
+        double screen_w = 1920.0;
+        if (manager->m_server && manager->m_server->get_output_manager()) {
+            auto geom = manager->m_server->get_output_manager()->get_primary_usable_geometry();
+            if (geom.width > 0) screen_w = geom.width;
+        }
+        double touchpad_multiplier = std::max(6.0, screen_w / 140.0);
+        manager->m_server->get_animation_manager()->update_workspace_swipe(event->dx * touchpad_multiplier, event->dy);
+        return;
+    }
 
     if (manager->m_swipe_triggered) {
         return;
@@ -1025,6 +1053,13 @@ void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void
 
 void InputManager::handle_cursor_swipe_end(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_end_listener);
+    auto* event = static_cast<struct wlr_pointer_swipe_end_event*>(data);
+
+    if (manager->m_touchpad_workspace_swipe_active) {
+        manager->m_server->get_animation_manager()->end_workspace_swipe(event->cancelled);
+        manager->m_touchpad_workspace_swipe_active = false;
+    }
+
     manager->m_swipe_dx = 0.0;
     manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
@@ -1101,6 +1136,24 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
     manager->m_touch_points[event->touch_id] = { event->touch_id, lx, ly, lx, ly };
     int finger_count = static_cast<int>(manager->m_touch_points.size());
 
+    // Check if 3-finger workspace gesture should be handled interactively
+    if (finger_count == 3 && Config::get().is_animations_enabled() && manager->m_server->get_animation_manager()) {
+        for (auto& [id, pt] : manager->m_touch_points) {
+            pt.start_lx = pt.current_lx;
+            pt.start_ly = pt.current_ly;
+            wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, id);
+        }
+        double sum_x = 0.0;
+        for (const auto& [id, pt] : manager->m_touch_points) {
+            sum_x += pt.current_lx;
+        }
+        manager->m_last_touch_center_x = sum_x / 3.0;
+        manager->m_touch_workspace_swipe_active = true;
+        manager->m_touch_gesture_active = true;
+        manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
+        return;
+    }
+
     // Check if multi-finger gesture should be handled by compositor
     if (finger_count >= 3 || (finger_count >= 2 && Config::get().has_gesture_for_fingers(finger_count))) {
         // Reset origin points for all fingers to current coordinates when multi-touch is grounded
@@ -1113,7 +1166,7 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
         return;
     }
 
-    if (manager->m_touch_gesture_active) {
+    if (manager->m_touch_gesture_active || manager->m_touch_workspace_swipe_active) {
         return;
     }
 
@@ -1142,11 +1195,19 @@ void InputManager::handle_cursor_touch_up(struct wl_listener* listener, void* da
 
     manager->m_touch_points.erase(event->touch_id);
 
-    if (manager->m_touch_points.empty()) {
-        manager->m_touch_gesture_active = false;
+    if (manager->m_touch_workspace_swipe_active) {
+        if (manager->m_touch_points.size() < 3) {
+            manager->m_server->get_animation_manager()->end_workspace_swipe(false);
+            manager->m_touch_workspace_swipe_active = false;
+        }
     }
 
-    if (!manager->m_touch_gesture_active) {
+    if (manager->m_touch_points.empty()) {
+        manager->m_touch_gesture_active = false;
+        manager->m_touch_workspace_swipe_active = false;
+    }
+
+    if (!manager->m_touch_gesture_active && !manager->m_touch_workspace_swipe_active) {
         wlr_seat_touch_notify_up(manager->m_seat, event->time_msec, event->touch_id);
     }
 }
@@ -1165,6 +1226,21 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
     }
 
     int finger_count = static_cast<int>(manager->m_touch_points.size());
+
+    if (manager->m_touch_workspace_swipe_active) {
+        if (finger_count >= 3) {
+            double sum_x = 0.0;
+            for (const auto& [id, pt] : manager->m_touch_points) {
+                sum_x += pt.current_lx;
+            }
+            double cur_center_x = sum_x / static_cast<double>(finger_count);
+            double dx = cur_center_x - manager->m_last_touch_center_x;
+            manager->m_last_touch_center_x = cur_center_x;
+            double touch_multiplier = 1.8;
+            manager->m_server->get_animation_manager()->update_workspace_swipe(dx * touch_multiplier, 0.0);
+        }
+        return;
+    }
 
     // Multi-finger gesture recognition on touchscreen
     if (!manager->m_touch_gesture_active &&
@@ -1219,8 +1295,14 @@ void InputManager::handle_cursor_touch_cancel(struct wl_listener* listener, void
 
     manager->m_touch_points.erase(event->touch_id);
 
+    if (manager->m_touch_workspace_swipe_active) {
+        manager->m_server->get_animation_manager()->end_workspace_swipe(true);
+        manager->m_touch_workspace_swipe_active = false;
+    }
+
     if (manager->m_touch_points.empty()) {
         manager->m_touch_gesture_active = false;
+        manager->m_touch_workspace_swipe_active = false;
     }
 
     wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, event->touch_id);
@@ -1228,7 +1310,7 @@ void InputManager::handle_cursor_touch_cancel(struct wl_listener* listener, void
 
 void InputManager::handle_cursor_touch_frame(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_touch_frame_listener);
-    if (!manager->m_touch_gesture_active) {
+    if (!manager->m_touch_gesture_active && !manager->m_touch_workspace_swipe_active) {
         wlr_seat_touch_notify_frame(manager->m_seat);
     }
 }

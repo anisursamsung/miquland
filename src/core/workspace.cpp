@@ -3,6 +3,7 @@
 #include "core/view.hpp"
 #include "core/output.hpp"
 #include "core/config/config.hpp"
+#include "core/animation/animation_manager.hpp"
 #include <algorithm>
 #include <iostream>
 
@@ -40,6 +41,9 @@ Workspace::Workspace(Server* server, size_t id)
 }
 
 Workspace::~Workspace() {
+    if (m_server && m_server->get_animation_manager()) {
+        m_server->get_animation_manager()->cancel_for_workspace(this);
+    }
     if (m_ext_handle) {
         wlr_ext_workspace_handle_v1_destroy(m_ext_handle);
         m_ext_handle = nullptr;
@@ -365,24 +369,29 @@ void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
 
     size_t old_id = m_active_workspace_id;
     Workspace* current = get_workspace(old_id);
-    if (current) {
-        current->set_visible(false);
-        if (current->get_ext_handle()) {
-            wlr_ext_workspace_handle_v1_set_active(current->get_ext_handle(), false);
-        }
+    if (current && current->get_ext_handle()) {
+        wlr_ext_workspace_handle_v1_set_active(current->get_ext_handle(), false);
     }
 
     m_active_workspace_id = id;
     Workspace* target = get_or_create_workspace(id);
-    target->set_visible(true);
     if (target->get_ext_handle()) {
         wlr_ext_workspace_handle_v1_set_active(target->get_ext_handle(), true);
     }
 
     recalculate_layout();
 
-    // Auto-prune previous workspace if it was left empty
-    prune_workspace(old_id);
+    struct wlr_box geom = m_server->get_output_manager()->get_primary_usable_geometry();
+    int screen_w = (geom.width > 0) ? geom.width : 1920;
+    bool slide_right = (id > old_id);
+
+    if (m_server->get_animation_manager() && Config::get().is_animations_enabled()) {
+        m_server->get_animation_manager()->schedule_workspace_transition(current, target, slide_right, screen_w);
+    } else {
+        if (current) current->set_visible(false);
+        target->set_visible(true);
+        prune_workspace(old_id);
+    }
 
     if (focus_view) {
         focus_view->focus();
@@ -393,37 +402,77 @@ void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
     }
 }
 
-void WorkspaceManager::prev_workspace() {
+void WorkspaceManager::commit_workspace_switch(size_t id) {
+    if (id == 0 || id == m_active_workspace_id) return;
+
+    size_t old_id = m_active_workspace_id;
+    Workspace* current = get_workspace(old_id);
+    if (current && current->get_ext_handle()) {
+        wlr_ext_workspace_handle_v1_set_active(current->get_ext_handle(), false);
+    }
+
+    m_active_workspace_id = id;
+    Workspace* target = get_or_create_workspace(id);
+    if (target->get_ext_handle()) {
+        wlr_ext_workspace_handle_v1_set_active(target->get_ext_handle(), true);
+    }
+
+    recalculate_layout();
+    prune_workspace(old_id);
+
+    if (target->view_count() > 0) {
+        target->get_view(0)->focus();
+    } else {
+        m_server->set_focused_view(nullptr);
+    }
+}
+
+size_t WorkspaceManager::get_prev_workspace_id() const {
     auto it = m_workspaces.find(m_active_workspace_id);
     if (it != m_workspaces.end() && it != m_workspaces.begin()) {
-        switch_to_workspace(std::prev(it)->first);
+        return std::prev(it)->first;
     } else if (Config::get().is_workspace_cycle_enabled()) {
         if (!m_workspaces.empty() && m_workspaces.rbegin()->first != m_active_workspace_id) {
-            switch_to_workspace(m_workspaces.rbegin()->first);
+            return m_workspaces.rbegin()->first;
         } else if (m_active_workspace_id > 1) {
-            switch_to_workspace(m_active_workspace_id - 1);
+            return m_active_workspace_id - 1;
         } else {
-            switch_to_workspace(10);
+            return 10;
         }
     } else if (m_active_workspace_id > 1) {
-        switch_to_workspace(m_active_workspace_id - 1);
+        return m_active_workspace_id - 1;
+    }
+    return m_active_workspace_id;
+}
+
+size_t WorkspaceManager::get_next_workspace_id() const {
+    auto it = m_workspaces.find(m_active_workspace_id);
+    if (it != m_workspaces.end() && std::next(it) != m_workspaces.end()) {
+        return std::next(it)->first;
+    } else if (Config::get().is_workspace_cycle_enabled()) {
+        if (!m_workspaces.empty() && m_workspaces.begin()->first != m_active_workspace_id) {
+            return m_workspaces.begin()->first;
+        } else if (m_active_workspace_id >= 10) {
+            return 1;
+        } else {
+            return m_active_workspace_id + 1;
+        }
+    } else {
+        return m_active_workspace_id + 1;
+    }
+}
+
+void WorkspaceManager::prev_workspace() {
+    size_t prev_id = get_prev_workspace_id();
+    if (prev_id != m_active_workspace_id) {
+        switch_to_workspace(prev_id);
     }
 }
 
 void WorkspaceManager::next_workspace() {
-    auto it = m_workspaces.find(m_active_workspace_id);
-    if (it != m_workspaces.end() && std::next(it) != m_workspaces.end()) {
-        switch_to_workspace(std::next(it)->first);
-    } else if (Config::get().is_workspace_cycle_enabled()) {
-        if (!m_workspaces.empty() && m_workspaces.begin()->first != m_active_workspace_id) {
-            switch_to_workspace(m_workspaces.begin()->first);
-        } else if (m_active_workspace_id >= 10) {
-            switch_to_workspace(1);
-        } else {
-            switch_to_workspace(m_active_workspace_id + 1);
-        }
-    } else {
-        switch_to_workspace(m_active_workspace_id + 1);
+    size_t next_id = get_next_workspace_id();
+    if (next_id != m_active_workspace_id) {
+        switch_to_workspace(next_id);
     }
 }
 

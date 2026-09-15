@@ -86,8 +86,11 @@ public:
     Workspace* get_active_workspace();
 
     void switch_to_workspace(size_t id, View* focus_view = nullptr);
+    void commit_workspace_switch(size_t id);
     void prev_workspace();
     void next_workspace();
+    size_t get_prev_workspace_id() const;
+    size_t get_next_workspace_id() const;
 
     void add_view_auto(View* view);
     void remove_view(View* view);
