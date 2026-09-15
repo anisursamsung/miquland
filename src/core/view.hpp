@@ -27,6 +27,7 @@ public:
 
     Server* get_server() const { return m_server; }
     ViewType get_type() const { return m_type; }
+    uint64_t get_id() const { return m_id; }
 
     void set_workspace(Workspace* ws);
     Workspace* get_workspace() const { return m_workspace; }
@@ -59,6 +60,9 @@ public:
     struct wlr_xdg_toplevel* get_xdg_toplevel() const { return m_xdg_toplevel; }
     struct wlr_xwayland_surface* get_xwayland_surface() const { return m_xwayland_surface; }
     struct wlr_scene_tree* get_scene_tree() const { return m_scene_tree; }
+    struct wlr_scene_tree* get_surface_scene_tree() const { return m_surface_scene_tree; }
+    struct wlr_scene_buffer* get_border_scene_buffer() const { return m_border_scene_buffer; }
+    struct wlr_scene_blur* get_blur_node() const { return m_blur_node; }
     struct wlr_foreign_toplevel_handle_v1* get_foreign_toplevel() const { return m_foreign_toplevel; }
     bool is_mapped() const { return m_mapped; }
     bool is_override_redirect() const {
@@ -73,6 +77,10 @@ public:
     int get_width() const { return m_width; }
     int get_height() const { return m_height; }
     float get_output_scale() const;
+
+    void set_overview_scaled(bool scaled, double scale = 1.0);
+    void reapply_overview_scale();
+    bool is_overview_scaled() const { return m_is_overview_scaled; }
 
 private:
     // XDG Handlers
@@ -124,6 +132,8 @@ private:
     bool m_is_override_redirect = false;
     bool m_is_fullscreen = false;
     bool m_is_floating = false;
+    bool m_is_overview_scaled = false;
+    double m_overview_scale = 1.0;
     int m_x = 0;
     int m_y = 0;
     int m_width = 0;
@@ -165,6 +175,7 @@ private:
     bool m_is_dialog = false;
     std::vector<View*> m_child_dialogs;
     std::vector<std::unique_ptr<Popup>> m_popups;
+    uint64_t m_id = 0;
 };
 
 } // namespace miquland

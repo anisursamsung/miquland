@@ -74,6 +74,7 @@ add_executable(miquland
     src/core/config/config.cpp
     src/core/session_lock.cpp
     src/core/common/cairo_buffer.cpp
+    src/core/plugin_manager.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.c
     ${CMAKE_CURRENT_BINARY_DIR}/wlr-layer-shell-unstable-v1-protocol.h
@@ -84,7 +85,10 @@ add_executable(miquland
 
 add_subdirectory(subprojects/scenefx)
 
+set_target_properties(miquland PROPERTIES ENABLE_EXPORTS ON)
+
 target_include_directories(miquland PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -110,6 +114,7 @@ target_link_libraries(miquland PRIVATE
     PkgConfig::CAIRO
     PkgConfig::LIBINPUT
     PkgConfig::XCB
+    ${CMAKE_DL_LIBS}
 )
 
 target_compile_options(miquland PRIVATE
@@ -121,6 +126,20 @@ target_compile_options(miquland PRIVATE
 include(GNUInstallDirs)
 install(TARGETS miquland RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# Install plugin development headers
+install(DIRECTORY include/miquland DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY src/core DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/miquland FILES_MATCHING PATTERN "*.hpp")
+install(DIRECTORY DESTINATION ${CMAKE_INSTALL_LIBDIR}/miquland/plugins)
+
+# Generate and install pkg-config file
+configure_file(
+    miquland.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/miquland.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/miquland.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
 # Install assets and desktop entry
 install(FILES assets/miquland.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)
 install(FILES assets/miquland.conf assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)
+

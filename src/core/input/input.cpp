@@ -4,6 +4,7 @@
 #include "core/view.hpp"
 #include "core/output.hpp"
 #include "core/session_lock.hpp"
+#include "core/plugin_manager.hpp"
 #include "core/config/config.hpp"
 #include <unistd.h>
 #include <cstdlib>
@@ -563,6 +564,10 @@ bool InputManager::execute_action(const std::string& action) {
         return false;
     }
 
+    if (m_server->get_plugin_manager() && m_server->get_plugin_manager()->execute_dispatcher(action)) {
+        return true;
+    }
+
     if (action == "terminal") {
         std::string term = Config::get().get_terminal();
         if (term.empty()) term = "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
@@ -648,6 +653,10 @@ void InputManager::process_cursor_motion(uint32_t time) {
 
     if (m_server->get_idle_notifier()) {
         wlr_idle_notifier_v1_notify_activity(m_server->get_idle_notifier(), m_seat);
+    }
+
+    if (m_server->get_plugin_manager() && m_server->get_plugin_manager()->dispatch_pointer_motion(m_cursor->x, m_cursor->y)) {
+        return;
     }
 
     // Handle interactive Move & Resize
@@ -870,6 +879,12 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
             lock_surf->focus();
         }
         wlr_seat_pointer_notify_button(manager->m_seat, event->time_msec, event->button, event->state);
+        return;
+    }
+
+    bool pressed = (event->state == WL_POINTER_BUTTON_STATE_PRESSED);
+    if (manager->m_server->get_plugin_manager() &&
+        manager->m_server->get_plugin_manager()->dispatch_pointer_button(manager->m_cursor->x, manager->m_cursor->y, event->button, pressed)) {
         return;
     }
 
@@ -1293,8 +1308,16 @@ void Keyboard::handle_key(struct wl_listener* listener, void* data) {
 
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(kb->m_keyboard);
+    bool pressed = (event->state == WL_KEYBOARD_KEY_STATE_PRESSED);
 
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    if (kb->m_server->get_plugin_manager()) {
+        for (int i = 0; i < nsyms; ++i) {
+            handled = kb->m_server->get_plugin_manager()->dispatch_key(syms[i], modifiers, pressed);
+            if (handled) break;
+        }
+    }
+
+    if (!handled && pressed) {
         for (int i = 0; i < nsyms; ++i) {
             handled = kb->m_server->get_input_manager()->handle_keybinding(modifiers, syms[i]);
             if (handled) break;

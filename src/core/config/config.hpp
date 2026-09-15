@@ -193,6 +193,7 @@ public:
 
     const std::vector<std::string>& get_exec_commands() const { return m_exec_commands; }
     const std::vector<std::string>& get_exec_once_commands() const { return m_exec_once_commands; }
+    const std::vector<std::string>& get_plugins() const { return m_plugins; }
 
     static std::string get_config_file_path();
     static std::string get_config_dir_path();
@@ -262,6 +263,7 @@ private:
     double m_swipe_threshold = 50.0;
     std::vector<GestureBinding> m_gesture_bindings;
     std::vector<WindowRule> m_window_rules;
+    std::vector<std::string> m_plugins;
 };
 
 } // namespace miquland

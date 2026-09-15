@@ -104,6 +104,7 @@ public:
 
     size_t get_active_workspace_id() const { return m_active_workspace_id; }
     void prune_workspace(size_t id);
+    const std::map<size_t, std::unique_ptr<Workspace>>& get_workspaces_map() const { return m_workspaces; }
 
 private:
     Server* m_server = nullptr;

@@ -13,6 +13,7 @@ class InputManager;
 class View;
 class LayerSurface;
 class SessionLock;
+class PluginManager;
 
 class Server {
 public:
@@ -43,11 +44,13 @@ public:
     OutputManager* get_output_manager() const { return m_output_manager.get(); }
     WorkspaceManager* get_workspace_manager() const { return m_workspace_manager.get(); }
     InputManager* get_input_manager() const { return m_input_manager.get(); }
+    PluginManager* get_plugin_manager() const { return m_plugin_manager.get(); }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
     bool is_valid_view(View* view) const;
     const std::vector<std::unique_ptr<View>>& get_views() const { return m_views; }
+    View* get_view_by_id(uint64_t id) const;
     View* view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy);
 
     void add_layer_surface(std::unique_ptr<LayerSurface> surface);
@@ -154,6 +157,7 @@ private:
     LayerSurface* m_focused_layer_surface = nullptr;
 
     std::unique_ptr<SessionLock> m_session_lock;
+    std::unique_ptr<PluginManager> m_plugin_manager;
 
     static void handle_new_session_lock(struct wl_listener* listener, void* data);
     static void handle_gamma_set_gamma(struct wl_listener* listener, void* data);

@@ -27,6 +27,9 @@ static void draw_rounded_rectangle(cairo_t* cr, double x, double y, double w, do
 View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     : m_server(server), m_type(ViewType::Xdg), m_xdg_toplevel(toplevel)
 {
+    static uint64_t s_next_view_id = 1;
+    m_id = s_next_view_id++;
+
     // Create view container scene tree under root scene (reparented to workspace later)
     m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
     m_scene_tree->node.data = this;
@@ -106,6 +109,9 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
     : m_server(server), m_type(ViewType::XWayland), m_xwayland_surface(xsurface),
       m_is_override_redirect(xsurface->override_redirect)
 {
+    static uint64_t s_next_view_id = 1;
+    m_id = s_next_view_id++;
+
     // Create view container scene tree
     m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
     m_scene_tree->node.data = this;
@@ -701,6 +707,87 @@ void View::update_corner_radius() {
     }
 }
 
+void View::set_overview_scaled(bool scaled, double scale) {
+    if (m_is_overview_scaled == scaled && std::abs(m_overview_scale - scale) < 0.0001) {
+        return;
+    }
+
+    m_is_overview_scaled = scaled;
+    m_overview_scale = scale;
+
+    if (scaled) {
+        if (m_border_scene_buffer) {
+            wlr_scene_node_set_enabled(&m_border_scene_buffer->node, false);
+        }
+        if (m_blur_node) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        if (m_surface_scene_tree) {
+            wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
+        }
+        reapply_overview_scale();
+    } else {
+        int bw = Config::get().get_window_border_width();
+        if (m_surface_scene_tree) {
+            wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+            wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* data) {
+                wlr_scene_buffer_set_dest_size(buf, 0, 0);
+            }, nullptr);
+        }
+        update_frame();
+    }
+}
+
+void View::reapply_overview_scale() {
+    if (!m_is_overview_scaled || m_overview_scale <= 0.0 || !m_surface_scene_tree) {
+        return;
+    }
+
+    double scale = m_overview_scale;
+    int bw = Config::get().get_window_border_width();
+    int client_w = std::max(1, m_width - 2 * bw);
+    int client_h = std::max(1, m_height - 2 * bw);
+
+    if (m_border_scene_buffer) {
+        wlr_scene_node_set_enabled(&m_border_scene_buffer->node, false);
+    }
+    if (m_blur_node) {
+        wlr_scene_node_set_enabled(&m_blur_node->node, false);
+    }
+
+    int geom_x = 0, geom_y = 0;
+    int geom_w = client_w, geom_h = client_h;
+
+    if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+        auto* xdg_surf = m_xdg_toplevel->base;
+        geom_x = xdg_surf->current.geometry.x;
+        geom_y = xdg_surf->current.geometry.y;
+        if (xdg_surf->current.geometry.width > 0 && xdg_surf->current.geometry.height > 0) {
+            geom_w = xdg_surf->current.geometry.width;
+            geom_h = xdg_surf->current.geometry.height;
+        }
+    }
+
+    // Clip in root surface unscaled coordinate space to crop CSD drop-shadows
+    struct wlr_box clip = {
+        .x = geom_x,
+        .y = geom_y,
+        .width = geom_w,
+        .height = geom_h,
+    };
+    wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
+
+    // Scale all buffers in surface scene tree
+    wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* data) {
+        double s = *static_cast<double*>(data);
+        if (buf->buffer) {
+            int sw = std::max(1, static_cast<int>(std::round(buf->buffer->width * s)));
+            int sh = std::max(1, static_cast<int>(std::round(buf->buffer->height * s)));
+            wlr_scene_buffer_set_dest_size(buf, sw, sh);
+        }
+    }, &scale);
+}
+
 void View::focus() {
     if (!m_mapped) return;
 
@@ -990,7 +1077,11 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
     }
 
     if (view->m_mapped) {
-        view->update_frame();
+        if (view->m_is_overview_scaled) {
+            view->reapply_overview_scale();
+        } else {
+            view->update_frame();
+        }
     }
 }
 

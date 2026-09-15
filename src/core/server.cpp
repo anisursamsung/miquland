@@ -6,6 +6,7 @@
 #include "core/layer_surface.hpp"
 #include "core/popup.hpp"
 #include "core/session_lock.hpp"
+#include "core/plugin_manager.hpp"
 #include "core/config/config.hpp"
 extern "C" {
 #include <scenefx/render/fx_renderer/fx_renderer.h>
@@ -26,6 +27,11 @@ Server::~Server() {
     if (m_inotify_file_wd >= 0 && m_inotify_fd >= 0) inotify_rm_watch(m_inotify_fd, m_inotify_file_wd);
     if (m_inotify_wd >= 0 && m_inotify_fd >= 0) inotify_rm_watch(m_inotify_fd, m_inotify_wd);
     if (m_inotify_fd >= 0) ::close(m_inotify_fd);
+
+    if (m_plugin_manager) {
+        m_plugin_manager->unload_all();
+        m_plugin_manager.reset();
+    }
 
     m_layer_surfaces.clear();
     m_views.clear();
@@ -221,6 +227,9 @@ bool Server::init() {
 
     setup_config_watcher();
 
+    m_plugin_manager = std::make_unique<PluginManager>(this);
+    m_plugin_manager->load_configured_plugins();
+
     // Autostart commands from configuration
     for (const auto& cmd : Config::get().get_exec_once_commands()) {
         m_input_manager->spawn_command(cmd.c_str());
@@ -329,6 +338,11 @@ void Server::reload_config() {
         m_workspace_manager->recalculate_layout();
     }
 
+    if (m_plugin_manager) {
+        m_plugin_manager->unload_all();
+        m_plugin_manager->load_configured_plugins();
+    }
+
     for (const auto& cmd : Config::get().get_exec_commands()) {
         if (m_input_manager) {
             m_input_manager->spawn_command(cmd.c_str());
@@ -388,6 +402,14 @@ bool Server::is_valid_view(View* view) const {
         if (v.get() == view) return true;
     }
     return false;
+}
+
+View* Server::get_view_by_id(uint64_t id) const {
+    if (id == 0) return nullptr;
+    for (const auto& v : m_views) {
+        if (v && v->get_id() == id) return v.get();
+    }
+    return nullptr;
 }
 
 void Server::set_focused_view(View* view) {

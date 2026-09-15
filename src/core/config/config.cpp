@@ -608,6 +608,8 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             if (!resolved_cmd.empty()) {
                 file_exec_once_cmds.push_back(resolved_cmd);
             }
+        } else if (key == "plugin") {
+            m_plugins.push_back(value);
         } else if (key == "focus_follows_mouse" || key == "focus_mouse") {
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -928,6 +930,7 @@ void Config::load() {
     std::vector<std::string> file_exec_cmds;
     std::vector<std::string> file_exec_once_cmds;
     m_blurred_layers.clear();
+    m_plugins.clear();
 
     load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
