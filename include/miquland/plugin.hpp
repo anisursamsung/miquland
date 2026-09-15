@@ -45,6 +45,9 @@ public:
     virtual void register_pointer_button_hook(std::function<bool(double lx, double ly, uint32_t button, bool pressed)> hook) = 0;
     virtual void register_pointer_motion_hook(std::function<bool(double lx, double ly)> hook) = 0;
     virtual void register_key_hook(std::function<bool(uint32_t keysym, uint32_t modifiers, bool pressed)> hook) = 0;
+
+    // Lifecycle hooks: called when a View is being destroyed before scene tree teardown
+    virtual void register_view_destroy_hook(std::function<void(View*)> hook) = 0;
 };
 
 typedef PluginInfo* (*PluginInitFunc)(PluginAPI* api);

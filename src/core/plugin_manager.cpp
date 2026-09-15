@@ -54,6 +54,10 @@ void PluginManager::register_key_hook(std::function<bool(uint32_t keysym, uint32
     m_key_hooks.push_back(std::move(hook));
 }
 
+void PluginManager::register_view_destroy_hook(std::function<void(View*)> hook) {
+    m_view_destroy_hooks.push_back(std::move(hook));
+}
+
 bool PluginManager::load_plugin(const std::string& path) {
     void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!handle) {
@@ -99,11 +103,6 @@ bool PluginManager::load_plugin(const std::string& path) {
 }
 
 void PluginManager::unload_all() {
-    m_dispatchers.clear();
-    m_pointer_button_hooks.clear();
-    m_pointer_motion_hooks.clear();
-    m_key_hooks.clear();
-
     for (auto it = m_loaded_plugins.rbegin(); it != m_loaded_plugins.rend(); ++it) {
         if (it->exit_func) {
             it->exit_func();
@@ -113,6 +112,12 @@ void PluginManager::unload_all() {
         }
     }
     m_loaded_plugins.clear();
+
+    m_dispatchers.clear();
+    m_pointer_button_hooks.clear();
+    m_pointer_motion_hooks.clear();
+    m_key_hooks.clear();
+    m_view_destroy_hooks.clear();
 }
 
 void PluginManager::load_configured_plugins() {
@@ -159,6 +164,14 @@ bool PluginManager::dispatch_key(uint32_t keysym, uint32_t modifiers, bool press
         }
     }
     return false;
+}
+
+void PluginManager::dispatch_view_destroy(View* view) {
+    for (auto it = m_view_destroy_hooks.rbegin(); it != m_view_destroy_hooks.rend(); ++it) {
+        if (*it) {
+            (*it)(view);
+        }
+    }
 }
 
 } // namespace miquland

@@ -31,6 +31,8 @@ public:
 
     void set_workspace(Workspace* ws);
     Workspace* get_workspace() const { return m_workspace; }
+    size_t get_last_workspace_id() const { return m_last_workspace_id; }
+    void set_last_workspace_id(size_t id) { m_last_workspace_id = id; }
 
     void set_geometry(int x, int y, int width, int height);
     void set_fullscreen(bool fullscreen);
@@ -116,6 +118,7 @@ private:
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
+    size_t m_last_workspace_id = 0;
     ViewType m_type = ViewType::Xdg;
 
     struct wlr_xdg_toplevel* m_xdg_toplevel = nullptr;

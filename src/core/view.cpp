@@ -5,6 +5,7 @@
 #include "core/workspace.hpp"
 #include "core/input/input.hpp"
 #include "core/config/config.hpp"
+#include "core/plugin_manager.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -200,6 +201,10 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
 }
 
 View::~View() {
+    if (m_server && m_server->get_plugin_manager()) {
+        m_server->get_plugin_manager()->dispatch_view_destroy(this);
+    }
+
     if (m_server && m_server->get_input_manager()) {
         m_server->get_input_manager()->notify_view_destroyed(this);
     }
@@ -321,6 +326,9 @@ std::string View::get_app_id() const {
 void View::set_workspace(Workspace* ws) {
     if (m_workspace == ws) return;
     m_workspace = ws;
+    if (m_workspace) {
+        m_last_workspace_id = m_workspace->get_id();
+    }
     if (m_workspace && m_scene_tree) {
         struct wlr_scene_tree* target_parent = (m_is_floating || m_is_dialog)
             ? m_workspace->get_floating_tree()
@@ -931,7 +939,11 @@ void View::handle_map(struct wl_listener* listener, void* data) {
     std::string app_id = view->get_app_id();
     std::string title = view->get_title();
 
-    if (Config::get().should_float(app_id, title)) {
+    bool is_pip = (title.find("Picture-in-Picture") != std::string::npos ||
+                   title.find("Picture in picture") != std::string::npos ||
+                   app_id.find("pip") != std::string::npos);
+
+    if (Config::get().should_float(app_id, title) || is_pip) {
         view->set_floating(true);
     }
 
@@ -1165,11 +1177,22 @@ void View::handle_set_app_id(struct wl_listener* listener, void* data) {
 
 void View::handle_foreign_request_activate(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_foreign_request_activate_listener);
-    if (view->m_workspace && view->m_server->get_workspace_manager()) {
-        view->m_server->get_workspace_manager()->switch_to_workspace(view->m_workspace->get_id(), view);
+    if (!view->m_server) return;
+    auto* wm = view->m_server->get_workspace_manager();
+    if (!wm) return;
+
+    if (view->m_workspace) {
+        wm->switch_to_workspace(view->m_workspace->get_id(), view);
     } else {
-        view->focus();
+        // Orphan-view recovery: resurrect or join workspace when unminimizing from tray
+        size_t target_ws_id = (view->m_last_workspace_id > 0) ? view->m_last_workspace_id : wm->get_active_workspace_id();
+        Workspace* ws = wm->get_or_create_workspace(target_ws_id);
+        if (ws) {
+            ws->add_view(view);
+            wm->switch_to_workspace(target_ws_id, view);
+        }
     }
+    view->focus();
 }
 
 void View::handle_foreign_request_close(struct wl_listener* listener, void* data) {

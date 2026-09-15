@@ -35,6 +35,7 @@ public:
     void register_pointer_button_hook(std::function<bool(double lx, double ly, uint32_t button, bool pressed)> hook) override;
     void register_pointer_motion_hook(std::function<bool(double lx, double ly)> hook) override;
     void register_key_hook(std::function<bool(uint32_t keysym, uint32_t modifiers, bool pressed)> hook) override;
+    void register_view_destroy_hook(std::function<void(View*)> hook) override;
 
     // Loader & Lifecycle
     bool load_plugin(const std::string& path);
@@ -47,6 +48,7 @@ public:
     bool dispatch_pointer_button(double lx, double ly, uint32_t button, bool pressed);
     bool dispatch_pointer_motion(double lx, double ly);
     bool dispatch_key(uint32_t keysym, uint32_t modifiers, bool pressed);
+    void dispatch_view_destroy(View* view);
 
     const std::vector<LoadedPlugin>& get_loaded_plugins() const { return m_loaded_plugins; }
 
@@ -57,6 +59,7 @@ private:
     std::vector<std::function<bool(double, double, uint32_t, bool)>> m_pointer_button_hooks;
     std::vector<std::function<bool(double, double)>> m_pointer_motion_hooks;
     std::vector<std::function<bool(uint32_t, uint32_t, bool)>> m_key_hooks;
+    std::vector<std::function<void(View*)>> m_view_destroy_hooks;
 };
 
 } // namespace miquland
