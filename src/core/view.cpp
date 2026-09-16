@@ -790,9 +790,14 @@ void View::apply_animation_transform(double scale, float opacity) {
     }
 
     if (m_blur_node) {
-        int blur_w = std::max(1, static_cast<int>(std::round(cur_w)));
-        int blur_h = std::max(1, static_cast<int>(std::round(cur_h)));
-        wlr_scene_blur_set_size(m_blur_node, blur_w, blur_h);
+        if (safe_opacity < 0.05f || !Config::get().is_blur_enabled()) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        } else {
+            wlr_scene_node_set_enabled(&m_blur_node->node, true);
+            int blur_w = std::max(1, static_cast<int>(std::round(cur_w)));
+            int blur_h = std::max(1, static_cast<int>(std::round(cur_h)));
+            wlr_scene_blur_set_size(m_blur_node, blur_w, blur_h);
+        }
     }
 }
 
