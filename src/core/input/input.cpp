@@ -8,6 +8,7 @@
 #include "core/animation/animation_manager.hpp"
 #include "core/config/config.hpp"
 #include <unistd.h>
+#include <sys/wait.h>
 #include <cstdlib>
 #include <cmath>
 #include <algorithm>
@@ -218,11 +219,25 @@ void InputManager::spawn_command(const char* cmd) {
     if (!cmd || !*cmd) return;
     log_info("Executing command: " + std::string(cmd));
 
-    if (fork() == 0) {
-        setsid();
-        execl("/bin/sh", "sh", "-c", cmd, nullptr);
-        _exit(1);
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_error("Failed to fork process for command: " + std::string(cmd));
+        return;
     }
+
+    if (pid == 0) {
+        // Double-fork so grandchild process is adopted by init/systemd
+        pid_t grand_pid = fork();
+        if (grand_pid == 0) {
+            setsid();
+            execl("/bin/sh", "sh", "-c", cmd, nullptr);
+            _exit(127);
+        }
+        _exit(grand_pid < 0 ? 1 : 0);
+    }
+
+    // Parent waits for immediate child to prevent any zombie accumulation
+    waitpid(pid, nullptr, 0);
 }
 
 void InputManager::remove_keyboard(Keyboard* kb) {
@@ -1003,7 +1018,7 @@ void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void*
     manager->m_swipe_triggered = false;
     manager->m_touchpad_workspace_swipe_active = false;
 
-    if (event->fingers == 3 && Config::get().is_animations_enabled() && manager->m_server->get_animation_manager()) {
+    if (event->fingers == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
         manager->m_touchpad_workspace_swipe_active = true;
         manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
     }
@@ -1137,7 +1152,7 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
     int finger_count = static_cast<int>(manager->m_touch_points.size());
 
     // Check if 3-finger workspace gesture should be handled interactively
-    if (finger_count == 3 && Config::get().is_animations_enabled() && manager->m_server->get_animation_manager()) {
+    if (finger_count == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
         for (auto& [id, pt] : manager->m_touch_points) {
             pt.start_lx = pt.current_lx;
             pt.start_ly = pt.current_ly;

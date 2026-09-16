@@ -34,7 +34,7 @@ void AnimationManager::schedule_workspace_transition(
 ) {
     if (!to_ws) return;
 
-    if (!Config::get().is_animations_enabled() || !from_ws || screen_width <= 0) {
+    if (!Config::get().is_workspace_animations_enabled() || !from_ws || screen_width <= 0) {
         if (from_ws) from_ws->set_visible(false);
         to_ws->set_visible(true);
         return;
@@ -43,8 +43,8 @@ void AnimationManager::schedule_workspace_transition(
     cancel_for_workspace(from_ws);
     cancel_for_workspace(to_ws);
 
-    int duration = Config::get().get_animation_duration_ms();
-    auto easing = Easing::from_name(Config::get().get_animation_curve());
+    int duration = Config::get().get_workspace_animation_duration_ms();
+    auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
     int offset = slide_right ? screen_width : -screen_width;
     uint64_t now = get_current_time_ms();
 
@@ -118,7 +118,7 @@ bool AnimationManager::is_workspace_animating() const {
 }
 
 void AnimationManager::begin_workspace_swipe(int fingers) {
-    if (!Config::get().is_animations_enabled() || !m_server || !m_server->get_workspace_manager()) {
+    if (!Config::get().is_workspace_animations_enabled() || !m_server || !m_server->get_workspace_manager()) {
         return;
     }
 
@@ -242,9 +242,9 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
     double ratio = (screen_w > 0) ? (std::abs(delta_x) / static_cast<double>(screen_w)) : 0.0;
     bool commit = !cancelled && (target != nullptr) && (ratio >= 0.30);
 
-    auto easing = Easing::from_name(Config::get().get_animation_curve());
+    auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
     uint64_t now = get_current_time_ms();
-    int base_dur = Config::get().get_animation_duration_ms();
+    int base_dur = Config::get().get_workspace_animation_duration_ms();
 
     if (commit && target) {
         int cur_target_x = (direction == -1) ? -screen_w : screen_w;
@@ -357,12 +357,223 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
     schedule_next_frame();
 }
 
+void AnimationManager::schedule_window_open(View* view) {
+    if (!view || !view->is_mapped()) return;
+
+    if (!Config::get().is_window_animations_enabled()) {
+        view->apply_animation_transform(1.0, 1.0f);
+        view->update_frame();
+        return;
+    }
+
+    cancel_for_view(view);
+
+    int duration = Config::get().get_window_animation_duration_ms();
+    auto easing = Easing::from_name(Config::get().get_window_animation_curve());
+    double open_scale = Config::get().get_window_animation_open_scale();
+    uint64_t now = get_current_time_ms();
+
+    float target_opacity = view->is_focused()
+        ? Config::get().get_window_opacity_active()
+        : Config::get().get_window_opacity_inactive();
+    target_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), target_opacity);
+    target_opacity = std::clamp(target_opacity, 0.0f, 1.0f);
+
+    // Initialize with center-scaled start position and 0 opacity
+    view->apply_animation_transform(open_scale, 0.0f);
+
+    ViewAnimation anim;
+    anim.id = m_next_id++;
+    anim.view = view;
+    anim.start_scale = open_scale;
+    anim.target_scale = 1.0;
+    anim.start_opacity = 0.0f;
+    anim.target_opacity = target_opacity;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.easing_fn = easing;
+    anim.on_complete = [view]() {
+        if (view && view->is_mapped()) {
+            view->apply_animation_transform(1.0, 1.0f);
+            view->update_frame();
+        }
+    };
+
+    m_view_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
+void AnimationManager::schedule_window_close(View* view, std::function<void()> on_complete) {
+    if (!view) {
+        if (on_complete) on_complete();
+        return;
+    }
+
+    if (!Config::get().is_window_animations_enabled() || !view->is_mapped() || view->is_fullscreen()) {
+        if (on_complete) on_complete();
+        return;
+    }
+
+    cancel_for_view(view);
+
+    int duration = Config::get().get_window_animation_duration_ms();
+    auto easing = Easing::from_name(Config::get().get_window_animation_curve());
+    double close_scale = Config::get().get_window_animation_close_scale();
+    uint64_t now = get_current_time_ms();
+
+    float cur_opacity = view->is_focused()
+        ? Config::get().get_window_opacity_active()
+        : Config::get().get_window_opacity_inactive();
+    cur_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), cur_opacity);
+    cur_opacity = std::clamp(cur_opacity, 0.0f, 1.0f);
+
+    ViewAnimation anim;
+    anim.id = m_next_id++;
+    anim.view = view;
+    anim.start_scale = 1.0;
+    anim.target_scale = close_scale;
+    anim.start_opacity = cur_opacity;
+    anim.target_opacity = 0.0f;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.easing_fn = easing;
+    anim.on_complete = std::move(on_complete);
+
+    m_view_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
+bool AnimationManager::is_view_animating(View* view) const {
+    if (!view) return !m_view_animations.empty() || !m_geometry_animations.empty();
+    for (const auto& anim : m_view_animations) {
+        if (anim.view == view) return true;
+    }
+    for (const auto& anim : m_geometry_animations) {
+        if (anim.view == view) return true;
+    }
+    return false;
+}
+
+bool AnimationManager::is_view_geometry_animating(View* view) const {
+    if (!view) return !m_geometry_animations.empty();
+    for (const auto& anim : m_geometry_animations) {
+        if (anim.view == view) return true;
+    }
+    return false;
+}
+
+struct wlr_box AnimationManager::get_view_current_box(View* view, const struct wlr_box& fallback) const {
+    if (!view) return fallback;
+    uint64_t now = get_current_time_ms();
+    for (const auto& anim : m_geometry_animations) {
+        if (anim.view == view) {
+            float progress = 1.0f;
+            if (anim.duration_ms > 0) {
+                progress = static_cast<float>(now - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+            }
+            progress = std::clamp(progress, 0.0f, 1.0f);
+            float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
+            struct wlr_box cur_box;
+            cur_box.x = anim.start_x + static_cast<int>(std::round(static_cast<float>(anim.target_x - anim.start_x) * eased));
+            cur_box.y = anim.start_y + static_cast<int>(std::round(static_cast<float>(anim.target_y - anim.start_y) * eased));
+            cur_box.width = std::max(1, anim.start_w + static_cast<int>(std::round(static_cast<float>(anim.target_w - anim.start_w) * eased)));
+            cur_box.height = std::max(1, anim.start_h + static_cast<int>(std::round(static_cast<float>(anim.target_h - anim.start_h) * eased)));
+            return cur_box;
+        }
+    }
+    return fallback;
+}
+
+void AnimationManager::schedule_view_geometry(View* view, const struct wlr_box& from_box, const struct wlr_box& to_box) {
+    if (!view || !view->is_mapped() || to_box.width <= 0 || to_box.height <= 0) {
+        if (view) {
+            view->set_geometry(to_box.x, to_box.y, to_box.width, to_box.height);
+        }
+        return;
+    }
+
+    if (!Config::get().is_window_animations_enabled() || view->is_fullscreen() || view->is_override_redirect()) {
+        view->set_geometry(to_box.x, to_box.y, to_box.width, to_box.height);
+        return;
+    }
+
+    struct wlr_box actual_from = from_box;
+    uint64_t now = get_current_time_ms();
+
+    auto it_existing = std::find_if(m_geometry_animations.begin(), m_geometry_animations.end(), [view](const ViewGeometryAnimation& a) {
+        return a.view == view;
+    });
+
+    if (it_existing != m_geometry_animations.end()) {
+        float progress = 1.0f;
+        if (it_existing->duration_ms > 0) {
+            progress = static_cast<float>(now - it_existing->start_time_ms) / static_cast<float>(it_existing->duration_ms);
+        }
+        progress = std::clamp(progress, 0.0f, 1.0f);
+        float eased = it_existing->easing_fn ? it_existing->easing_fn(progress) : progress;
+        actual_from.x = it_existing->start_x + static_cast<int>(std::round(static_cast<float>(it_existing->target_x - it_existing->start_x) * eased));
+        actual_from.y = it_existing->start_y + static_cast<int>(std::round(static_cast<float>(it_existing->target_y - it_existing->start_y) * eased));
+        actual_from.width = std::max(1, it_existing->start_w + static_cast<int>(std::round(static_cast<float>(it_existing->target_w - it_existing->start_w) * eased)));
+        actual_from.height = std::max(1, it_existing->start_h + static_cast<int>(std::round(static_cast<float>(it_existing->target_h - it_existing->start_h) * eased)));
+
+        m_geometry_animations.erase(it_existing);
+    }
+
+    if (actual_from.x == to_box.x && actual_from.y == to_box.y &&
+        actual_from.width == to_box.width && actual_from.height == to_box.height) {
+        view->set_geometry(to_box.x, to_box.y, to_box.width, to_box.height);
+        return;
+    }
+
+    int duration = Config::get().get_window_animation_duration_ms();
+    auto easing = Easing::from_name(Config::get().get_window_animation_curve());
+
+    // Notify client of target size immediately so it starts preparing target buffer
+    view->notify_geometry_target(to_box.x, to_box.y, to_box.width, to_box.height);
+
+    // Apply starting frame transform
+    view->apply_geometry_animation(actual_from.x, actual_from.y, actual_from.width, actual_from.height);
+
+    ViewGeometryAnimation anim;
+    anim.id = m_next_id++;
+    anim.view = view;
+    anim.start_x = actual_from.x;
+    anim.start_y = actual_from.y;
+    anim.start_w = actual_from.width;
+    anim.start_h = actual_from.height;
+    anim.target_x = to_box.x;
+    anim.target_y = to_box.y;
+    anim.target_w = to_box.width;
+    anim.target_h = to_box.height;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.easing_fn = easing;
+    anim.on_complete = [view, to_box]() {
+        if (view && view->is_mapped()) {
+            view->finish_geometry_animation(to_box.x, to_box.y, to_box.width, to_box.height);
+        }
+    };
+
+    m_geometry_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
 void AnimationManager::cancel_for_view(View* view) {
     if (!view) return;
-    auto it = std::remove_if(m_animations.begin(), m_animations.end(), [view](const NodeAnimation& a) {
+    auto it_node = std::remove_if(m_animations.begin(), m_animations.end(), [view](const NodeAnimation& a) {
         return a.bound_view == view;
     });
-    m_animations.erase(it, m_animations.end());
+    m_animations.erase(it_node, m_animations.end());
+
+    auto it_view = std::remove_if(m_view_animations.begin(), m_view_animations.end(), [view](const ViewAnimation& a) {
+        return a.view == view;
+    });
+    m_view_animations.erase(it_view, m_view_animations.end());
+
+    auto it_geom = std::remove_if(m_geometry_animations.begin(), m_geometry_animations.end(), [view](const ViewGeometryAnimation& a) {
+        return a.view == view;
+    });
+    m_geometry_animations.erase(it_geom, m_geometry_animations.end());
 }
 
 void AnimationManager::cancel_for_workspace(Workspace* ws) {
@@ -414,10 +625,12 @@ void AnimationManager::clear() {
         m_swipe_state.target_ws = nullptr;
     }
     m_animations.clear();
+    m_view_animations.clear();
+    m_geometry_animations.clear();
 }
 
 void AnimationManager::tick(uint64_t now_ms) {
-    if (m_animations.empty()) return;
+    if (!has_active_animations()) return;
 
     if (now_ms == 0) {
         now_ms = get_current_time_ms();
@@ -425,6 +638,7 @@ void AnimationManager::tick(uint64_t now_ms) {
 
     std::vector<std::function<void()>> completions;
 
+    // 1. Tick node animations (workspaces)
     for (auto& anim : m_animations) {
         if (!anim.node) {
             anim.completed = true;
@@ -452,16 +666,85 @@ void AnimationManager::tick(uint64_t now_ms) {
         }
     }
 
-    auto it = std::remove_if(m_animations.begin(), m_animations.end(), [](const NodeAnimation& a) {
+    auto it_node = std::remove_if(m_animations.begin(), m_animations.end(), [](const NodeAnimation& a) {
         return a.completed;
     });
-    m_animations.erase(it, m_animations.end());
+    m_animations.erase(it_node, m_animations.end());
 
-    for (auto& cb : completions) {
-        cb();
+    // 2. Tick view geometry animations (smooth tiling transitions)
+    for (auto& anim : m_geometry_animations) {
+        if (!anim.view || !anim.view->is_mapped()) {
+            anim.completed = true;
+            continue;
+        }
+
+        float progress = 1.0f;
+        if (anim.duration_ms > 0) {
+            progress = static_cast<float>(now_ms - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+        }
+
+        if (progress >= 1.0f) {
+            progress = 1.0f;
+            anim.completed = true;
+        }
+
+        float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
+        int cur_x = anim.start_x + static_cast<int>(std::round(static_cast<float>(anim.target_x - anim.start_x) * eased));
+        int cur_y = anim.start_y + static_cast<int>(std::round(static_cast<float>(anim.target_y - anim.start_y) * eased));
+        int cur_w = std::max(1, anim.start_w + static_cast<int>(std::round(static_cast<float>(anim.target_w - anim.start_w) * eased)));
+        int cur_h = std::max(1, anim.start_h + static_cast<int>(std::round(static_cast<float>(anim.target_h - anim.start_h) * eased)));
+
+        anim.view->apply_geometry_animation(cur_x, cur_y, cur_w, cur_h);
+
+        if (anim.completed && anim.on_complete) {
+            completions.push_back(anim.on_complete);
+        }
     }
 
-    if (!m_animations.empty()) {
+    auto it_geom = std::remove_if(m_geometry_animations.begin(), m_geometry_animations.end(), [](const ViewGeometryAnimation& a) {
+        return a.completed;
+    });
+    m_geometry_animations.erase(it_geom, m_geometry_animations.end());
+
+    // 3. Tick view pop-in / fade animations (open & close transforms)
+    for (auto& anim : m_view_animations) {
+        if (!anim.view || !anim.view->is_mapped()) {
+            anim.completed = true;
+            continue;
+        }
+
+        float progress = 1.0f;
+        if (anim.duration_ms > 0) {
+            progress = static_cast<float>(now_ms - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+        }
+
+        if (progress >= 1.0f) {
+            progress = 1.0f;
+            anim.completed = true;
+        }
+
+        float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
+        double cur_scale = anim.start_scale + (anim.target_scale - anim.start_scale) * static_cast<double>(eased);
+        float cur_opacity = anim.start_opacity + (anim.target_opacity - anim.start_opacity) * eased;
+
+        anim.view->apply_animation_transform(cur_scale, cur_opacity);
+
+        if (anim.completed && anim.on_complete) {
+            completions.push_back(anim.on_complete);
+        }
+    }
+
+    auto it_view = std::remove_if(m_view_animations.begin(), m_view_animations.end(), [](const ViewAnimation& a) {
+        return a.completed;
+    });
+    m_view_animations.erase(it_view, m_view_animations.end());
+
+    // 4. Invoke completions
+    for (auto& cb : completions) {
+        if (cb) cb();
+    }
+
+    if (has_active_animations()) {
         schedule_next_frame();
     }
 }

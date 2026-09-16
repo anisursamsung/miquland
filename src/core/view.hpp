@@ -44,6 +44,11 @@ public:
     void update_border();
     void update_opacity();
     void update_corner_radius();
+    void apply_animation_transform(double scale, float opacity);
+    void apply_geometry_animation(int x, int y, int width, int height);
+    void notify_geometry_target(int x, int y, int width, int height);
+    void finish_geometry_animation(int x, int y, int width, int height);
+    bool is_animating_geometry() const { return m_is_animating_geometry; }
     bool is_focused() const;
 
     std::string get_title() const;
@@ -78,6 +83,10 @@ public:
     int get_y() const { return m_y; }
     int get_width() const { return m_width; }
     int get_height() const { return m_height; }
+    int get_current_anim_x() const { return (m_current_anim_width > 0) ? m_current_anim_x : m_x; }
+    int get_current_anim_y() const { return (m_current_anim_height > 0) ? m_current_anim_y : m_y; }
+    int get_current_anim_width() const { return (m_current_anim_width > 0) ? m_current_anim_width : m_width; }
+    int get_current_anim_height() const { return (m_current_anim_height > 0) ? m_current_anim_height : m_height; }
     float get_output_scale() const;
 
     void set_overview_scaled(bool scaled, double scale = 1.0);
@@ -132,6 +141,8 @@ private:
     std::unique_ptr<CairoBuffer> m_border_buffer;
 
     bool m_mapped = false;
+    bool m_is_animating_close = false;
+    bool m_is_animating_geometry = false;
     bool m_is_override_redirect = false;
     bool m_is_fullscreen = false;
     bool m_is_floating = false;
@@ -141,6 +152,10 @@ private:
     int m_y = 0;
     int m_width = 0;
     int m_height = 0;
+    int m_current_anim_x = 0;
+    int m_current_anim_y = 0;
+    int m_current_anim_width = 0;
+    int m_current_anim_height = 0;
 
     // Saved state for fullscreen → tiled restoration
     struct {

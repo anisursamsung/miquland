@@ -385,6 +385,11 @@ void View::set_geometry(int x, int y, int width, int height) {
     m_y = y;
     m_width = width;
     m_height = height;
+    m_current_anim_x = x;
+    m_current_anim_y = y;
+    m_current_anim_width = width;
+    m_current_anim_height = height;
+    m_is_animating_geometry = false;
 
     if (m_scene_tree) {
         wlr_scene_node_set_position(&m_scene_tree->node, x, y);
@@ -720,6 +725,210 @@ void View::update_corner_radius() {
     }
 }
 
+void View::apply_animation_transform(double scale, float opacity) {
+    if (!m_mapped || !m_scene_tree || m_width <= 0 || m_height <= 0) {
+        return;
+    }
+
+    int base_w = (m_current_anim_width > 0) ? m_current_anim_width : m_width;
+    int base_h = (m_current_anim_height > 0) ? m_current_anim_height : m_height;
+    int base_x = (m_current_anim_width > 0) ? m_current_anim_x : m_x;
+    int base_y = (m_current_anim_height > 0) ? m_current_anim_y : m_y;
+
+    if (scale >= 0.999 && opacity >= 0.999f && !m_is_animating_geometry) {
+        wlr_scene_node_set_position(&m_scene_tree->node, m_x, m_y);
+        int bw = Config::get().get_window_border_width();
+        if (m_surface_scene_tree) {
+            wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+            wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* data) {
+                wlr_scene_buffer_set_dest_size(buf, 0, 0);
+            }, nullptr);
+        }
+        if (m_border_scene_buffer) {
+            wlr_scene_buffer_set_dest_size(m_border_scene_buffer, 0, 0);
+        }
+        update_frame();
+        return;
+    }
+
+    // Center-anchored coordinate transformation relative to current base geometry
+    double cur_w = std::max(1.0, static_cast<double>(base_w) * scale);
+    double cur_h = std::max(1.0, static_cast<double>(base_h) * scale);
+    int cur_x = static_cast<int>(std::round(static_cast<double>(base_x) + (static_cast<double>(base_w) - cur_w) / 2.0));
+    int cur_y = static_cast<int>(std::round(static_cast<double>(base_y) + (static_cast<double>(base_h) - cur_h) / 2.0));
+
+    wlr_scene_node_set_position(&m_scene_tree->node, cur_x, cur_y);
+
+    int bw = Config::get().get_window_border_width();
+    int scaled_bw = static_cast<int>(std::round(static_cast<double>(bw) * scale));
+    float safe_opacity = std::clamp(opacity, 0.0f, 1.0f);
+
+    if (m_surface_scene_tree) {
+        wlr_scene_node_set_position(&m_surface_scene_tree->node, scaled_bw, scaled_bw);
+
+        struct BufferTransformData {
+            double scale;
+            float opacity;
+        } data = { scale, safe_opacity };
+
+        wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
+            auto* d = static_cast<BufferTransformData*>(user_data);
+            if (buf->buffer) {
+                int sw = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->width) * d->scale)));
+                int sh = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->height) * d->scale)));
+                wlr_scene_buffer_set_dest_size(buf, sw, sh);
+            }
+            wlr_scene_buffer_set_opacity(buf, d->opacity);
+        }, &data);
+    }
+
+    if (m_border_scene_buffer) {
+        int border_w = std::max(1, static_cast<int>(std::round(cur_w)));
+        int border_h = std::max(1, static_cast<int>(std::round(cur_h)));
+        wlr_scene_buffer_set_dest_size(m_border_scene_buffer, border_w, border_h);
+        wlr_scene_buffer_set_opacity(m_border_scene_buffer, safe_opacity);
+    }
+
+    if (m_blur_node) {
+        int blur_w = std::max(1, static_cast<int>(std::round(cur_w)));
+        int blur_h = std::max(1, static_cast<int>(std::round(cur_h)));
+        wlr_scene_blur_set_size(m_blur_node, blur_w, blur_h);
+    }
+}
+
+void View::notify_geometry_target(int x, int y, int width, int height) {
+    m_is_animating_geometry = true;
+
+    int bw = Config::get().get_window_border_width();
+    int client_w = std::max(1, width - 2 * bw);
+    int client_h = std::max(1, height - 2 * bw);
+
+    if (m_type == ViewType::Xdg && m_xdg_toplevel) {
+        if (!is_dialog() && !is_floating()) {
+            wlr_xdg_toplevel_set_tiled(m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+        }
+        if (m_xdg_toplevel->resource && wl_resource_get_version(m_xdg_toplevel->resource) >= 4) {
+            wlr_xdg_toplevel_set_bounds(m_xdg_toplevel, client_w, client_h);
+        }
+        wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
+    } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
+        int conf_x = x + bw;
+        int conf_y = y + bw;
+        int conf_w = client_w;
+        int conf_h = client_h;
+        if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
+            float scale = get_output_scale();
+            if (scale > 1.001f) {
+                conf_w = std::max(1, (int)std::round(client_w * scale));
+                conf_h = std::max(1, (int)std::round(client_h * scale));
+                conf_x = (int)std::round(conf_x * scale);
+                conf_y = (int)std::round(conf_y * scale);
+            }
+        }
+        wlr_xwayland_surface_configure(m_xwayland_surface, conf_x, conf_y, conf_w, conf_h);
+    }
+}
+
+void View::apply_geometry_animation(int cur_x, int cur_y, int cur_w, int cur_h) {
+    if (!m_mapped || !m_scene_tree || cur_w <= 0 || cur_h <= 0) {
+        return;
+    }
+
+    m_current_anim_x = cur_x;
+    m_current_anim_y = cur_y;
+    m_current_anim_width = cur_w;
+    m_current_anim_height = cur_h;
+
+    wlr_scene_node_set_position(&m_scene_tree->node, cur_x, cur_y);
+
+    int bw = Config::get().get_window_border_width();
+    int client_w = std::max(1, cur_w - 2 * bw);
+    int client_h = std::max(1, cur_h - 2 * bw);
+
+    if (m_surface_scene_tree) {
+        wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+
+        struct BufferScaleData {
+            int target_w;
+            int target_h;
+        } data = { client_w, client_h };
+
+        wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
+            auto* d = static_cast<BufferScaleData*>(user_data);
+            if (buf->buffer) {
+                wlr_scene_buffer_set_dest_size(buf, d->target_w, d->target_h);
+            }
+        }, &data);
+
+        struct wlr_box clip = {
+            .x = 0,
+            .y = 0,
+            .width = client_w,
+            .height = client_h,
+        };
+        if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+            auto* xdg_surf = m_xdg_toplevel->base;
+            clip.x = xdg_surf->current.geometry.x;
+            clip.y = xdg_surf->current.geometry.y;
+        }
+        wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
+    }
+
+    if (m_border_scene_buffer) {
+        wlr_scene_buffer_set_dest_size(m_border_scene_buffer, cur_w, cur_h);
+    }
+
+    if (m_blur_node) {
+        wlr_scene_blur_set_size(m_blur_node, cur_w, cur_h);
+    }
+}
+
+void View::finish_geometry_animation(int target_x, int target_y, int target_w, int target_h) {
+    m_is_animating_geometry = false;
+    m_x = target_x;
+    m_y = target_y;
+    m_width = target_w;
+    m_height = target_h;
+    m_current_anim_x = target_x;
+    m_current_anim_y = target_y;
+    m_current_anim_width = target_w;
+    m_current_anim_height = target_h;
+
+    if (m_scene_tree) {
+        wlr_scene_node_set_position(&m_scene_tree->node, target_x, target_y);
+    }
+
+    int bw = Config::get().get_window_border_width();
+    int client_w = std::max(1, target_w - 2 * bw);
+    int client_h = std::max(1, target_h - 2 * bw);
+
+    if (m_surface_scene_tree) {
+        wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+
+        struct FinishBufferData {
+            int target_w;
+            int target_h;
+        } data = { client_w, client_h };
+
+        wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
+            auto* d = static_cast<FinishBufferData*>(user_data);
+            if (buf->buffer) {
+                if (buf->buffer->width == d->target_w && buf->buffer->height == d->target_h) {
+                    wlr_scene_buffer_set_dest_size(buf, 0, 0);
+                } else {
+                    wlr_scene_buffer_set_dest_size(buf, d->target_w, d->target_h);
+                }
+            }
+        }, &data);
+    }
+
+    if (m_border_scene_buffer) {
+        wlr_scene_buffer_set_dest_size(m_border_scene_buffer, 0, 0);
+    }
+
+    update_frame();
+}
+
 void View::set_overview_scaled(bool scaled, double scale) {
     if (m_is_overview_scaled == scaled && std::abs(m_overview_scale - scale) < 0.0001) {
         return;
@@ -882,18 +1091,35 @@ void View::focus() {
 }
 
 void View::close() {
-    if (m_type == ViewType::Xdg && m_xdg_toplevel) {
-        wlr_xdg_toplevel_send_close(m_xdg_toplevel);
-    } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
-        if (!is_override_redirect()) {
-            wlr_xwayland_surface_close(m_xwayland_surface);
+    if (m_is_animating_close) return;
+
+    auto do_send_close = [this]() {
+        if (m_type == ViewType::Xdg && m_xdg_toplevel) {
+            wlr_xdg_toplevel_send_close(m_xdg_toplevel);
+        } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
+            if (!is_override_redirect()) {
+                wlr_xwayland_surface_close(m_xwayland_surface);
+            }
         }
+    };
+
+    if (!Config::get().is_window_animations_enabled() || !m_mapped || m_is_fullscreen || is_override_redirect()) {
+        do_send_close();
+        return;
+    }
+
+    m_is_animating_close = true;
+    if (m_server && m_server->get_animation_manager()) {
+        m_server->get_animation_manager()->schedule_window_close(this, do_send_close);
+    } else {
+        do_send_close();
     }
 }
 
 void View::handle_map(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_map_listener);
     view->m_mapped = true;
+    view->m_is_animating_close = false;
     view->update_parent_relationship();
 
     if (view->m_foreign_toplevel) {
@@ -961,12 +1187,27 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         view->m_server->get_workspace_manager()->add_view_auto(view);
     }
 
+    bool will_animate = (!view->is_override_redirect() && view->m_server && view->m_server->get_animation_manager() &&
+        Config::get().is_window_animations_enabled() && !view->m_is_fullscreen);
+
+    if (will_animate) {
+        view->update_frame();
+        // Pre-transform the scene node to initial animation scale and 0 opacity BEFORE enabling node
+        double open_scale = Config::get().get_window_animation_open_scale();
+        view->apply_animation_transform(open_scale, 0.0f);
+    } else {
+        view->update_opacity();
+        view->update_corner_radius();
+    }
+
     if (view->m_workspace && view->m_workspace->is_visible()) {
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, true);
     }
-    view->update_opacity();
-    view->update_corner_radius();
     view->focus();
+
+    if (will_animate) {
+        view->m_server->get_animation_manager()->schedule_window_open(view);
+    }
 }
 
 void View::handle_unmap(struct wl_listener* listener, void* data) {
@@ -987,6 +1228,7 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
     }
 
     view->m_mapped = false;
+    view->m_is_animating_close = false;
 
     if (view->m_server && view->m_server->get_animation_manager()) {
         view->m_server->get_animation_manager()->cancel_for_view(view);
@@ -1040,11 +1282,29 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
     if (view->m_type == ViewType::Xdg) {
         if (view->m_xdg_toplevel->base->initial_commit) {
             view->update_parent_relationship();
-            if (view->is_dialog()) {
+
+            std::string app_id = view->get_app_id();
+            std::string title = view->get_title();
+            bool is_pip = (title.find("Picture-in-Picture") != std::string::npos ||
+                           title.find("Picture in picture") != std::string::npos ||
+                           app_id.find("pip") != std::string::npos);
+
+            if (Config::get().should_float(app_id, title) || is_pip) {
+                view->set_floating(true);
+            }
+
+            if (view->is_dialog() || view->is_floating()) {
                 wlr_xdg_toplevel_set_size(view->m_xdg_toplevel, 0, 0);
             } else {
                 auto* ws_mgr = view->m_server->get_workspace_manager();
-                auto* ws = ws_mgr ? ws_mgr->get_active_workspace() : nullptr;
+                int target_ws_id = Config::get().get_target_workspace(app_id, title);
+                Workspace* ws = nullptr;
+                if (target_ws_id > 0 && ws_mgr) {
+                    ws = ws_mgr->get_or_create_workspace(target_ws_id);
+                } else if (ws_mgr) {
+                    ws = ws_mgr->get_active_workspace();
+                }
+
                 if (ws && view->m_server->get_output_manager()) {
                     struct wlr_box usable = view->m_server->get_output_manager()->get_primary_usable_geometry();
                     if (usable.width <= 0 || usable.height <= 0) {

@@ -53,6 +53,15 @@ void Config::set_defaults() {
     m_repeat_delay = 600;
     m_window_opacity_active = 1.0f;
     m_window_opacity_inactive = 0.85f;
+    m_animations_enabled = true;
+    m_workspace_animations_enabled = true;
+    m_workspace_animation_duration_ms = 200;
+    m_workspace_animation_curve = "ease_out_cubic";
+    m_window_animations_enabled = true;
+    m_window_animation_duration_ms = 180;
+    m_window_animation_curve = "ease_out_cubic";
+    m_window_animation_open_scale = 0.85;
+    m_window_animation_close_scale = 0.85;
     m_blur_enabled = true;
     m_blur_radius = 5;
     m_blur_num_passes = 3;
@@ -748,12 +757,36 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             } catch (...) {}
         } else if (key == "animations" || key == "animation" || key == "animations_enabled") {
             m_animations_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "workspace_animations" || key == "workspace_animation" || key == "workspace_animations_enabled") {
+            m_workspace_animations_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "workspace_animation_duration" || key == "workspace_animation_duration_ms") {
+            try {
+                m_workspace_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "workspace_animation_curve" || key == "workspace_animation_easing") {
+            m_workspace_animation_curve = value;
+        } else if (key == "window_animations" || key == "window_animation" || key == "window_animations_enabled") {
+            m_window_animations_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "window_animation_duration" || key == "window_animation_duration_ms") {
+            try {
+                m_window_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "window_animation_curve" || key == "window_animation_easing") {
+            m_window_animation_curve = value;
+        } else if (key == "window_animation_open_scale" || key == "window_open_scale") {
+            try {
+                m_window_animation_open_scale = std::clamp(std::stod(value), 0.1, 1.0);
+            } catch (...) {}
+        } else if (key == "window_animation_close_scale" || key == "window_close_scale") {
+            try {
+                m_window_animation_close_scale = std::clamp(std::stod(value), 0.1, 1.0);
+            } catch (...) {}
         } else if (key == "animation_duration" || key == "animation_duration_ms") {
             try {
-                m_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+                m_workspace_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
             } catch (...) {}
         } else if (key == "animation_curve" || key == "animation_easing") {
-            m_animation_curve = value;
+            m_workspace_animation_curve = value;
         } else if (key == "layerrule") {
             // Hyprland syntax: layerrule = blur, waybar
             size_t comma = value.find(',');
@@ -1052,6 +1085,27 @@ void Config::save() {
     file << "screen_edge_padding = " << m_screen_edge_padding << "\n";
     file << "window_opacity_active = " << m_window_opacity_active << "\n";
     file << "window_opacity_inactive = " << m_window_opacity_inactive << "\n\n";
+
+    file << "# ==========================================\n";
+    file << "# Animations (Master Toggle)\n";
+    file << "# ==========================================\n";
+    file << "animations = " << (m_animations_enabled ? "true" : "false") << "\n\n";
+
+    file << "# ==========================================\n";
+    file << "# Workspace Animations\n";
+    file << "# ==========================================\n";
+    file << "workspace_animations = " << (m_workspace_animations_enabled ? "true" : "false") << "\n";
+    file << "workspace_animation_duration = " << m_workspace_animation_duration_ms << "\n";
+    file << "workspace_animation_curve = " << m_workspace_animation_curve << "\n\n";
+
+    file << "# ==========================================\n";
+    file << "# Window Animations\n";
+    file << "# ==========================================\n";
+    file << "window_animations = " << (m_window_animations_enabled ? "true" : "false") << "\n";
+    file << "window_animation_duration = " << m_window_animation_duration_ms << "\n";
+    file << "window_animation_curve = " << m_window_animation_curve << "\n";
+    file << "window_animation_open_scale = " << m_window_animation_open_scale << "\n";
+    file << "window_animation_close_scale = " << m_window_animation_close_scale << "\n\n";
 
     file << "# ==========================================\n";
     file << "# Blur Effects (SceneFX Dual Kawase)\n";

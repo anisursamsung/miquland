@@ -774,7 +774,11 @@ void Server::handle_xdg_activation_request_activate(struct wl_listener* listener
         }
 
         if (view_surf == event->surface) {
-            v->focus();
+            if (v->get_workspace() && server->get_workspace_manager()) {
+                server->get_workspace_manager()->switch_to_workspace(v->get_workspace()->get_id(), v.get());
+            } else {
+                v->focus();
+            }
             break;
         }
     }

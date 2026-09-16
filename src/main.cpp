@@ -53,6 +53,12 @@ int main(int argc, char* argv[]) {
     sigaction(SIGINT, &sa, nullptr);
     sigaction(SIGTERM, &sa, nullptr);
 
+    // Automatically reap child processes without creating zombies
+    struct sigaction sa_chld = {};
+    sa_chld.sa_handler = SIG_DFL;
+    sa_chld.sa_flags = SA_NOCLDWAIT | SA_RESTART;
+    sigaction(SIGCHLD, &sa_chld, nullptr);
+
     if (!startup_cmd.empty()) {
         server.set_startup_command(startup_cmd);
     }

@@ -56,11 +56,38 @@ public:
     bool is_animations_enabled() const { return m_animations_enabled; }
     void set_animations_enabled(bool enabled) { m_animations_enabled = enabled; }
 
-    int get_animation_duration_ms() const { return m_animation_duration_ms; }
-    void set_animation_duration_ms(int ms) { m_animation_duration_ms = std::clamp(ms, 10, 2000); }
+    // Workspace animations
+    bool is_workspace_animations_enabled() const { return m_animations_enabled && m_workspace_animations_enabled; }
+    void set_workspace_animations_enabled(bool enabled) { m_workspace_animations_enabled = enabled; }
 
-    const std::string& get_animation_curve() const { return m_animation_curve; }
-    void set_animation_curve(const std::string& curve) { m_animation_curve = curve; }
+    int get_workspace_animation_duration_ms() const { return m_workspace_animation_duration_ms; }
+    void set_workspace_animation_duration_ms(int ms) { m_workspace_animation_duration_ms = std::clamp(ms, 10, 2000); }
+
+    const std::string& get_workspace_animation_curve() const { return m_workspace_animation_curve; }
+    void set_workspace_animation_curve(const std::string& curve) { m_workspace_animation_curve = curve; }
+
+    // Window animations
+    bool is_window_animations_enabled() const { return m_animations_enabled && m_window_animations_enabled; }
+    void set_window_animations_enabled(bool enabled) { m_window_animations_enabled = enabled; }
+
+    int get_window_animation_duration_ms() const { return m_window_animation_duration_ms; }
+    void set_window_animation_duration_ms(int ms) { m_window_animation_duration_ms = std::clamp(ms, 10, 2000); }
+
+    const std::string& get_window_animation_curve() const { return m_window_animation_curve; }
+    void set_window_animation_curve(const std::string& curve) { m_window_animation_curve = curve; }
+
+    double get_window_animation_open_scale() const { return m_window_animation_open_scale; }
+    void set_window_animation_open_scale(double s) { m_window_animation_open_scale = std::clamp(s, 0.1, 1.0); }
+
+    double get_window_animation_close_scale() const { return m_window_animation_close_scale; }
+    void set_window_animation_close_scale(double s) { m_window_animation_close_scale = std::clamp(s, 0.1, 1.0); }
+
+    // Backward compatibility aliases
+    int get_animation_duration_ms() const { return m_workspace_animation_duration_ms; }
+    void set_animation_duration_ms(int ms) { set_workspace_animation_duration_ms(ms); }
+
+    const std::string& get_animation_curve() const { return m_workspace_animation_curve; }
+    void set_animation_curve(const std::string& curve) { set_workspace_animation_curve(curve); }
 
     bool is_xwayland_force_zero_scaling_enabled() const { return m_xwayland_force_zero_scaling; }
     void set_xwayland_force_zero_scaling_enabled(bool enabled) { m_xwayland_force_zero_scaling = enabled; }
@@ -228,8 +255,14 @@ private:
     bool m_focus_follows_mouse = true;
     bool m_smart_gaps = false;
     bool m_animations_enabled = true;
-    int m_animation_duration_ms = 200;
-    std::string m_animation_curve = "ease_out_cubic";
+    bool m_workspace_animations_enabled = true;
+    int m_workspace_animation_duration_ms = 200;
+    std::string m_workspace_animation_curve = "ease_out_cubic";
+    bool m_window_animations_enabled = true;
+    int m_window_animation_duration_ms = 180;
+    std::string m_window_animation_curve = "ease_out_cubic";
+    double m_window_animation_open_scale = 0.85;
+    double m_window_animation_close_scale = 0.85;
     bool m_xwayland_force_zero_scaling = false;
     std::string m_cursor_theme = "";
     int m_cursor_size = 24;

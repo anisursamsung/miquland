@@ -222,9 +222,24 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
         m_secondary_split_ratio
     );
 
+    auto* anim_mgr = m_server ? m_server->get_animation_manager() : nullptr;
+    bool animate_layout = anim_mgr && Config::get().is_window_animations_enabled() && m_visible;
+
     for (size_t i = 0; i < m_tiled_views.size(); ++i) {
-        if (m_tiled_views[i]) {
-            m_tiled_views[i]->set_geometry(boxes[i].x, boxes[i].y, boxes[i].width, boxes[i].height);
+        View* v = m_tiled_views[i];
+        if (!v) continue;
+
+        const auto& target_box = boxes[i];
+        if (animate_layout && v->is_mapped() && v->get_width() > 0 && v->get_height() > 0) {
+            struct wlr_box from_box = anim_mgr->get_view_current_box(v, { v->get_x(), v->get_y(), v->get_width(), v->get_height() });
+            if (from_box.x != target_box.x || from_box.y != target_box.y ||
+                from_box.width != target_box.width || from_box.height != target_box.height) {
+                anim_mgr->schedule_view_geometry(v, from_box, target_box);
+            } else {
+                v->set_geometry(target_box.x, target_box.y, target_box.width, target_box.height);
+            }
+        } else {
+            v->set_geometry(target_box.x, target_box.y, target_box.width, target_box.height);
         }
     }
 
@@ -385,7 +400,7 @@ void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
     int screen_w = (geom.width > 0) ? geom.width : 1920;
     bool slide_right = (id > old_id);
 
-    if (m_server->get_animation_manager() && Config::get().is_animations_enabled()) {
+    if (m_server->get_animation_manager() && Config::get().is_workspace_animations_enabled()) {
         m_server->get_animation_manager()->schedule_workspace_transition(current, target, slide_right, screen_w);
     } else {
         if (current) current->set_visible(false);
