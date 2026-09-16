@@ -71,16 +71,59 @@ public:
     void set_window_animations_enabled(bool enabled) { m_window_animations_enabled = enabled; }
 
     int get_window_animation_duration_ms() const { return m_window_animation_duration_ms; }
-    void set_window_animation_duration_ms(int ms) { m_window_animation_duration_ms = std::clamp(ms, 10, 2000); }
+    void set_window_animation_duration_ms(int ms) {
+        m_window_animation_duration_ms = std::clamp(ms, 10, 2000);
+        m_window_animation_open_duration_ms = m_window_animation_duration_ms;
+        m_window_animation_close_duration_ms = m_window_animation_duration_ms;
+    }
+
+    int get_window_animation_open_duration_ms() const { return m_window_animation_open_duration_ms; }
+    void set_window_animation_open_duration_ms(int ms) { m_window_animation_open_duration_ms = std::clamp(ms, 10, 2000); }
+
+    int get_window_animation_close_duration_ms() const { return m_window_animation_close_duration_ms; }
+    void set_window_animation_close_duration_ms(int ms) { m_window_animation_close_duration_ms = std::clamp(ms, 10, 2000); }
+
+    int get_window_animation_fade_in_duration_ms() const {
+        return (m_window_animation_fade_in_duration_ms > 0) ? m_window_animation_fade_in_duration_ms : m_window_animation_open_duration_ms;
+    }
+    void set_window_animation_fade_in_duration_ms(int ms) { m_window_animation_fade_in_duration_ms = std::clamp(ms, 10, 2000); }
+
+    int get_window_animation_fade_out_duration_ms() const {
+        return (m_window_animation_fade_out_duration_ms > 0) ? m_window_animation_fade_out_duration_ms : m_window_animation_close_duration_ms;
+    }
+    void set_window_animation_fade_out_duration_ms(int ms) { m_window_animation_fade_out_duration_ms = std::clamp(ms, 10, 2000); }
 
     const std::string& get_window_animation_curve() const { return m_window_animation_curve; }
-    void set_window_animation_curve(const std::string& curve) { m_window_animation_curve = curve; }
+    void set_window_animation_curve(const std::string& curve) {
+        m_window_animation_curve = curve;
+        m_window_animation_open_curve = curve;
+        m_window_animation_close_curve = curve;
+    }
+
+    const std::string& get_window_animation_open_curve() const { return m_window_animation_open_curve; }
+    void set_window_animation_open_curve(const std::string& curve) { m_window_animation_open_curve = curve; }
+
+    const std::string& get_window_animation_close_curve() const { return m_window_animation_close_curve; }
+    void set_window_animation_close_curve(const std::string& curve) { m_window_animation_close_curve = curve; }
+
+    const std::string& get_window_animation_fade_in_curve() const {
+        return m_window_animation_fade_in_curve.empty() ? m_window_animation_open_curve : m_window_animation_fade_in_curve;
+    }
+    void set_window_animation_fade_in_curve(const std::string& curve) { m_window_animation_fade_in_curve = curve; }
+
+    const std::string& get_window_animation_fade_out_curve() const {
+        return m_window_animation_fade_out_curve.empty() ? m_window_animation_close_curve : m_window_animation_fade_out_curve;
+    }
+    void set_window_animation_fade_out_curve(const std::string& curve) { m_window_animation_fade_out_curve = curve; }
 
     double get_window_animation_open_scale() const { return m_window_animation_open_scale; }
     void set_window_animation_open_scale(double s) { m_window_animation_open_scale = std::clamp(s, 0.1, 1.0); }
 
     double get_window_animation_close_scale() const { return m_window_animation_close_scale; }
     void set_window_animation_close_scale(double s) { m_window_animation_close_scale = std::clamp(s, 0.1, 1.0); }
+
+    bool is_window_animation_fade_enabled() const { return m_window_animation_fade; }
+    void set_window_animation_fade_enabled(bool enabled) { m_window_animation_fade = enabled; }
 
     // Backward compatibility aliases
     int get_animation_duration_ms() const { return m_workspace_animation_duration_ms; }
@@ -119,8 +162,8 @@ public:
     const std::string& get_accel_profile() const { return m_accel_profile; }
     void set_accel_profile(const std::string& profile) { m_accel_profile = profile; }
 
-    const std::string& get_touch_output() const { return m_touch_output; }
-    void set_touch_output(const std::string& output) { m_touch_output = output; }
+    const std::string& get_touchscreen_output() const { return m_touchscreen_output; }
+    void set_touchscreen_output(const std::string& output) { m_touchscreen_output = output; }
 
     const std::string& get_kb_layout() const { return m_kb_layout; }
     void set_kb_layout(const std::string& l) { m_kb_layout = l; }
@@ -186,10 +229,11 @@ public:
     void set_blur_enabled(bool enabled) { m_blur_enabled = enabled; }
 
     int get_blur_radius() const { return m_blur_radius; }
-    void set_blur_radius(int r) { m_blur_radius = r; }
+    void set_blur_radius(int r) { m_blur_radius = std::max(1, r); }
 
+    int get_blur_passes() const { return m_blur_num_passes; }
     int get_blur_num_passes() const { return m_blur_num_passes; }
-    void set_blur_num_passes(int p) { m_blur_num_passes = p; }
+    void set_blur_passes(int p) { m_blur_num_passes = std::max(1, p); }
 
     float get_blur_noise() const { return m_blur_noise; }
     void set_blur_noise(float n) { m_blur_noise = n; }
@@ -214,8 +258,27 @@ public:
     std::string find_gesture_action(const std::string& pattern) const;
     bool has_gesture_for_fingers(int fingers) const;
     void add_or_update_gesture_binding(const std::string& pattern, const std::string& action);
-    double get_swipe_threshold() const { return m_swipe_threshold; }
-    void set_swipe_threshold(double threshold) { m_swipe_threshold = threshold; }
+
+    double get_touchpad_workspace_swipe_multiplier() const { return m_touchpad_workspace_swipe_multiplier; }
+    void set_touchpad_workspace_swipe_multiplier(double mult) { m_touchpad_workspace_swipe_multiplier = std::clamp(mult, 0.1, 10.0); }
+
+    double get_touchpad_swipe_threshold() const { return m_touchpad_swipe_threshold; }
+    void set_touchpad_swipe_threshold(double threshold) { m_touchpad_swipe_threshold = std::max(5.0, threshold); }
+
+    double get_touchscreen_workspace_swipe_multiplier() const { return m_touchscreen_workspace_swipe_multiplier; }
+    void set_touchscreen_workspace_swipe_multiplier(double mult) { m_touchscreen_workspace_swipe_multiplier = std::clamp(mult, 0.1, 10.0); }
+
+    double get_touchscreen_swipe_threshold() const { return m_touchscreen_swipe_threshold; }
+    void set_touchscreen_swipe_threshold(double threshold) { m_touchscreen_swipe_threshold = std::max(5.0, threshold); }
+
+    double get_workspace_swipe_cancel_ratio() const { return m_workspace_swipe_cancel_ratio; }
+    void set_workspace_swipe_cancel_ratio(double ratio) { m_workspace_swipe_cancel_ratio = std::clamp(ratio, 0.05, 0.95); }
+
+    double get_workspace_swipe_min_speed_to_force() const { return m_workspace_swipe_min_speed_to_force; }
+    void set_workspace_swipe_min_speed_to_force(double speed) { m_workspace_swipe_min_speed_to_force = std::clamp(speed, 0.05, 10.0); }
+
+    double get_workspace_swipe_edge_resistance() const { return m_workspace_swipe_edge_resistance; }
+    void set_workspace_swipe_edge_resistance(double res) { m_workspace_swipe_edge_resistance = std::clamp(res, 0.0, 0.5); }
 
     const std::vector<WindowRule>& get_window_rules() const { return m_window_rules; }
     void add_window_rule(const WindowRule& rule) { m_window_rules.push_back(rule); }
@@ -260,9 +323,18 @@ private:
     std::string m_workspace_animation_curve = "ease_out_cubic";
     bool m_window_animations_enabled = true;
     int m_window_animation_duration_ms = 180;
-    std::string m_window_animation_curve = "ease_out_cubic";
+    int m_window_animation_open_duration_ms = 180;
+    int m_window_animation_close_duration_ms = 140;
+    std::string m_window_animation_curve = "default";
+    std::string m_window_animation_open_curve = "default";
+    std::string m_window_animation_close_curve = "smooth_out";
     double m_window_animation_open_scale = 0.85;
     double m_window_animation_close_scale = 0.85;
+    bool m_window_animation_fade = true;
+    int m_window_animation_fade_in_duration_ms = 0;
+    int m_window_animation_fade_out_duration_ms = 0;
+    std::string m_window_animation_fade_in_curve = "";
+    std::string m_window_animation_fade_out_curve = "";
     bool m_xwayland_force_zero_scaling = false;
     std::string m_cursor_theme = "";
     int m_cursor_size = 24;
@@ -274,7 +346,14 @@ private:
     bool m_dwt = true;
     double m_accel_speed = 0.0;
     std::string m_accel_profile = "adaptive";
-    std::string m_touch_output = "";
+    double m_touchpad_workspace_swipe_multiplier = 1.0;
+    double m_touchpad_swipe_threshold = 50.0;
+    double m_touchscreen_workspace_swipe_multiplier = 1.0;
+    double m_touchscreen_swipe_threshold = 100.0;
+    double m_workspace_swipe_cancel_ratio = 0.30;
+    double m_workspace_swipe_min_speed_to_force = 0.3;
+    double m_workspace_swipe_edge_resistance = 0.15;
+    std::string m_touchscreen_output = "";
     std::string m_kb_layout = "us";
     std::string m_kb_variant = "";
     std::string m_kb_options = "";
@@ -305,7 +384,6 @@ private:
     std::string m_window_border_color_inactive = "#99c2ff";
 
     std::vector<KeyBinding> m_keybindings;
-    double m_swipe_threshold = 50.0;
     std::vector<GestureBinding> m_gesture_bindings;
     std::vector<WindowRule> m_window_rules;
     std::vector<std::string> m_plugins;

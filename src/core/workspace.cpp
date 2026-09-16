@@ -4,8 +4,10 @@
 #include "core/output.hpp"
 #include "core/config/config.hpp"
 #include "core/animation/animation_manager.hpp"
+#include "core/input/input.hpp"
 #include <algorithm>
 #include <iostream>
+#include <limits>
 
 namespace miquland {
 
@@ -123,6 +125,10 @@ void Workspace::set_visible(bool visible) {
 View* Workspace::get_view(size_t index) const {
     if (index < m_tiled_views.size()) {
         return m_tiled_views[index];
+    }
+    size_t float_idx = index - m_tiled_views.size();
+    if (float_idx < m_floating_views.size()) {
+        return m_floating_views[float_idx];
     }
     return nullptr;
 }
@@ -410,10 +416,13 @@ void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
 
     if (focus_view) {
         focus_view->focus();
-    } else if (target->view_count() > 0) {
-        target->get_view(0)->focus();
     } else {
-        m_server->set_focused_view(nullptr);
+        View* best = find_best_focus_view(target);
+        if (best) {
+            best->focus();
+        } else {
+            m_server->set_focused_view(nullptr);
+        }
     }
 }
 
@@ -435,8 +444,9 @@ void WorkspaceManager::commit_workspace_switch(size_t id) {
     recalculate_layout();
     prune_workspace(old_id);
 
-    if (target->view_count() > 0) {
-        target->get_view(0)->focus();
+    View* best = find_best_focus_view(target);
+    if (best) {
+        best->focus();
     } else {
         m_server->set_focused_view(nullptr);
     }
@@ -521,8 +531,13 @@ void WorkspaceManager::remove_view(View* view) {
         if (ws->is_visible()) {
             if (parent && parent->is_mapped() && parent->get_workspace() == ws) {
                 parent->focus();
-            } else if (ws->view_count() > 0) {
-                ws->get_view(0)->focus();
+            } else {
+                View* best = find_best_focus_view(ws);
+                if (best) {
+                    best->focus();
+                } else {
+                    m_server->set_focused_view(nullptr);
+                }
             }
         } else if (ws->is_empty()) {
             prune_workspace(ws_id);
@@ -542,8 +557,9 @@ void WorkspaceManager::move_view_to_workspace(View* view, size_t target_ws_id) {
     recalculate_layout();
 
     if (current->is_visible()) {
-        if (current->view_count() > 0) {
-            current->get_view(0)->focus();
+        View* best = find_best_focus_view(current);
+        if (best) {
+            best->focus();
         } else {
             m_server->set_focused_view(nullptr);
         }
@@ -559,12 +575,14 @@ void WorkspaceManager::focus_next_view() {
     View* cur = m_server->get_focused_view();
     size_t count = ws->view_count();
     size_t cur_idx = 0;
+
     for (size_t i = 0; i < count; ++i) {
         if (ws->get_view(i) == cur) {
             cur_idx = i;
             break;
         }
     }
+
     size_t next_idx = (cur_idx + 1) % count;
     ws->get_view(next_idx)->focus();
 }
@@ -576,24 +594,22 @@ void WorkspaceManager::focus_prev_view() {
     View* cur = m_server->get_focused_view();
     size_t count = ws->view_count();
     size_t cur_idx = 0;
+
     for (size_t i = 0; i < count; ++i) {
         if (ws->get_view(i) == cur) {
             cur_idx = i;
             break;
         }
     }
-    size_t prev_idx = (cur_idx == 0) ? (count - 1) : (cur_idx - 1);
+
+    size_t prev_idx = (cur_idx == 0) ? count - 1 : cur_idx - 1;
     ws->get_view(prev_idx)->focus();
 }
 
 void WorkspaceManager::focus_window_index(size_t index) {
     Workspace* ws = get_active_workspace();
-    if (ws && index < ws->view_count()) {
-        View* v = ws->get_view(index);
-        if (v) {
-            v->focus();
-        }
-    }
+    if (!ws || index >= ws->view_count()) return;
+    ws->get_view(index)->focus();
 }
 
 void WorkspaceManager::swap_with_main() {
@@ -633,10 +649,142 @@ void WorkspaceManager::recalculate_layout() {
         geom = { .x = 0, .y = 0, .width = 1920, .height = 1080 };
     }
 
-    Workspace* active_ws = get_active_workspace();
-    if (active_ws) {
-        active_ws->recalculate_layout(geom);
+    for (auto& [id, ws] : m_workspaces) {
+        if (ws) {
+            ws->recalculate_layout(geom);
+        }
     }
+}
+
+View* WorkspaceManager::find_best_focus_view(Workspace* ws) const {
+    if (!ws || ws->is_empty()) return nullptr;
+
+    double cursor_x = 0.0, cursor_y = 0.0;
+    bool has_cursor = false;
+    if (m_server && m_server->get_input_manager()) {
+        auto* cursor = m_server->get_input_manager()->get_cursor();
+        if (cursor) {
+            cursor_x = cursor->x;
+            cursor_y = cursor->y;
+            has_cursor = true;
+        }
+    }
+
+    if (!has_cursor) {
+        return ws->get_view(0);
+    }
+
+    int cx = static_cast<int>(std::round(cursor_x));
+    int cy = static_cast<int>(std::round(cursor_y));
+
+    // 1. Check floating views (top-most first)
+    const auto& floating_views = ws->get_floating_views();
+    for (auto it = floating_views.rbegin(); it != floating_views.rend(); ++it) {
+        View* fv = *it;
+        if (!fv || !fv->is_mapped() || fv->is_animating_close() || fv->is_override_redirect()) {
+            continue;
+        }
+        int fx = fv->get_target_x();
+        int fy = fv->get_target_y();
+        int fw = fv->get_target_width();
+        int fh = fv->get_target_height();
+        if (fw <= 0 || fh <= 0) {
+            fx = fv->get_x();
+            fy = fv->get_y();
+            fw = fv->get_width();
+            fh = fv->get_height();
+        }
+
+        if (cx >= fx && cx < fx + fw && cy >= fy && cy < fy + fh) {
+            if (fv->has_child_dialogs()) {
+                View* top_dialog = fv->get_top_dialog();
+                if (top_dialog && top_dialog->is_mapped() && !top_dialog->is_animating_close()) {
+                    return top_dialog;
+                }
+            }
+            return fv;
+        }
+    }
+
+    // 2. Check tiled views
+    const auto& tiled_views = ws->get_tiled_views();
+    for (auto* tv : tiled_views) {
+        if (!tv || !tv->is_mapped() || tv->is_animating_close() || tv->is_override_redirect()) {
+            continue;
+        }
+        int tx = tv->get_target_x();
+        int ty = tv->get_target_y();
+        int tw = tv->get_target_width();
+        int th = tv->get_target_height();
+        if (tw <= 0 || th <= 0) {
+            tx = tv->get_x();
+            ty = tv->get_y();
+            tw = tv->get_width();
+            th = tv->get_height();
+        }
+
+        if (cx >= tx && cx < tx + tw && cy >= ty && cy < ty + th) {
+            if (tv->has_child_dialogs()) {
+                View* top_dialog = tv->get_top_dialog();
+                if (top_dialog && top_dialog->is_mapped() && !top_dialog->is_animating_close()) {
+                    return top_dialog;
+                }
+            }
+            return tv;
+        }
+    }
+
+    // 3. Fallback: cursor in margins / gaps -> pick closest view by geometry distance
+    View* closest_view = nullptr;
+    int64_t min_dist_sq = std::numeric_limits<int64_t>::max();
+
+    auto check_dist = [&](View* v) {
+        if (!v || !v->is_mapped() || v->is_animating_close() || v->is_override_redirect()) return;
+        int vx = v->get_target_x();
+        int vy = v->get_target_y();
+        int vw = v->get_target_width();
+        int vh = v->get_target_height();
+        if (vw <= 0 || vh <= 0) {
+            vx = v->get_x();
+            vy = v->get_y();
+            vw = v->get_width();
+            vh = v->get_height();
+        }
+        if (vw <= 0 || vh <= 0) return;
+
+        int64_t dx = 0;
+        if (cx < vx) dx = vx - cx;
+        else if (cx >= vx + vw) dx = cx - (vx + vw - 1);
+
+        int64_t dy = 0;
+        if (cy < vy) dy = vy - cy;
+        else if (cy >= vy + vh) dy = cy - (vy + vh - 1);
+
+        int64_t dist_sq = dx * dx + dy * dy;
+        if (dist_sq < min_dist_sq) {
+            min_dist_sq = dist_sq;
+            closest_view = v;
+        }
+    };
+
+    for (auto it = floating_views.rbegin(); it != floating_views.rend(); ++it) {
+        check_dist(*it);
+    }
+    for (auto* tv : tiled_views) {
+        check_dist(tv);
+    }
+
+    if (closest_view) {
+        if (closest_view->has_child_dialogs()) {
+            View* top_dialog = closest_view->get_top_dialog();
+            if (top_dialog && top_dialog->is_mapped() && !top_dialog->is_animating_close()) {
+                return top_dialog;
+            }
+        }
+        return closest_view;
+    }
+
+    return ws->get_view(0);
 }
 
 } // namespace miquland

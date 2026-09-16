@@ -34,6 +34,7 @@ private:
     );
 
     static std::vector<struct wlr_box> calculate_stack(
+        SplitMode split_mode,
         const struct wlr_box& box,
         int gap,
         size_t count,

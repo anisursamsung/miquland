@@ -308,7 +308,7 @@ void InputManager::map_touch_device_to_output(struct wlr_input_device* device) {
     if (!out_mgr) return;
 
     struct wlr_output* target_wlr_out = nullptr;
-    const std::string& user_target = Config::get().get_touch_output();
+    const std::string& user_target = Config::get().get_touchscreen_output();
     const auto& outputs = out_mgr->get_outputs();
 
     if (outputs.empty()) return;
@@ -1013,28 +1013,25 @@ void InputManager::handle_selection_destroy(struct wl_listener* listener, void* 
 void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_begin_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_begin_event*>(data);
+    (void)event;
     manager->m_swipe_dx = 0.0;
     manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
     manager->m_touchpad_workspace_swipe_active = false;
-
-    if (event->fingers == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
-        manager->m_touchpad_workspace_swipe_active = true;
-        manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
-    }
 }
 
 void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_update_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_update_event*>(data);
 
+    double screen_w = 1920.0;
+    if (manager->m_server && manager->m_server->get_output_manager()) {
+        auto geom = manager->m_server->get_output_manager()->get_primary_usable_geometry();
+        if (geom.width > 0) screen_w = geom.width;
+    }
+    double touchpad_multiplier = std::max(6.0, screen_w / 140.0) * Config::get().get_touchpad_workspace_swipe_multiplier();
+
     if (manager->m_touchpad_workspace_swipe_active) {
-        double screen_w = 1920.0;
-        if (manager->m_server && manager->m_server->get_output_manager()) {
-            auto geom = manager->m_server->get_output_manager()->get_primary_usable_geometry();
-            if (geom.width > 0) screen_w = geom.width;
-        }
-        double touchpad_multiplier = std::max(6.0, screen_w / 140.0);
         manager->m_server->get_animation_manager()->update_workspace_swipe(event->dx * touchpad_multiplier, event->dy);
         return;
     }
@@ -1045,7 +1042,17 @@ void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void
 
     manager->m_swipe_dx += event->dx;
     manager->m_swipe_dy += event->dy;
-    double threshold = Config::get().get_swipe_threshold();
+    double threshold = Config::get().get_touchpad_swipe_threshold();
+
+    // Check if horizontal 3-finger live workspace swipe should activate
+    if (event->fingers == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
+        if (std::abs(manager->m_swipe_dx) >= 6.0 && std::abs(manager->m_swipe_dx) > std::abs(manager->m_swipe_dy) * 1.2) {
+            manager->m_touchpad_workspace_swipe_active = true;
+            manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
+            manager->m_server->get_animation_manager()->update_workspace_swipe(event->dx * touchpad_multiplier, event->dy);
+            return;
+        }
+    }
 
     if (std::abs(manager->m_swipe_dx) >= threshold || std::abs(manager->m_swipe_dy) >= threshold) {
         std::string direction;
@@ -1151,24 +1158,6 @@ void InputManager::handle_cursor_touch_down(struct wl_listener* listener, void* 
     manager->m_touch_points[event->touch_id] = { event->touch_id, lx, ly, lx, ly };
     int finger_count = static_cast<int>(manager->m_touch_points.size());
 
-    // Check if 3-finger workspace gesture should be handled interactively
-    if (finger_count == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
-        for (auto& [id, pt] : manager->m_touch_points) {
-            pt.start_lx = pt.current_lx;
-            pt.start_ly = pt.current_ly;
-            wlr_seat_touch_notify_clear_focus(manager->m_seat, event->time_msec, id);
-        }
-        double sum_x = 0.0;
-        for (const auto& [id, pt] : manager->m_touch_points) {
-            sum_x += pt.current_lx;
-        }
-        manager->m_last_touch_center_x = sum_x / 3.0;
-        manager->m_touch_workspace_swipe_active = true;
-        manager->m_touch_gesture_active = true;
-        manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
-        return;
-    }
-
     // Check if multi-finger gesture should be handled by compositor
     if (finger_count >= 3 || (finger_count >= 2 && Config::get().has_gesture_for_fingers(finger_count))) {
         // Reset origin points for all fingers to current coordinates when multi-touch is grounded
@@ -1251,7 +1240,7 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
             double cur_center_x = sum_x / static_cast<double>(finger_count);
             double dx = cur_center_x - manager->m_last_touch_center_x;
             manager->m_last_touch_center_x = cur_center_x;
-            double touch_multiplier = 1.8;
+            double touch_multiplier = 1.0 * Config::get().get_touchscreen_workspace_swipe_multiplier();
             manager->m_server->get_animation_manager()->update_workspace_swipe(dx * touch_multiplier, 0.0);
         }
         return;
@@ -1269,7 +1258,22 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
         }
         double avg_dx = total_dx / finger_count;
         double avg_dy = total_dy / finger_count;
-        double threshold = Config::get().get_swipe_threshold();
+        double threshold = Config::get().get_touchscreen_swipe_threshold();
+
+        // Check if 3-finger horizontal swipe should start interactive workspace swipe
+        if (finger_count == 3 && Config::get().is_workspace_animations_enabled() && manager->m_server->get_animation_manager()) {
+            if (std::abs(avg_dx) >= 12.0 && std::abs(avg_dx) > std::abs(avg_dy) * 1.2) {
+                double sum_x = 0.0;
+                for (const auto& [id, pt] : manager->m_touch_points) {
+                    sum_x += pt.current_lx;
+                }
+                manager->m_last_touch_center_x = sum_x / 3.0;
+                manager->m_touch_workspace_swipe_active = true;
+                manager->m_touch_gesture_active = true;
+                manager->m_server->get_animation_manager()->begin_workspace_swipe(3);
+                return;
+            }
+        }
 
         if (std::abs(avg_dx) >= threshold || std::abs(avg_dy) >= threshold) {
             std::string direction;

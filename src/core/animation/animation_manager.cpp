@@ -143,21 +143,30 @@ void AnimationManager::begin_workspace_swipe(int fingers) {
     m_swipe_state.target_ws_id = 0;
     m_swipe_state.direction = 0;
     m_swipe_state.delta_x = 0.0;
+    m_swipe_state.raw_delta_x = 0.0;
     m_swipe_state.screen_width = screen_w;
+    m_swipe_state.sample_history.clear();
+    m_swipe_state.sample_history.push_back({ get_current_time_ms(), 0.0 });
 }
 
 void AnimationManager::update_workspace_swipe(double dx, double dy) {
     if (!m_swipe_state.active || !m_swipe_state.current_ws) return;
 
-    m_swipe_state.delta_x += dx;
+    m_swipe_state.raw_delta_x += dx;
+
+    uint64_t now = get_current_time_ms();
+    m_swipe_state.sample_history.push_back({ now, m_swipe_state.raw_delta_x });
+    while (m_swipe_state.sample_history.size() > 2 && (now - m_swipe_state.sample_history.front().time_ms) > 120) {
+        m_swipe_state.sample_history.erase(m_swipe_state.sample_history.begin());
+    }
 
     // Determine target direction:
-    // delta_x < 0 means dragged left -> revealing next workspace from right (+screen_width)
-    // delta_x > 0 means dragged right -> revealing prev workspace from left (-screen_width)
+    // raw_delta_x < 0 means dragged left -> revealing next workspace from right (+screen_width)
+    // raw_delta_x > 0 means dragged right -> revealing prev workspace from left (-screen_width)
     int target_dir = 0;
-    if (m_swipe_state.delta_x < -2.0) {
+    if (m_swipe_state.raw_delta_x < -2.0) {
         target_dir = -1;
-    } else if (m_swipe_state.delta_x > 2.0) {
+    } else if (m_swipe_state.raw_delta_x > 2.0) {
         target_dir = 1;
     }
 
@@ -170,9 +179,16 @@ void AnimationManager::update_workspace_swipe(double dx, double dy) {
         }
 
         if (next_target_id == m_swipe_state.current_ws->get_id()) {
-            // Cannot swipe past boundary if cycling is disabled: apply rubber-band limit
-            double limit = static_cast<double>(m_swipe_state.screen_width) * 0.15;
-            m_swipe_state.delta_x = std::clamp(m_swipe_state.delta_x, -limit, limit);
+            // Cannot swipe past boundary: apply asymptotic exponential elastic resistance
+            double res_factor = Config::get().get_workspace_swipe_edge_resistance();
+            double limit = static_cast<double>(m_swipe_state.screen_width) * res_factor;
+            if (limit > 0.0) {
+                double abs_raw = std::abs(m_swipe_state.raw_delta_x);
+                double resisted = limit * (1.0 - std::exp(-abs_raw / limit));
+                m_swipe_state.delta_x = (m_swipe_state.raw_delta_x >= 0 ? resisted : -resisted);
+            } else {
+                m_swipe_state.delta_x = 0.0;
+            }
         } else {
             if (m_swipe_state.target_ws && m_swipe_state.target_ws_id != next_target_id) {
                 m_swipe_state.target_ws->set_visible(false);
@@ -191,13 +207,26 @@ void AnimationManager::update_workspace_swipe(double dx, double dy) {
                 }
                 m_swipe_state.target_ws->set_visible(true);
             }
+            m_swipe_state.delta_x = std::clamp(m_swipe_state.raw_delta_x,
+                -static_cast<double>(m_swipe_state.screen_width),
+                static_cast<double>(m_swipe_state.screen_width));
+        }
+    } else if (m_swipe_state.target_ws) {
+        m_swipe_state.delta_x = std::clamp(m_swipe_state.raw_delta_x,
+            -static_cast<double>(m_swipe_state.screen_width),
+            static_cast<double>(m_swipe_state.screen_width));
+    } else {
+        // Boundary resistance when no target workspace
+        double res_factor = Config::get().get_workspace_swipe_edge_resistance();
+        double limit = static_cast<double>(m_swipe_state.screen_width) * res_factor;
+        if (limit > 0.0) {
+            double abs_raw = std::abs(m_swipe_state.raw_delta_x);
+            double resisted = limit * (1.0 - std::exp(-abs_raw / limit));
+            m_swipe_state.delta_x = (m_swipe_state.raw_delta_x >= 0 ? resisted : -resisted);
+        } else {
+            m_swipe_state.delta_x = 0.0;
         }
     }
-
-    // Clamp delta_x to [-screen_width, +screen_width]
-    m_swipe_state.delta_x = std::clamp(m_swipe_state.delta_x,
-        -static_cast<double>(m_swipe_state.screen_width),
-        static_cast<double>(m_swipe_state.screen_width));
 
     int cur_x = static_cast<int>(std::round(m_swipe_state.delta_x));
 
@@ -224,6 +253,17 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
         return;
     }
 
+    // Calculate release velocity (px/ms) from recent sample window
+    double release_velocity = 0.0;
+    if (m_swipe_state.sample_history.size() >= 2) {
+        const auto& oldest = m_swipe_state.sample_history.front();
+        const auto& newest = m_swipe_state.sample_history.back();
+        uint64_t dt = newest.time_ms - oldest.time_ms;
+        if (dt >= 10) {
+            release_velocity = (newest.delta_x - oldest.delta_x) / static_cast<double>(dt);
+        }
+    }
+
     Workspace* current = m_swipe_state.current_ws;
     Workspace* target = m_swipe_state.target_ws;
     size_t target_id = m_swipe_state.target_ws_id;
@@ -237,19 +277,54 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
     m_swipe_state.target_ws_id = 0;
     m_swipe_state.direction = 0;
     m_swipe_state.delta_x = 0.0;
+    m_swipe_state.raw_delta_x = 0.0;
+    m_swipe_state.sample_history.clear();
 
     int cur_start_x = static_cast<int>(std::round(delta_x));
     double ratio = (screen_w > 0) ? (std::abs(delta_x) / static_cast<double>(screen_w)) : 0.0;
-    bool commit = !cancelled && (target != nullptr) && (ratio >= 0.30);
+
+    double cancel_ratio = Config::get().get_workspace_swipe_cancel_ratio();
+    double min_speed = Config::get().get_workspace_swipe_min_speed_to_force();
+    bool commit = false;
+
+    if (!cancelled && (target != nullptr)) {
+        if (direction == -1) {
+            // Dragged left (revealing next workspace on right)
+            if (release_velocity <= -min_speed) {
+                commit = true; // Fast flick in direction of motion
+            } else if (release_velocity >= min_speed) {
+                commit = false; // Fast flick back home
+            } else {
+                commit = (ratio >= cancel_ratio);
+            }
+        } else if (direction == 1) {
+            // Dragged right (revealing previous workspace on left)
+            if (release_velocity >= min_speed) {
+                commit = true; // Fast flick in direction of motion
+            } else if (release_velocity <= -min_speed) {
+                commit = false; // Fast flick back home
+            } else {
+                commit = (ratio >= cancel_ratio);
+            }
+        }
+    }
 
     auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
     uint64_t now = get_current_time_ms();
     int base_dur = Config::get().get_workspace_animation_duration_ms();
+    double v_abs = std::abs(release_velocity);
 
     if (commit && target) {
         int cur_target_x = (direction == -1) ? -screen_w : screen_w;
         int target_start_x = (direction == -1) ? (screen_w + cur_start_x) : (-screen_w + cur_start_x);
-        int duration = std::max(50, static_cast<int>(base_dur * (1.0 - ratio)));
+        double remaining_px = static_cast<double>(screen_w) * (1.0 - ratio);
+        int duration = base_dur;
+        if (v_abs >= min_speed) {
+            int momentum_dur = static_cast<int>(remaining_px / v_abs);
+            duration = std::clamp(momentum_dur, 80, base_dur);
+        } else {
+            duration = std::max(60, static_cast<int>(base_dur * (1.0 - ratio)));
+        }
 
         // Animate old workspace to offscreen
         if (current->get_scene_tree()) {
@@ -303,7 +378,14 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
         }
     } else {
         // Snap back to current workspace
-        int duration = std::max(50, static_cast<int>(base_dur * std::max(0.1, ratio)));
+        double snap_back_px = static_cast<double>(screen_w) * ratio;
+        int duration = base_dur;
+        if (v_abs >= min_speed) {
+            int momentum_dur = static_cast<int>(snap_back_px / v_abs);
+            duration = std::clamp(momentum_dur, 80, base_dur);
+        } else {
+            duration = std::max(60, static_cast<int>(base_dur * std::max(0.1, ratio)));
+        }
         Server* srv = m_server;
 
         if (current->get_scene_tree()) {
@@ -328,6 +410,7 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             };
             m_animations.push_back(std::move(anim_cur));
         }
+
 
         if (target && target->get_scene_tree()) {
             int target_start_x = (direction == -1) ? (screen_w + cur_start_x) : (-screen_w + cur_start_x);
@@ -368,8 +451,10 @@ void AnimationManager::schedule_window_open(View* view) {
 
     cancel_for_view(view);
 
-    int duration = Config::get().get_window_animation_duration_ms();
-    auto easing = Easing::from_name(Config::get().get_window_animation_curve());
+    int scale_duration = Config::get().get_window_animation_open_duration_ms();
+    int fade_duration = Config::get().get_window_animation_fade_in_duration_ms();
+    auto scale_easing = Easing::from_name(Config::get().get_window_animation_open_curve());
+    auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_in_curve());
     double open_scale = Config::get().get_window_animation_open_scale();
     uint64_t now = get_current_time_ms();
 
@@ -379,22 +464,27 @@ void AnimationManager::schedule_window_open(View* view) {
     target_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), target_opacity);
     target_opacity = std::clamp(target_opacity, 0.0f, 1.0f);
 
-    // Initialize with center-scaled start position and 0 opacity
-    view->apply_animation_transform(open_scale, 0.0f);
+    bool fade_enabled = Config::get().is_window_animation_fade_enabled();
+    float start_opacity = fade_enabled ? 0.0f : target_opacity;
+
+    // Initialize with center-scaled start position and start opacity
+    view->apply_animation_transform(open_scale, start_opacity);
 
     ViewAnimation anim;
     anim.id = m_next_id++;
     anim.view = view;
     anim.start_scale = open_scale;
     anim.target_scale = 1.0;
-    anim.start_opacity = 0.0f;
+    anim.start_opacity = start_opacity;
     anim.target_opacity = target_opacity;
     anim.start_time_ms = now;
-    anim.duration_ms = duration;
-    anim.easing_fn = easing;
-    anim.on_complete = [view]() {
+    anim.scale_duration_ms = scale_duration;
+    anim.fade_duration_ms = fade_duration;
+    anim.scale_easing_fn = scale_easing;
+    anim.fade_easing_fn = fade_easing;
+    anim.on_complete = [view, target_opacity]() {
         if (view && view->is_mapped()) {
-            view->apply_animation_transform(1.0, 1.0f);
+            view->apply_animation_transform(1.0, target_opacity);
             view->update_frame();
         }
     };
@@ -416,8 +506,10 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
 
     cancel_for_view(view);
 
-    int duration = Config::get().get_window_animation_duration_ms();
-    auto easing = Easing::from_name(Config::get().get_window_animation_curve());
+    int scale_duration = Config::get().get_window_animation_close_duration_ms();
+    int fade_duration = Config::get().get_window_animation_fade_out_duration_ms();
+    auto scale_easing = Easing::from_name(Config::get().get_window_animation_close_curve());
+    auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_out_curve());
     double close_scale = Config::get().get_window_animation_close_scale();
     uint64_t now = get_current_time_ms();
 
@@ -427,17 +519,27 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     cur_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), cur_opacity);
     cur_opacity = std::clamp(cur_opacity, 0.0f, 1.0f);
 
+    bool fade_enabled = Config::get().is_window_animation_fade_enabled();
+    float target_close_opacity = fade_enabled ? 0.0f : cur_opacity;
+
     ViewAnimation anim;
     anim.id = m_next_id++;
     anim.view = view;
     anim.start_scale = 1.0;
     anim.target_scale = close_scale;
     anim.start_opacity = cur_opacity;
-    anim.target_opacity = 0.0f;
+    anim.target_opacity = target_close_opacity;
     anim.start_time_ms = now;
-    anim.duration_ms = duration;
-    anim.easing_fn = easing;
-    anim.on_complete = std::move(on_complete);
+    anim.scale_duration_ms = scale_duration;
+    anim.fade_duration_ms = fade_duration;
+    anim.scale_easing_fn = scale_easing;
+    anim.fade_easing_fn = fade_easing;
+    anim.on_complete = [view, on_complete = std::move(on_complete)]() {
+        if (view && view->get_scene_tree()) {
+            wlr_scene_node_set_enabled(&view->get_scene_tree()->node, false);
+        }
+        if (on_complete) on_complete();
+    };
 
     m_view_animations.push_back(std::move(anim));
     schedule_next_frame();
@@ -713,24 +815,37 @@ void AnimationManager::tick(uint64_t now_ms) {
             continue;
         }
 
-        float progress = 1.0f;
-        if (anim.duration_ms > 0) {
-            progress = static_cast<float>(now_ms - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
-        }
+        uint64_t elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0;
 
-        if (progress >= 1.0f) {
-            progress = 1.0f;
-            anim.completed = true;
+        // 1. Scale interpolation
+        float scale_progress = 1.0f;
+        if (anim.scale_duration_ms > 0) {
+            scale_progress = static_cast<float>(elapsed) / static_cast<float>(anim.scale_duration_ms);
         }
+        if (scale_progress >= 1.0f) {
+            scale_progress = 1.0f;
+        }
+        float scale_eased = anim.scale_easing_fn ? anim.scale_easing_fn(scale_progress) : scale_progress;
+        double cur_scale = anim.start_scale + (anim.target_scale - anim.start_scale) * static_cast<double>(scale_eased);
 
-        float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
-        double cur_scale = anim.start_scale + (anim.target_scale - anim.start_scale) * static_cast<double>(eased);
-        float cur_opacity = anim.start_opacity + (anim.target_opacity - anim.start_opacity) * eased;
+        // 2. Fade interpolation
+        float fade_progress = 1.0f;
+        if (anim.fade_duration_ms > 0) {
+            fade_progress = static_cast<float>(elapsed) / static_cast<float>(anim.fade_duration_ms);
+        }
+        if (fade_progress >= 1.0f) {
+            fade_progress = 1.0f;
+        }
+        float fade_eased = anim.fade_easing_fn ? anim.fade_easing_fn(fade_progress) : fade_progress;
+        float cur_opacity = anim.start_opacity + (anim.target_opacity - anim.start_opacity) * fade_eased;
 
         anim.view->apply_animation_transform(cur_scale, cur_opacity);
 
-        if (anim.completed && anim.on_complete) {
-            completions.push_back(anim.on_complete);
+        if (scale_progress >= 1.0f && fade_progress >= 1.0f) {
+            anim.completed = true;
+            if (anim.on_complete) {
+                completions.push_back(anim.on_complete);
+            }
         }
     }
 

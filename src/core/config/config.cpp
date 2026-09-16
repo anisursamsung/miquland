@@ -30,21 +30,31 @@ Config::Config() {
 
 void Config::set_defaults() {
     m_keybindings.clear();
-    uint32_t mod = WLR_MODIFIER_LOGO;
-    uint32_t mod_shift = WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT;
-    uint32_t mod_alt = WLR_MODIFIER_LOGO | WLR_MODIFIER_ALT;
-    uint32_t mod_ctrl = WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL;
+    m_gesture_bindings.clear();
+    m_window_rules.clear();
+    m_monitor_rules.clear();
+    m_exec_commands.clear();
+    m_exec_once_commands.clear();
+    m_blurred_layers.clear();
+    m_plugins.clear();
 
     const char* env_term = getenv("TERMINAL");
-
     std::string term = (env_term && *env_term) ? env_term : "kitty || foot || alacritty || wezterm || weston-terminal || xterm";
     m_terminal = term;
+
     m_tap_to_click = true;
     m_natural_scroll = false;
     m_dwt = true;
     m_accel_speed = 0.0;
     m_accel_profile = "adaptive";
-    m_touch_output = "";
+    m_touchscreen_output = "";
+    m_touchpad_workspace_swipe_multiplier = 1.0;
+    m_touchpad_swipe_threshold = 50.0;
+    m_touchscreen_workspace_swipe_multiplier = 1.0;
+    m_touchscreen_swipe_threshold = 100.0;
+    m_workspace_swipe_cancel_ratio = 0.30;
+    m_workspace_swipe_min_speed_to_force = 0.3;
+    m_workspace_swipe_edge_resistance = 0.15;
     m_kb_layout = "us";
     m_kb_variant = "";
     m_kb_options = "";
@@ -56,12 +66,17 @@ void Config::set_defaults() {
     m_animations_enabled = true;
     m_workspace_animations_enabled = true;
     m_workspace_animation_duration_ms = 200;
-    m_workspace_animation_curve = "ease_out_cubic";
+    m_workspace_animation_curve = "smooth_out";
     m_window_animations_enabled = true;
     m_window_animation_duration_ms = 180;
-    m_window_animation_curve = "ease_out_cubic";
+    m_window_animation_open_duration_ms = 180;
+    m_window_animation_close_duration_ms = 140;
+    m_window_animation_curve = "default";
+    m_window_animation_open_curve = "default";
+    m_window_animation_close_curve = "smooth_out";
     m_window_animation_open_scale = 0.85;
     m_window_animation_close_scale = 0.85;
+    m_window_animation_fade = true;
     m_blur_enabled = true;
     m_blur_radius = 5;
     m_blur_num_passes = 3;
@@ -69,86 +84,24 @@ void Config::set_defaults() {
     m_blur_brightness = 0.9f;
     m_blur_contrast = 0.9f;
     m_blur_saturation = 1.1f;
-    m_blurred_layers.clear();
 
     m_window_border_color_active = "#0066ff";
     m_window_border_color_inactive = "#99c2ff";
+    m_window_border_width = 2;
+    m_window_border_radius = 10;
+    m_space_between_windows = 8;
+    m_screen_edge_padding = 12;
+    m_layout_mode = LayoutMode::Spiral;
+    m_resize_on_border = true;
+    m_border_grab_area = 6;
 
-    // Application Launchers
-    m_keybindings.push_back({ mod, XKB_KEY_space, "menu", "Super+Space" });
-    m_keybindings.push_back({ mod, XKB_KEY_f, "firefox", "Super+F" });
-    m_keybindings.push_back({ mod, XKB_KEY_y, "kitty -e yazi || foot -e yazi || yazi", "Super+Y" });
-
-    // Window Management & Layouts
-    m_keybindings.push_back({ mod, XKB_KEY_q, "close", "Super+Q" });
-    m_keybindings.push_back({ mod, XKB_KEY_l, "toggle_layout", "Super+L" });
-    m_keybindings.push_back({ mod, XKB_KEY_Return, "swap_main", "Super+Return" });
-
-    // Switch focus between windows in active workspace
-    m_keybindings.push_back({ mod, XKB_KEY_j, "next_window", "Super+J" });
-    m_keybindings.push_back({ mod, XKB_KEY_k, "prev_window", "Super+K" });
-    // Workspace Navigation & Direct Jump (Super + 1..0) [Hyprland standard]
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod, sym, "ws_" + std::to_string(i), "Super+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod, XKB_KEY_0, "ws_10", "Super+0" });
-
-    // Workspace Navigation (Super + Shift + Left/Right)
-    m_keybindings.push_back({ mod_shift, XKB_KEY_Left, "prev_ws", "Super+Shift+Left" });
-    m_keybindings.push_back({ mod_shift, XKB_KEY_Right, "next_ws", "Super+Shift+Right" });
-
-    // Move window directly to workspace 1..10 (Super + Shift + 1..0) [Hyprland standard]
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_shift, sym, "move_ws_" + std::to_string(i), "Super+Shift+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod_shift, XKB_KEY_0, "move_ws_10", "Super+Shift+0" });
-
-    // Move window directly to workspace 1..10 (Super + Alt + 1..0) [Alternate]
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_alt, sym, "move_ws_" + std::to_string(i), "Super+Alt+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod_alt, XKB_KEY_0, "move_ws_10", "Super+Alt+0" });
-
-    // Direct Jump to Workspace 11..20 (Super + Ctrl + 1..0)
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_ctrl, sym, "ws_" + std::to_string(i + 10), "Super+Ctrl+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod_ctrl, XKB_KEY_0, "ws_20", "Super+Ctrl+0" });
-
-    // Move window directly to workspace 11..20 (Super + Ctrl + Alt + 1..0)
-    uint32_t mod_ctrl_alt = WLR_MODIFIER_LOGO | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT;
-    for (int i = 1; i <= 9; ++i) {
-        xkb_keysym_t sym = XKB_KEY_0 + i;
-        m_keybindings.push_back({ mod_ctrl_alt, sym, "move_ws_" + std::to_string(i + 10), "Super+Ctrl+Alt+" + std::to_string(i) });
-    }
-    m_keybindings.push_back({ mod_ctrl_alt, XKB_KEY_0, "move_ws_20", "Super+Ctrl+Alt+0" });
-
-    // Configurable System Bindings (Super+Shift+Q -> exit, Super+T -> terminal)
-    m_keybindings.push_back({ mod_shift, XKB_KEY_q, "exit", "Super+Shift+Q" });
-    m_keybindings.push_back({ mod, XKB_KEY_t, "terminal", "Super+T" });
-
-    // Ergonomics & window defaults
     m_focus_follows_mouse = true;
     m_smart_gaps = false;
     m_xwayland_force_zero_scaling = false;
     m_cursor_theme = "";
     m_cursor_size = 24;
     m_default_split_ratio = 0.5;
-    m_workspace_cycle = true;
-
-    // Window Rules defaults
-    m_window_rules.clear();
-    m_window_rules.push_back({ "float", "xdg-desktop-portal-gtk", "" });
-    m_window_rules.push_back({ "float", "org.freedesktop.impl.portal.desktop.gtk", "" });
-    m_window_rules.push_back({ "float", "zenity", "" });
-    
-    // Gestures have NO hardcoded defaults or fallback (strictly loaded from config)
-    m_swipe_threshold = 50.0;
-    m_gesture_bindings.clear();
+    m_workspace_cycle = false;
 }
 
 void Config::add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::string& action, const std::string& combo) {
@@ -212,6 +165,14 @@ static bool matches_target(const std::string& pattern, const std::string& value)
     std::string l_val = value;
     std::transform(l_pat.begin(), l_pat.end(), l_pat.begin(), ::tolower);
     std::transform(l_val.begin(), l_val.end(), l_val.begin(), ::tolower);
+
+    if (l_pat.rfind("class:", 0) == 0) {
+        l_pat = l_pat.substr(6);
+    } else if (l_pat.rfind("title:", 0) == 0) {
+        l_pat = l_pat.substr(6);
+    }
+
+    if (l_pat.empty()) return false;
     return (l_val.find(l_pat) != std::string::npos);
 }
 
@@ -466,21 +427,25 @@ void Config::ensure_default_files() {
     std::string dir = get_config_dir_path();
     std::error_code ec;
     
-    // Create ~/.config/miquland/
+    // Create ~/.config/miquland/ if not present
     fs::create_directories(dir, ec);
 
-    // Copy main miquland.conf
+    // Copy system default miquland.conf if user copy does not exist
     std::string config_path = get_config_file_path();
     if (!fs::exists(config_path)) {
         bool copied = false;
-        for (const char* t_dir : {"assets", "/usr/share/miquland", "/usr/local/share/miquland", "/etc/miquland"}) {
+        for (const char* t_dir : {"/usr/share/miquland", "/etc/xdg/miquland", "/etc/miquland", "assets", "/usr/local/share/miquland"}) {
             std::string cand = std::string(t_dir) + "/miquland.conf";
             if (fs::exists(cand)) {
                 fs::copy_file(cand, config_path, fs::copy_options::overwrite_existing, ec);
-                if (!ec) { copied = true; break; }
+                if (!ec) {
+                    copied = true;
+                    log_info("Installed default configuration to " + config_path + " from " + cand);
+                    break;
+                }
             }
         }
-        // Absolute last resort if assets are completely missing
+        // Absolute last resort if system assets are missing
         if (!copied) save(); 
     }
 }
@@ -663,8 +628,8 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             std::string lower = value;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
             m_accel_profile = (lower == "flat") ? "flat" : "adaptive";
-        } else if (key == "touch_output" || key == "touchscreen_output") {
-            m_touch_output = value;
+        } else if (key == "touchscreen_output" || key == "touch_output") {
+            m_touchscreen_output = value;
         } else if (key == "kb_layout" || key == "keyboard_layout" || key == "layout_keyboard") {
             m_kb_layout = value;
         } else if (key == "kb_variant" || key == "keyboard_variant") {
@@ -769,10 +734,27 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             m_window_animations_enabled = (value == "true" || value == "1" || value == "yes");
         } else if (key == "window_animation_duration" || key == "window_animation_duration_ms") {
             try {
-                m_window_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+                int d = std::clamp(std::stoi(value), 10, 2000);
+                m_window_animation_duration_ms = d;
+                m_window_animation_open_duration_ms = d;
+                m_window_animation_close_duration_ms = d;
+            } catch (...) {}
+        } else if (key == "window_animation_open_duration" || key == "window_animation_open_duration_ms" || key == "window_open_duration") {
+            try {
+                m_window_animation_open_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "window_animation_close_duration" || key == "window_animation_close_duration_ms" || key == "window_close_duration") {
+            try {
+                m_window_animation_close_duration_ms = std::clamp(std::stoi(value), 10, 2000);
             } catch (...) {}
         } else if (key == "window_animation_curve" || key == "window_animation_easing") {
             m_window_animation_curve = value;
+            m_window_animation_open_curve = value;
+            m_window_animation_close_curve = value;
+        } else if (key == "window_animation_open_curve" || key == "window_animation_open_easing" || key == "window_open_curve") {
+            m_window_animation_open_curve = value;
+        } else if (key == "window_animation_close_curve" || key == "window_animation_close_easing" || key == "window_close_curve") {
+            m_window_animation_close_curve = value;
         } else if (key == "window_animation_open_scale" || key == "window_open_scale") {
             try {
                 m_window_animation_open_scale = std::clamp(std::stod(value), 0.1, 1.0);
@@ -781,6 +763,29 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             try {
                 m_window_animation_close_scale = std::clamp(std::stod(value), 0.1, 1.0);
             } catch (...) {}
+        } else if (key == "window_animation_fade" || key == "window_fade" || key == "fade_animations") {
+            m_window_animation_fade = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "window_animation_fade_in_duration" || key == "window_animation_fade_in_duration_ms" || key == "window_fade_in_duration") {
+            try {
+                m_window_animation_fade_in_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "window_animation_fade_out_duration" || key == "window_animation_fade_out_duration_ms" || key == "window_fade_out_duration") {
+            try {
+                m_window_animation_fade_out_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "window_animation_fade_duration" || key == "window_animation_fade_duration_ms" || key == "window_fade_duration") {
+            try {
+                int d = std::clamp(std::stoi(value), 10, 2000);
+                m_window_animation_fade_in_duration_ms = d;
+                m_window_animation_fade_out_duration_ms = d;
+            } catch (...) {}
+        } else if (key == "window_animation_fade_in_curve" || key == "window_animation_fade_in_easing" || key == "window_fade_in_curve") {
+            m_window_animation_fade_in_curve = value;
+        } else if (key == "window_animation_fade_out_curve" || key == "window_animation_fade_out_easing" || key == "window_fade_out_curve") {
+            m_window_animation_fade_out_curve = value;
+        } else if (key == "window_animation_fade_curve" || key == "window_animation_fade_easing" || key == "window_fade_curve") {
+            m_window_animation_fade_in_curve = value;
+            m_window_animation_fade_out_curve = value;
         } else if (key == "animation_duration" || key == "animation_duration_ms") {
             try {
                 m_workspace_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
@@ -833,9 +838,33 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
                     file_gestures.push_back({ pattern, action });
                 }
             }
-        } else if (key == "swipe_threshold" || key == "gesture_threshold" || key == "gesture_distance") {
+        } else if (key == "touchpad_workspace_swipe_multiplier" || key == "workspace_swipe_multiplier") {
             try {
-                m_swipe_threshold = std::max(10.0, std::stod(value));
+                m_touchpad_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0);
+            } catch (...) {}
+        } else if (key == "touchpad_swipe_threshold" || key == "swipe_threshold") {
+            try {
+                m_touchpad_swipe_threshold = std::max(5.0, std::stod(value));
+            } catch (...) {}
+        } else if (key == "touchscreen_workspace_swipe_multiplier" || key == "workspace_swipe_touch_multiplier") {
+            try {
+                m_touchscreen_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0);
+            } catch (...) {}
+        } else if (key == "touchscreen_swipe_threshold") {
+            try {
+                m_touchscreen_swipe_threshold = std::max(5.0, std::stod(value));
+            } catch (...) {}
+        } else if (key == "workspace_swipe_cancel_ratio" || key == "workspace_swipe_commit_ratio") {
+            try {
+                m_workspace_swipe_cancel_ratio = std::clamp(std::stod(value), 0.05, 0.95);
+            } catch (...) {}
+        } else if (key == "workspace_swipe_min_speed_to_force" || key == "workspace_swipe_min_speed") {
+            try {
+                m_workspace_swipe_min_speed_to_force = std::clamp(std::stod(value), 0.05, 10.0);
+            } catch (...) {}
+        } else if (key == "workspace_swipe_edge_resistance" || key == "workspace_swipe_resistance") {
+            try {
+                m_workspace_swipe_edge_resistance = std::clamp(std::stod(value), 0.0, 0.5);
             } catch (...) {}
         } else if (key == "windowrule" || key == "window_rule") {
             size_t comma = value.find(',');
@@ -975,22 +1004,10 @@ void Config::load() {
 
     load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, 0);
 
-    if (has_bindings_in_file) {
-        m_keybindings = std::move(file_bindings);
-    }
-    if (has_gestures_in_file) {
-        m_gesture_bindings = std::move(file_gestures);
-    } else {
-        m_gesture_bindings.clear();
-    }
-    if (has_rules_in_file) {
-        m_window_rules = std::move(file_rules);
-    }
-    if (has_monitors_in_file) {
-        m_monitor_rules = std::move(file_monitors);
-    } else {
-        m_monitor_rules.clear();
-    }
+    m_keybindings = std::move(file_bindings);
+    m_gesture_bindings = std::move(file_gestures);
+    m_window_rules = std::move(file_rules);
+    m_monitor_rules = std::move(file_monitors);
     m_exec_commands = std::move(file_exec_cmds);
     m_exec_once_commands = std::move(file_exec_once_cmds);
 
@@ -1063,8 +1080,8 @@ void Config::save() {
     file << "disable_while_typing = " << (m_dwt ? "true" : "false") << "\n";
     file << "accel_speed = " << m_accel_speed << "\n";
     file << "accel_profile = " << m_accel_profile << "\n";
-    if (!m_touch_output.empty()) {
-        file << "touch_output = " << m_touch_output << "\n";
+    if (!m_touchscreen_output.empty()) {
+        file << "touchscreen_output = " << m_touchscreen_output << "\n";
     }
     file << "\n";
 
@@ -1159,7 +1176,10 @@ void Config::save() {
     file << "# ==========================================\n";
     file << "# Touchpad & Touchscreen Gestures\n";
     file << "# ==========================================\n";
-    file << "swipe_threshold = " << m_swipe_threshold << "\n";
+    file << "touchpad_workspace_swipe_multiplier = " << m_touchpad_workspace_swipe_multiplier << "\n";
+    file << "touchpad_swipe_threshold = " << m_touchpad_swipe_threshold << "\n";
+    file << "touchscreen_workspace_swipe_multiplier = " << m_touchscreen_workspace_swipe_multiplier << "\n";
+    file << "touchscreen_swipe_threshold = " << m_touchscreen_swipe_threshold << "\n";
     for (const auto& g : m_gesture_bindings) {
         file << "gesture = " << g.pattern << ", " << g.action << "\n";
     }

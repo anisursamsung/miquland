@@ -447,7 +447,7 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
     while (tree != nullptr) {
         if (tree->node.data != nullptr) {
             auto* possible_view = static_cast<View*>(tree->node.data);
-            if (is_valid_view(possible_view)) {
+            if (is_valid_view(possible_view) && !possible_view->is_animating_close()) {
                 return possible_view;
             }
         }
@@ -623,8 +623,9 @@ void Server::unlock_session() {
 
     if (m_workspace_manager) {
         Workspace* ws = m_workspace_manager->get_active_workspace();
-        if (ws && ws->view_count() > 0) {
-            ws->get_view(0)->focus();
+        if (ws) {
+            View* best = m_workspace_manager->find_best_focus_view(ws);
+            if (best) best->focus();
         }
     }
 }

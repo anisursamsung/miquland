@@ -381,10 +381,15 @@ void View::set_geometry(int x, int y, int width, int height) {
     }
 
     bool size_changed = (m_width != width || m_height != height);
+    bool pos_changed = (m_x != x || m_y != y);
     m_x = x;
     m_y = y;
     m_width = width;
     m_height = height;
+    m_target_x = x;
+    m_target_y = y;
+    m_target_width = width;
+    m_target_height = height;
     m_current_anim_x = x;
     m_current_anim_y = y;
     m_current_anim_width = width;
@@ -420,7 +425,7 @@ void View::set_geometry(int x, int y, int width, int height) {
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
         }
-        if (m_xwayland_surface && size_changed) {
+        if (m_xwayland_surface && (size_changed || pos_changed)) {
             int conf_x = x + bw;
             int conf_y = y + bw;
             int conf_w = client_w;
@@ -572,6 +577,7 @@ void View::set_fullscreen(bool fullscreen) {
 
 
 void View::update_frame() {
+    if (m_is_animating_close) return;
     update_border();
     update_corner_radius();
     update_opacity();
@@ -693,21 +699,32 @@ void View::update_corner_radius() {
     int client_w = std::max(1, m_width - 2 * bw);
     int client_h = std::max(1, m_height - 2 * bw);
 
-    // Follow Sway / dwl standard wlroots clipping for window geometry & CSD
-    struct wlr_box clip = {
-        .x = 0,
-        .y = 0,
-        .width = client_w,
-        .height = client_h,
-    };
-
+    int geom_x = 0, geom_y = 0;
+    int geom_w = client_w, geom_h = client_h;
     if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
         auto* xdg_surf = m_xdg_toplevel->base;
-        clip.x = xdg_surf->current.geometry.x;
-        clip.y = xdg_surf->current.geometry.y;
+        geom_x = xdg_surf->current.geometry.x;
+        geom_y = xdg_surf->current.geometry.y;
+        if ((is_floating() || is_dialog()) && xdg_surf->current.geometry.width > 0 && xdg_surf->current.geometry.height > 0) {
+            geom_w = xdg_surf->current.geometry.width;
+            geom_h = xdg_surf->current.geometry.height;
+        }
     }
 
+    struct wlr_box clip = {
+        .x = geom_x,
+        .y = geom_y,
+        .width = geom_w,
+        .height = geom_h,
+    };
+
     wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
+
+    if (!m_is_fullscreen && !m_is_overview_scaled && !m_is_animating_geometry) {
+        wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
+    } else if (m_is_fullscreen) {
+        wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
+    }
 
     int radius = 0;
     if (!m_is_fullscreen && !m_is_override_redirect) {
@@ -730,22 +747,56 @@ void View::apply_animation_transform(double scale, float opacity) {
         return;
     }
 
+    int bw = Config::get().get_window_border_width();
     int base_w = (m_current_anim_width > 0) ? m_current_anim_width : m_width;
     int base_h = (m_current_anim_height > 0) ? m_current_anim_height : m_height;
     int base_x = (m_current_anim_width > 0) ? m_current_anim_x : m_x;
     int base_y = (m_current_anim_height > 0) ? m_current_anim_y : m_y;
 
-    if (scale >= 0.999 && opacity >= 0.999f && !m_is_animating_geometry) {
+    int geom_x = 0, geom_y = 0;
+    int geom_w = std::max(1, base_w - 2 * bw);
+    int geom_h = std::max(1, base_h - 2 * bw);
+    if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+        auto* xdg_surf = m_xdg_toplevel->base;
+        geom_x = xdg_surf->current.geometry.x;
+        geom_y = xdg_surf->current.geometry.y;
+        if ((is_floating() || is_dialog()) && xdg_surf->current.geometry.width > 0 && xdg_surf->current.geometry.height > 0) {
+            geom_w = xdg_surf->current.geometry.width;
+            geom_h = xdg_surf->current.geometry.height;
+        }
+    }
+
+    float safe_opacity = std::clamp(opacity, 0.0f, 1.0f);
+
+    if (scale >= 0.999 && !m_is_animating_geometry) {
         wlr_scene_node_set_position(&m_scene_tree->node, m_x, m_y);
-        int bw = Config::get().get_window_border_width();
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
             wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* data) {
+                float op = *static_cast<float*>(data);
                 wlr_scene_buffer_set_dest_size(buf, 0, 0);
-            }, nullptr);
+                wlr_scene_buffer_set_opacity(buf, op);
+            }, &safe_opacity);
+
+            struct wlr_box clip = {
+                .x = geom_x,
+                .y = geom_y,
+                .width = geom_w,
+                .height = geom_h,
+            };
+            wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
         }
         if (m_border_scene_buffer) {
             wlr_scene_buffer_set_dest_size(m_border_scene_buffer, 0, 0);
+            wlr_scene_buffer_set_opacity(m_border_scene_buffer, safe_opacity);
+        }
+        if (m_blur_node) {
+            if (safe_opacity < 0.05f || !Config::get().is_blur_enabled()) {
+                wlr_scene_node_set_enabled(&m_blur_node->node, false);
+            } else {
+                wlr_scene_node_set_enabled(&m_blur_node->node, true);
+                wlr_scene_blur_set_size(m_blur_node, m_width, m_height);
+            }
         }
         update_frame();
         return;
@@ -759,9 +810,7 @@ void View::apply_animation_transform(double scale, float opacity) {
 
     wlr_scene_node_set_position(&m_scene_tree->node, cur_x, cur_y);
 
-    int bw = Config::get().get_window_border_width();
     int scaled_bw = static_cast<int>(std::round(static_cast<double>(bw) * scale));
-    float safe_opacity = std::clamp(opacity, 0.0f, 1.0f);
 
     if (m_surface_scene_tree) {
         wlr_scene_node_set_position(&m_surface_scene_tree->node, scaled_bw, scaled_bw);
@@ -780,6 +829,14 @@ void View::apply_animation_transform(double scale, float opacity) {
             }
             wlr_scene_buffer_set_opacity(buf, d->opacity);
         }, &data);
+
+        struct wlr_box clip = {
+            .x = geom_x,
+            .y = geom_y,
+            .width = geom_w,
+            .height = geom_h,
+        };
+        wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
     }
 
     if (m_border_scene_buffer) {
@@ -803,6 +860,10 @@ void View::apply_animation_transform(double scale, float opacity) {
 
 void View::notify_geometry_target(int x, int y, int width, int height) {
     m_is_animating_geometry = true;
+    m_target_x = x;
+    m_target_y = y;
+    m_target_width = width;
+    m_target_height = height;
 
     int bw = Config::get().get_window_border_width();
     int client_w = std::max(1, width - 2 * bw);
@@ -850,6 +911,18 @@ void View::apply_geometry_animation(int cur_x, int cur_y, int cur_w, int cur_h) 
     int client_w = std::max(1, cur_w - 2 * bw);
     int client_h = std::max(1, cur_h - 2 * bw);
 
+    int geom_x = 0, geom_y = 0;
+    int geom_w = client_w, geom_h = client_h;
+    if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+        auto* xdg_surf = m_xdg_toplevel->base;
+        geom_x = xdg_surf->current.geometry.x;
+        geom_y = xdg_surf->current.geometry.y;
+        if ((is_floating() || is_dialog()) && xdg_surf->current.geometry.width > 0 && xdg_surf->current.geometry.height > 0) {
+            geom_w = xdg_surf->current.geometry.width;
+            geom_h = xdg_surf->current.geometry.height;
+        }
+    }
+
     if (m_surface_scene_tree) {
         wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
 
@@ -866,16 +939,11 @@ void View::apply_geometry_animation(int cur_x, int cur_y, int cur_w, int cur_h) 
         }, &data);
 
         struct wlr_box clip = {
-            .x = 0,
-            .y = 0,
-            .width = client_w,
-            .height = client_h,
+            .x = geom_x,
+            .y = geom_y,
+            .width = geom_w,
+            .height = geom_h,
         };
-        if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
-            auto* xdg_surf = m_xdg_toplevel->base;
-            clip.x = xdg_surf->current.geometry.x;
-            clip.y = xdg_surf->current.geometry.y;
-        }
         wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
     }
 
@@ -894,6 +962,10 @@ void View::finish_geometry_animation(int target_x, int target_y, int target_w, i
     m_y = target_y;
     m_width = target_w;
     m_height = target_h;
+    m_target_x = target_x;
+    m_target_y = target_y;
+    m_target_width = target_w;
+    m_target_height = target_h;
     m_current_anim_x = target_x;
     m_current_anim_y = target_y;
     m_current_anim_width = target_w;
@@ -949,9 +1021,6 @@ void View::set_overview_scaled(bool scaled, double scale) {
         if (m_blur_node) {
             wlr_scene_node_set_enabled(&m_blur_node->node, false);
         }
-        if (m_surface_scene_tree) {
-            wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
-        }
         reapply_overview_scale();
     } else {
         int bw = Config::get().get_window_border_width();
@@ -994,6 +1063,8 @@ void View::reapply_overview_scale() {
             geom_h = xdg_surf->current.geometry.height;
         }
     }
+
+    wlr_scene_node_set_position(&m_surface_scene_tree->node, 0, 0);
 
     // Clip in root surface unscaled coordinate space to crop CSD drop-shadows
     struct wlr_box clip = {
@@ -1115,6 +1186,13 @@ void View::close() {
 
     m_is_animating_close = true;
     if (m_server && m_server->get_animation_manager()) {
+        if (m_workspace && !is_floating() && !is_dialog()) {
+            if (m_scene_tree && m_workspace->get_floating_tree()) {
+                wlr_scene_node_reparent(&m_scene_tree->node, m_workspace->get_floating_tree());
+                wlr_scene_node_raise_to_top(&m_scene_tree->node);
+            }
+            m_server->get_workspace_manager()->remove_view(this);
+        }
         m_server->get_animation_manager()->schedule_window_close(this, do_send_close);
     } else {
         do_send_close();
@@ -1197,9 +1275,14 @@ void View::handle_map(struct wl_listener* listener, void* data) {
 
     if (will_animate) {
         view->update_frame();
-        // Pre-transform the scene node to initial animation scale and 0 opacity BEFORE enabling node
+        // Pre-transform the scene node to initial animation scale and initial opacity BEFORE enabling node
         double open_scale = Config::get().get_window_animation_open_scale();
-        view->apply_animation_transform(open_scale, 0.0f);
+        float target_op = view->is_focused()
+            ? Config::get().get_window_opacity_active()
+            : Config::get().get_window_opacity_inactive();
+        target_op = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), target_op);
+        float init_op = Config::get().is_window_animation_fade_enabled() ? 0.0f : target_op;
+        view->apply_animation_transform(open_scale, init_op);
     } else {
         view->update_opacity();
         view->update_corner_radius();
@@ -1234,6 +1317,20 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
 
     view->m_mapped = false;
     view->m_is_animating_close = false;
+    view->m_is_animating_geometry = false;
+    view->m_x = 0;
+    view->m_y = 0;
+    view->m_width = 0;
+    view->m_height = 0;
+    view->m_target_x = 0;
+    view->m_target_y = 0;
+    view->m_target_width = 0;
+    view->m_target_height = 0;
+    view->m_current_anim_x = 0;
+    view->m_current_anim_y = 0;
+    view->m_current_anim_width = 0;
+    view->m_current_anim_height = 0;
+    view->m_saved_geometry = {};
 
     if (view->m_server && view->m_server->get_animation_manager()) {
         view->m_server->get_animation_manager()->cancel_for_view(view);
@@ -1362,7 +1459,7 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
         }
     }
 
-    if (view->m_mapped) {
+    if (view->m_mapped && !view->m_is_animating_close) {
         if (view->m_is_overview_scaled) {
             view->reapply_overview_scale();
         } else {
@@ -1661,9 +1758,9 @@ void View::update_parent_relationship() {
                 }
             }
         }
-        // Heuristic fallback for portal / dialog window app_ids
+        // Fallback for system file-picker / portal dialogs only
         std::string app = get_app_id();
-        if (app == "xdg-desktop-portal-gtk" || app == "org.freedesktop.impl.portal.desktop.gtk" || app == "zenity" || Config::get().should_float(app, get_title())) {
+        if (app == "xdg-desktop-portal-gtk" || app == "org.freedesktop.impl.portal.desktop.gtk" || app == "zenity") {
             if (!m_parent_view && m_server->get_focused_view() && m_server->get_focused_view() != this) {
                 set_parent_view(m_server->get_focused_view());
                 return;

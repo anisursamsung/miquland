@@ -40,8 +40,10 @@ struct ViewAnimation {
     float start_opacity = 0.0f;
     float target_opacity = 1.0f;
     uint64_t start_time_ms = 0;
-    uint64_t duration_ms = 0;
-    std::function<float(float)> easing_fn;
+    uint64_t scale_duration_ms = 0;
+    uint64_t fade_duration_ms = 0;
+    std::function<float(float)> scale_easing_fn;
+    std::function<float(float)> fade_easing_fn;
     std::function<void()> on_complete;
     bool completed = false;
 };
@@ -99,6 +101,11 @@ public:
     void schedule_next_frame();
 
 private:
+    struct SwipeSample {
+        uint64_t time_ms = 0;
+        double delta_x = 0.0;
+    };
+
     struct WorkspaceSwipeState {
         bool active = false;
         Workspace* current_ws = nullptr;
@@ -106,7 +113,9 @@ private:
         size_t target_ws_id = 0;
         int direction = 0; // -1: left (next), +1: right (prev)
         double delta_x = 0.0;
+        double raw_delta_x = 0.0;
         int screen_width = 1920;
+        std::vector<SwipeSample> sample_history;
     };
 
     uint64_t get_current_time_ms() const;

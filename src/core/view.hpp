@@ -83,10 +83,15 @@ public:
     int get_y() const { return m_y; }
     int get_width() const { return m_width; }
     int get_height() const { return m_height; }
+    int get_target_x() const { return (m_target_width > 0) ? m_target_x : m_x; }
+    int get_target_y() const { return (m_target_height > 0) ? m_target_y : m_y; }
+    int get_target_width() const { return (m_target_width > 0) ? m_target_width : m_width; }
+    int get_target_height() const { return (m_target_height > 0) ? m_target_height : m_height; }
     int get_current_anim_x() const { return (m_current_anim_width > 0) ? m_current_anim_x : m_x; }
     int get_current_anim_y() const { return (m_current_anim_height > 0) ? m_current_anim_y : m_y; }
     int get_current_anim_width() const { return (m_current_anim_width > 0) ? m_current_anim_width : m_width; }
     int get_current_anim_height() const { return (m_current_anim_height > 0) ? m_current_anim_height : m_height; }
+    bool is_animating_close() const { return m_is_animating_close; }
     float get_output_scale() const;
 
     void set_overview_scaled(bool scaled, double scale = 1.0);
@@ -152,6 +157,10 @@ private:
     int m_y = 0;
     int m_width = 0;
     int m_height = 0;
+    int m_target_x = 0;
+    int m_target_y = 0;
+    int m_target_width = 0;
+    int m_target_height = 0;
     int m_current_anim_x = 0;
     int m_current_anim_y = 0;
     int m_current_anim_width = 0;
