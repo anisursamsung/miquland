@@ -61,7 +61,7 @@ void AnimationManager::schedule_workspace_transition(
         NodeAnimation anim_from;
         anim_from.id = m_next_id++;
         anim_from.node = &from_ws->get_scene_tree()->node;
-        anim_from.bound_workspace = from_ws;
+        anim_from.bound_workspace_id = from_id;
         anim_from.start_x = 0;
         anim_from.start_y = 0;
         anim_from.target_x = -offset;
@@ -69,13 +69,18 @@ void AnimationManager::schedule_workspace_transition(
         anim_from.start_time_ms = now;
         anim_from.duration_ms = duration;
         anim_from.easing_fn = easing;
-        anim_from.on_complete = [srv, from_ws, from_id]() {
-            from_ws->set_visible(false);
-            if (from_ws->get_scene_tree()) {
-                wlr_scene_node_set_position(&from_ws->get_scene_tree()->node, 0, 0);
-            }
-            if (srv && srv->get_workspace_manager() && from_id > 0) {
-                srv->get_workspace_manager()->prune_workspace(from_id);
+        anim_from.on_complete = [srv, from_id]() {
+            if (srv && srv->get_workspace_manager()) {
+                Workspace* ws = srv->get_workspace_manager()->get_workspace(from_id);
+                if (ws) {
+                    ws->set_visible(false);
+                    if (ws->get_scene_tree()) {
+                        wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                    }
+                }
+                if (from_id > 0) {
+                    srv->get_workspace_manager()->prune_workspace(from_id);
+                }
             }
         };
         m_animations.push_back(std::move(anim_from));
@@ -84,10 +89,11 @@ void AnimationManager::schedule_workspace_transition(
     // Animation 2: Move new workspace on-screen to 0,0
     if (to_ws->get_scene_tree()) {
         Server* srv = m_server;
+        size_t to_id = to_ws ? to_ws->get_id() : 0;
         NodeAnimation anim_to;
         anim_to.id = m_next_id++;
         anim_to.node = &to_ws->get_scene_tree()->node;
-        anim_to.bound_workspace = to_ws;
+        anim_to.bound_workspace_id = to_id;
         anim_to.start_x = offset;
         anim_to.start_y = 0;
         anim_to.target_x = 0;
@@ -95,9 +101,12 @@ void AnimationManager::schedule_workspace_transition(
         anim_to.start_time_ms = now;
         anim_to.duration_ms = duration;
         anim_to.easing_fn = easing;
-        anim_to.on_complete = [srv, to_ws]() {
-            if (to_ws->get_scene_tree()) {
-                wlr_scene_node_set_position(&to_ws->get_scene_tree()->node, 0, 0);
+        anim_to.on_complete = [srv, to_id]() {
+            if (srv && srv->get_workspace_manager()) {
+                Workspace* ws = srv->get_workspace_manager()->get_workspace(to_id);
+                if (ws && ws->get_scene_tree()) {
+                    wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                }
             }
             if (srv && srv->get_input_manager()) {
                 srv->get_input_manager()->recheck_cursor_focus();
@@ -112,7 +121,7 @@ void AnimationManager::schedule_workspace_transition(
 bool AnimationManager::is_workspace_animating() const {
     if (m_swipe_state.active) return true;
     for (const auto& anim : m_animations) {
-        if (anim.bound_workspace != nullptr) return true;
+        if (anim.bound_workspace_id != 0) return true;
     }
     return false;
 }
@@ -327,11 +336,13 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
         }
 
         // Animate old workspace to offscreen
+        Server* srv = m_server;
+        size_t cur_id = current ? current->get_id() : 0;
         if (current->get_scene_tree()) {
             NodeAnimation anim_from;
             anim_from.id = m_next_id++;
             anim_from.node = &current->get_scene_tree()->node;
-            anim_from.bound_workspace = current;
+            anim_from.bound_workspace_id = cur_id;
             anim_from.start_x = cur_start_x;
             anim_from.start_y = 0;
             anim_from.target_x = cur_target_x;
@@ -339,22 +350,26 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             anim_from.start_time_ms = now;
             anim_from.duration_ms = duration;
             anim_from.easing_fn = easing;
-            anim_from.on_complete = [current]() {
-                current->set_visible(false);
-                if (current->get_scene_tree()) {
-                    wlr_scene_node_set_position(&current->get_scene_tree()->node, 0, 0);
+            anim_from.on_complete = [srv, cur_id]() {
+                if (srv && srv->get_workspace_manager()) {
+                    Workspace* ws = srv->get_workspace_manager()->get_workspace(cur_id);
+                    if (ws) {
+                        ws->set_visible(false);
+                        if (ws->get_scene_tree()) {
+                            wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                        }
+                    }
                 }
             };
             m_animations.push_back(std::move(anim_from));
         }
 
         // Animate target workspace to 0,0 and commit switch
-        Server* srv = m_server;
         if (target->get_scene_tree()) {
             NodeAnimation anim_to;
             anim_to.id = m_next_id++;
             anim_to.node = &target->get_scene_tree()->node;
-            anim_to.bound_workspace = target;
+            anim_to.bound_workspace_id = target_id;
             anim_to.start_x = target_start_x;
             anim_to.start_y = 0;
             anim_to.target_x = 0;
@@ -362,11 +377,12 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             anim_to.start_time_ms = now;
             anim_to.duration_ms = duration;
             anim_to.easing_fn = easing;
-            anim_to.on_complete = [srv, target, target_id]() {
-                if (target->get_scene_tree()) {
-                    wlr_scene_node_set_position(&target->get_scene_tree()->node, 0, 0);
-                }
+            anim_to.on_complete = [srv, target_id]() {
                 if (srv && srv->get_workspace_manager()) {
+                    Workspace* ws = srv->get_workspace_manager()->get_workspace(target_id);
+                    if (ws && ws->get_scene_tree()) {
+                        wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                    }
                     srv->get_workspace_manager()->commit_workspace_switch(target_id);
                 }
             };
@@ -387,12 +403,13 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             duration = std::max(60, static_cast<int>(base_dur * std::max(0.1, ratio)));
         }
         Server* srv = m_server;
+        size_t cur_id = current ? current->get_id() : 0;
 
         if (current->get_scene_tree()) {
             NodeAnimation anim_cur;
             anim_cur.id = m_next_id++;
             anim_cur.node = &current->get_scene_tree()->node;
-            anim_cur.bound_workspace = current;
+            anim_cur.bound_workspace_id = cur_id;
             anim_cur.start_x = cur_start_x;
             anim_cur.start_y = 0;
             anim_cur.target_x = 0;
@@ -400,9 +417,12 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             anim_cur.start_time_ms = now;
             anim_cur.duration_ms = duration;
             anim_cur.easing_fn = easing;
-            anim_cur.on_complete = [srv, current]() {
-                if (current->get_scene_tree()) {
-                    wlr_scene_node_set_position(&current->get_scene_tree()->node, 0, 0);
+            anim_cur.on_complete = [srv, cur_id]() {
+                if (srv && srv->get_workspace_manager()) {
+                    Workspace* ws = srv->get_workspace_manager()->get_workspace(cur_id);
+                    if (ws && ws->get_scene_tree()) {
+                        wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                    }
                 }
                 if (srv && srv->get_input_manager()) {
                     srv->get_input_manager()->recheck_cursor_focus();
@@ -415,11 +435,12 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
         if (target && target->get_scene_tree()) {
             int target_start_x = (direction == -1) ? (screen_w + cur_start_x) : (-screen_w + cur_start_x);
             int target_end_x = (direction == -1) ? screen_w : -screen_w;
+            size_t target_id_val = target->get_id();
 
             NodeAnimation anim_target;
             anim_target.id = m_next_id++;
             anim_target.node = &target->get_scene_tree()->node;
-            anim_target.bound_workspace = target;
+            anim_target.bound_workspace_id = target_id_val;
             anim_target.start_x = target_start_x;
             anim_target.start_y = 0;
             anim_target.target_x = target_end_x;
@@ -427,10 +448,15 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
             anim_target.start_time_ms = now;
             anim_target.duration_ms = duration;
             anim_target.easing_fn = easing;
-            anim_target.on_complete = [target]() {
-                target->set_visible(false);
-                if (target->get_scene_tree()) {
-                    wlr_scene_node_set_position(&target->get_scene_tree()->node, 0, 0);
+            anim_target.on_complete = [srv, target_id_val]() {
+                if (srv && srv->get_workspace_manager()) {
+                    Workspace* ws = srv->get_workspace_manager()->get_workspace(target_id_val);
+                    if (ws) {
+                        ws->set_visible(false);
+                        if (ws->get_scene_tree()) {
+                            wlr_scene_node_set_position(&ws->get_scene_tree()->node, 0, 0);
+                        }
+                    }
                 }
             };
             m_animations.push_back(std::move(anim_target));
@@ -672,10 +698,16 @@ void AnimationManager::cancel_for_view(View* view) {
     });
     m_view_animations.erase(it_view, m_view_animations.end());
 
-    auto it_geom = std::remove_if(m_geometry_animations.begin(), m_geometry_animations.end(), [view](const ViewGeometryAnimation& a) {
-        return a.view == view;
-    });
-    m_geometry_animations.erase(it_geom, m_geometry_animations.end());
+    for (auto it = m_geometry_animations.begin(); it != m_geometry_animations.end(); ) {
+        if (it->view == view) {
+            if (view->is_mapped()) {
+                view->finish_geometry_animation(it->target_x, it->target_y, it->target_w, it->target_h);
+            }
+            it = m_geometry_animations.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void AnimationManager::cancel_for_workspace(Workspace* ws) {
@@ -697,8 +729,9 @@ void AnimationManager::cancel_for_workspace(Workspace* ws) {
         m_swipe_state.direction = 0;
         m_swipe_state.delta_x = 0.0;
     }
-    auto it = std::remove_if(m_animations.begin(), m_animations.end(), [ws](const NodeAnimation& a) {
-        return a.bound_workspace == ws;
+    size_t ws_id = ws->get_id();
+    auto it = std::remove_if(m_animations.begin(), m_animations.end(), [ws_id](const NodeAnimation& a) {
+        return a.bound_workspace_id == ws_id;
     });
     m_animations.erase(it, m_animations.end());
 }
@@ -775,7 +808,7 @@ void AnimationManager::tick(uint64_t now_ms) {
 
     // 2. Tick view geometry animations (smooth tiling transitions)
     for (auto& anim : m_geometry_animations) {
-        if (!anim.view || !anim.view->is_mapped()) {
+        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped()) {
             anim.completed = true;
             continue;
         }
@@ -810,7 +843,7 @@ void AnimationManager::tick(uint64_t now_ms) {
 
     // 3. Tick view pop-in / fade animations (open & close transforms)
     for (auto& anim : m_view_animations) {
-        if (!anim.view || !anim.view->is_mapped()) {
+        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped()) {
             anim.completed = true;
             continue;
         }

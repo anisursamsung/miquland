@@ -31,8 +31,6 @@ public:
 
     void set_workspace(Workspace* ws);
     Workspace* get_workspace() const { return m_workspace; }
-    size_t get_last_workspace_id() const { return m_last_workspace_id; }
-    void set_last_workspace_id(size_t id) { m_last_workspace_id = id; }
 
     void set_geometry(int x, int y, int width, int height);
     void set_fullscreen(bool fullscreen);
@@ -53,6 +51,9 @@ public:
 
     std::string get_title() const;
     std::string get_app_id() const;
+
+    bool is_mapping() const { return m_is_mapping; }
+    void set_mapping(bool mapping) { m_is_mapping = mapping; }
 
     bool is_dialog() const { return m_is_dialog; }
     bool is_floating() const { return m_is_floating; }
@@ -132,7 +133,6 @@ private:
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
-    size_t m_last_workspace_id = 0;
     ViewType m_type = ViewType::Xdg;
 
     struct wlr_xdg_toplevel* m_xdg_toplevel = nullptr;
@@ -146,6 +146,7 @@ private:
     std::unique_ptr<CairoBuffer> m_border_buffer;
 
     bool m_mapped = false;
+    bool m_is_mapping = false;
     bool m_is_animating_close = false;
     bool m_is_animating_geometry = false;
     bool m_is_override_redirect = false;

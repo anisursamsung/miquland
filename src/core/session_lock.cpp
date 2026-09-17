@@ -89,11 +89,15 @@ void SessionLock::handle_new_surface(struct wl_listener* listener, void* data) {
 
 void SessionLock::handle_unlock(struct wl_listener* listener, void* data) {
     SessionLock* lock = wl_container_of(listener, lock, m_unlock_listener);
+    if (lock->m_unlocking) return;
+    lock->m_unlocking = true;
     lock->m_server->unlock_session();
 }
 
 void SessionLock::handle_destroy(struct wl_listener* listener, void* data) {
     SessionLock* lock = wl_container_of(listener, lock, m_destroy_listener);
+    if (lock->m_unlocking) return;
+    lock->m_unlocking = true;
     lock->m_server->unlock_session();
 }
 

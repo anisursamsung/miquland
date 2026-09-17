@@ -81,25 +81,27 @@ struct wlr_box calculate_interactive_resize(const struct wlr_box& initial, uint3
     return box;
 }
 
-struct InputDeviceNode {
-    struct wlr_input_device* device = nullptr;
-    InputManager* manager = nullptr;
-    bool is_touch = false;
-    struct wl_listener destroy_listener;
-};
+} // namespace
 
 void handle_input_device_destroy(struct wl_listener* listener, void* data) {
     InputDeviceNode* node = wl_container_of(listener, node, destroy_listener);
     wl_list_remove(&node->destroy_listener.link);
-    if (node->is_touch) {
-        node->manager->remove_touch_device(node->device);
-    } else {
-        node->manager->remove_pointer(node->device);
+    InputManager* mgr = node->manager;
+    struct wlr_input_device* dev = node->device;
+    bool is_touch = node->is_touch;
+    if (mgr) {
+        if (is_touch) {
+            mgr->remove_touch_device(dev);
+        } else {
+            mgr->remove_pointer(dev);
+        }
+        auto it = std::find_if(mgr->m_device_nodes.begin(), mgr->m_device_nodes.end(),
+            [node](const auto& n) { return n.get() == node; });
+        if (it != mgr->m_device_nodes.end()) {
+            mgr->m_device_nodes.erase(it);
+        }
     }
-    delete node;
 }
-
-} // namespace
 
 InputManager::InputManager(Server* server)
     : m_server(server)
@@ -210,6 +212,12 @@ InputManager::~InputManager() {
     wl_list_remove(&m_cursor_touch_motion_listener.link);
     wl_list_remove(&m_cursor_touch_cancel_listener.link);
     wl_list_remove(&m_cursor_touch_frame_listener.link);
+    for (auto& node : m_device_nodes) {
+        if (node) {
+            wl_list_remove(&node->destroy_listener.link);
+        }
+    }
+    m_device_nodes.clear();
 
     if (m_cursor_mgr) wlr_xcursor_manager_destroy(m_cursor_mgr);
     if (m_cursor) wlr_cursor_destroy(m_cursor);
@@ -390,7 +398,7 @@ void InputManager::reapply_cursor_config() {
         unsetenv("XCURSOR_THEME");
     }
     setenv("XCURSOR_SIZE", std::to_string(csize).c_str(), 1);
-    system("systemctl --user import-environment XCURSOR_THEME XCURSOR_SIZE 2>/dev/null");
+    spawn_async_command({"systemctl", "--user", "import-environment", "XCURSOR_THEME", "XCURSOR_SIZE"});
 
     wlr_xcursor_manager_load(m_cursor_mgr, 1.0f);
     if (m_server && m_server->get_output_manager()) {
@@ -685,6 +693,16 @@ void InputManager::process_cursor_motion(uint32_t time) {
     }
 
     // Handle interactive Move & Resize
+    if (m_cursor_mode == CursorMode::Move || m_cursor_mode == CursorMode::Resize) {
+        if (m_grabbed_view && !m_server->is_valid_view(m_grabbed_view)) {
+            m_grabbed_view = nullptr;
+            m_grabbed_view_was_tiled = false;
+            m_cursor_mode = CursorMode::Passthrough;
+            set_cursor_icon("default");
+            return;
+        }
+    }
+
     if (m_cursor_mode == CursorMode::Move) {
         if (m_grabbed_view) {
             struct wlr_box box = calculate_interactive_move(m_grab_initial_view_box, m_cursor->x - m_grab_x, m_cursor->y - m_grab_y);
@@ -838,17 +856,25 @@ void InputManager::handle_new_input(struct wl_listener* listener, void* data) {
         wlr_cursor_attach_input_device(manager->m_cursor, device);
         manager->m_pointers.push_back(device);
 
-        auto* node = new InputDeviceNode{ device, manager, false, {} };
+        auto node = std::make_unique<InputDeviceNode>();
+        node->device = device;
+        node->manager = manager;
+        node->is_touch = false;
         node->destroy_listener.notify = handle_input_device_destroy;
         wl_signal_add(&device->events.destroy, &node->destroy_listener);
+        manager->m_device_nodes.push_back(std::move(node));
     } else if (device->type == WLR_INPUT_DEVICE_TOUCH) {
         wlr_cursor_attach_input_device(manager->m_cursor, device);
         manager->map_touch_device_to_output(device);
         manager->m_touch_devices.push_back(device);
 
-        auto* node = new InputDeviceNode{ device, manager, true, {} };
+        auto node = std::make_unique<InputDeviceNode>();
+        node->device = device;
+        node->manager = manager;
+        node->is_touch = true;
         node->destroy_listener.notify = handle_input_device_destroy;
         wl_signal_add(&device->events.destroy, &node->destroy_listener);
+        manager->m_device_nodes.push_back(std::move(node));
 
         log_info("Touchscreen device attached: " + std::string(device->name ? device->name : "unnamed"));
     }

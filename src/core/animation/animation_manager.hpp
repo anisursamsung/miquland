@@ -20,7 +20,7 @@ struct NodeAnimation {
     uint64_t id = 0;
     struct wlr_scene_node* node = nullptr;
     View* bound_view = nullptr;
-    Workspace* bound_workspace = nullptr;
+    size_t bound_workspace_id = 0;
     int start_x = 0;
     int start_y = 0;
     int target_x = 0;

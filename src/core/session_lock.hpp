@@ -61,6 +61,7 @@ private:
     struct wl_listener m_new_surface_listener;
     struct wl_listener m_unlock_listener;
     struct wl_listener m_destroy_listener;
+    bool m_unlocking = false;
 };
 
 } // namespace miquland

@@ -8,12 +8,24 @@
 #include <dlfcn.h>
 #include <iostream>
 
+namespace {
+struct PluginDispatchGuard {
+    int& counter;
+    explicit PluginDispatchGuard(int& c) : counter(c) { counter++; }
+    ~PluginDispatchGuard() { counter--; }
+};
+}
+
 namespace miquland {
 
 PluginManager::PluginManager(Server* server)
     : m_server(server) {}
 
 PluginManager::~PluginManager() {
+    if (m_idle_reload_source) {
+        wl_event_source_remove(m_idle_reload_source);
+        m_idle_reload_source = nullptr;
+    }
     unload_all();
 }
 
@@ -90,19 +102,33 @@ bool PluginManager::load_plugin(const std::string& path) {
 
     LoadedPlugin loaded;
     loaded.handle = handle;
-    loaded.info = *info;
+    loaded.name = (info && info->name) ? info->name : path;
+    loaded.author = (info && info->author) ? info->author : "Unknown";
+    loaded.description = (info && info->description) ? info->description : "";
+    loaded.version = (info && info->version) ? info->version : "1.0.0";
+    loaded.abi_version = info ? info->abi_version : 0;
     loaded.exit_func = exit_func;
     loaded.path = path;
 
-    log_info("Loaded plugin: " + std::string(info->name ? info->name : path) +
-             " v" + std::string(info->version ? info->version : "1.0.0") +
-             " by " + std::string(info->author ? info->author : "Unknown"));
+    log_info("Loaded plugin: " + loaded.name +
+             " v" + loaded.version +
+             " by " + loaded.author);
 
-    m_loaded_plugins.push_back(loaded);
+    m_loaded_plugins.push_back(std::move(loaded));
     return true;
 }
 
 void PluginManager::unload_all() {
+    if (m_in_plugin_dispatch > 0) {
+        log_info("Plugin unload requested during plugin dispatch; deferring unload to next idle iteration");
+        m_pending_reload = true;
+        if (!m_idle_reload_source && m_server && m_server->get_display()) {
+            struct wl_event_loop* loop = wl_display_get_event_loop(m_server->get_display());
+            m_idle_reload_source = wl_event_loop_add_idle(loop, handle_idle_reload, this);
+        }
+        return;
+    }
+
     for (auto it = m_loaded_plugins.rbegin(); it != m_loaded_plugins.rend(); ++it) {
         if (it->exit_func) {
             it->exit_func();
@@ -120,6 +146,19 @@ void PluginManager::unload_all() {
     m_view_destroy_hooks.clear();
 }
 
+void PluginManager::handle_idle_reload(void* data) {
+    auto* self = static_cast<PluginManager*>(data);
+    if (self->m_idle_reload_source) {
+        wl_event_source_remove(self->m_idle_reload_source);
+        self->m_idle_reload_source = nullptr;
+    }
+    if (self->m_pending_reload) {
+        self->m_pending_reload = false;
+        self->unload_all();
+        self->load_configured_plugins();
+    }
+}
+
 void PluginManager::load_configured_plugins() {
     for (const auto& path : Config::get().get_plugins()) {
         load_plugin(path);
@@ -127,6 +166,7 @@ void PluginManager::load_configured_plugins() {
 }
 
 bool PluginManager::execute_dispatcher(const std::string& name) {
+    PluginDispatchGuard guard(m_in_plugin_dispatch);
     auto it = m_dispatchers.find(name);
     if (it != m_dispatchers.end()) {
         it->second();
@@ -140,6 +180,7 @@ bool PluginManager::has_dispatcher(const std::string& name) const {
 }
 
 bool PluginManager::dispatch_pointer_button(double lx, double ly, uint32_t button, bool pressed) {
+    PluginDispatchGuard guard(m_in_plugin_dispatch);
     for (auto it = m_pointer_button_hooks.rbegin(); it != m_pointer_button_hooks.rend(); ++it) {
         if ((*it)(lx, ly, button, pressed)) {
             return true;
@@ -149,6 +190,7 @@ bool PluginManager::dispatch_pointer_button(double lx, double ly, uint32_t butto
 }
 
 bool PluginManager::dispatch_pointer_motion(double lx, double ly) {
+    PluginDispatchGuard guard(m_in_plugin_dispatch);
     for (auto it = m_pointer_motion_hooks.rbegin(); it != m_pointer_motion_hooks.rend(); ++it) {
         if ((*it)(lx, ly)) {
             return true;
@@ -158,6 +200,7 @@ bool PluginManager::dispatch_pointer_motion(double lx, double ly) {
 }
 
 bool PluginManager::dispatch_key(uint32_t keysym, uint32_t modifiers, bool pressed) {
+    PluginDispatchGuard guard(m_in_plugin_dispatch);
     for (auto it = m_key_hooks.rbegin(); it != m_key_hooks.rend(); ++it) {
         if ((*it)(keysym, modifiers, pressed)) {
             return true;
@@ -167,6 +210,7 @@ bool PluginManager::dispatch_key(uint32_t keysym, uint32_t modifiers, bool press
 }
 
 void PluginManager::dispatch_view_destroy(View* view) {
+    PluginDispatchGuard guard(m_in_plugin_dispatch);
     for (auto it = m_view_destroy_hooks.rbegin(); it != m_view_destroy_hooks.rend(); ++it) {
         if (*it) {
             (*it)(view);

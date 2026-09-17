@@ -236,7 +236,7 @@ void Workspace::recalculate_layout(const struct wlr_box& usable_box) {
         if (!v) continue;
 
         const auto& target_box = boxes[i];
-        if (animate_layout && v->is_mapped() && v->get_width() > 0 && v->get_height() > 0) {
+        if (animate_layout && !v->is_mapping() && v->is_mapped() && v->get_width() > 0 && v->get_height() > 0) {
             struct wlr_box from_box = anim_mgr->get_view_current_box(v, { v->get_x(), v->get_y(), v->get_width(), v->get_height() });
             if (from_box.x != target_box.x || from_box.y != target_box.y ||
                 from_box.width != target_box.width || from_box.height != target_box.height) {

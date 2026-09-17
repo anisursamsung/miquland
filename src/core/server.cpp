@@ -20,7 +20,20 @@ extern "C" {
 
 namespace miquland {
 
-Server::Server() = default;
+Server::Server() {
+    wl_list_init(&m_new_xdg_toplevel_listener.link);
+    wl_list_init(&m_new_layer_shell_surface_listener.link);
+    wl_list_init(&m_session_lock_new_lock_listener.link);
+    wl_list_init(&m_ext_workspace_commit_listener.link);
+    wl_list_init(&m_xwayland_ready_listener.link);
+    wl_list_init(&m_xwayland_new_surface_listener.link);
+    wl_list_init(&m_gamma_set_gamma_listener.link);
+    wl_list_init(&m_output_power_set_mode_listener.link);
+    wl_list_init(&m_new_idle_inhibitor_listener.link);
+    wl_list_init(&m_new_xdg_decoration_listener.link);
+    wl_list_init(&m_xdg_activation_request_activate_listener.link);
+    wl_list_init(&m_cursor_shape_request_set_shape_listener.link);
+}
 
 Server::~Server() {
     if (m_config_reload_timer) wl_event_source_remove(m_config_reload_timer);
@@ -48,6 +61,20 @@ Server::~Server() {
     if (m_xwayland) {
         wlr_xwayland_destroy(m_xwayland);
     }
+
+    if (!wl_list_empty(&m_new_xdg_toplevel_listener.link)) wl_list_remove(&m_new_xdg_toplevel_listener.link);
+    if (!wl_list_empty(&m_new_layer_shell_surface_listener.link)) wl_list_remove(&m_new_layer_shell_surface_listener.link);
+    if (!wl_list_empty(&m_session_lock_new_lock_listener.link)) wl_list_remove(&m_session_lock_new_lock_listener.link);
+    if (!wl_list_empty(&m_ext_workspace_commit_listener.link)) wl_list_remove(&m_ext_workspace_commit_listener.link);
+    if (!wl_list_empty(&m_xwayland_ready_listener.link)) wl_list_remove(&m_xwayland_ready_listener.link);
+    if (!wl_list_empty(&m_xwayland_new_surface_listener.link)) wl_list_remove(&m_xwayland_new_surface_listener.link);
+    if (!wl_list_empty(&m_gamma_set_gamma_listener.link)) wl_list_remove(&m_gamma_set_gamma_listener.link);
+    if (!wl_list_empty(&m_output_power_set_mode_listener.link)) wl_list_remove(&m_output_power_set_mode_listener.link);
+    if (!wl_list_empty(&m_new_idle_inhibitor_listener.link)) wl_list_remove(&m_new_idle_inhibitor_listener.link);
+    if (!wl_list_empty(&m_new_xdg_decoration_listener.link)) wl_list_remove(&m_new_xdg_decoration_listener.link);
+    if (!wl_list_empty(&m_xdg_activation_request_activate_listener.link)) wl_list_remove(&m_xdg_activation_request_activate_listener.link);
+    if (!wl_list_empty(&m_cursor_shape_request_set_shape_listener.link)) wl_list_remove(&m_cursor_shape_request_set_shape_listener.link);
+
     if (m_wlr_allocator) wlr_allocator_destroy(m_wlr_allocator);
     if (m_wlr_renderer) wlr_renderer_destroy(m_wlr_renderer);
     if (m_wlr_backend) wlr_backend_destroy(m_wlr_backend);
@@ -90,8 +117,20 @@ bool Server::init() {
     }
 
     m_wlr_compositor = wlr_compositor_create(m_wl_display, 6, m_wlr_renderer);
+    if (!m_wlr_compositor) {
+        log_error("Failed to create wlr_compositor");
+        return false;
+    }
     m_wlr_subcompositor = wlr_subcompositor_create(m_wl_display);
+    if (!m_wlr_subcompositor) {
+        log_error("Failed to create wlr_subcompositor");
+        return false;
+    }
     m_wlr_data_device_manager = wlr_data_device_manager_create(m_wl_display);
+    if (!m_wlr_data_device_manager) {
+        log_error("Failed to create wlr_data_device_manager");
+        return false;
+    }
 
     wlr_data_control_manager_v1_create(m_wl_display);
     wlr_primary_selection_v1_device_manager_create(m_wl_display);
@@ -226,7 +265,7 @@ bool Server::init() {
     log_info("Wayland compositor running on WAYLAND_DISPLAY=" + std::string(m_socket_name));
     setenv("WAYLAND_DISPLAY", m_socket_name, 1);
     setenv("XDG_CURRENT_DESKTOP", "miquland", 1);
-    system("systemctl --user import-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XCURSOR_THEME XCURSOR_SIZE 2>/dev/null");
+    spawn_async_command({"systemctl", "--user", "import-environment", "WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XCURSOR_THEME", "XCURSOR_SIZE"});
 
     setup_config_watcher();
 
@@ -387,7 +426,8 @@ void Server::add_view(std::unique_ptr<View> view) {
 }
 
 void Server::remove_view(View* view) {
-    if (m_focused_view == view) {
+    bool was_focused = (m_focused_view == view);
+    if (was_focused) {
         m_focused_view = nullptr;
     }
 
@@ -397,12 +437,30 @@ void Server::remove_view(View* view) {
             break;
         }
     }
+
+    if (was_focused && m_workspace_manager) {
+        Workspace* ws = m_workspace_manager->get_active_workspace();
+        if (ws) {
+            View* best = m_workspace_manager->find_best_focus_view(ws);
+            if (best) {
+                best->focus();
+            }
+        }
+    }
 }
 
-bool Server::is_valid_view(View* view) const {
+bool Server::is_valid_view(const View* view) const {
     if (!view) return false;
     for (const auto& v : m_views) {
         if (v.get() == view) return true;
+    }
+    return false;
+}
+
+bool Server::is_valid_view_ptr(const void* ptr) const {
+    if (!ptr) return false;
+    for (const auto& v : m_views) {
+        if (static_cast<const void*>(v.get()) == ptr) return true;
     }
     return false;
 }
@@ -446,9 +504,11 @@ View* Server::view_at(double lx, double ly, struct wlr_surface** surface, double
     struct wlr_scene_tree* tree = node->parent;
     while (tree != nullptr) {
         if (tree->node.data != nullptr) {
-            auto* possible_view = static_cast<View*>(tree->node.data);
-            if (is_valid_view(possible_view) && !possible_view->is_animating_close()) {
-                return possible_view;
+            if (is_valid_view_ptr(tree->node.data)) {
+                auto* possible_view = static_cast<View*>(tree->node.data);
+                if (!possible_view->is_animating_close()) {
+                    return possible_view;
+                }
             }
         }
         tree = tree->node.parent;
@@ -511,11 +571,14 @@ void Server::focus_layer_surface(LayerSurface* surface) {
 void Server::arrange_layers(struct wlr_output* output) {
     if (!output) return;
 
+    int eff_w = 0, eff_h = 0;
+    wlr_output_effective_resolution(output, &eff_w, &eff_h);
+
     struct wlr_box full_area = {
         .x = 0,
         .y = 0,
-        .width = output->width,
-        .height = output->height
+        .width = (eff_w > 0) ? eff_w : output->width,
+        .height = (eff_h > 0) ? eff_h : output->height
     };
     struct wlr_box usable_area = full_area;
 
@@ -526,9 +589,20 @@ void Server::arrange_layers(struct wlr_output* output) {
         ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND
     };
 
+    struct wlr_output* primary_output = nullptr;
+    if (m_output_manager) {
+        auto* primary = m_output_manager->get_primary_output();
+        if (primary) primary_output = primary->get_wlr_output();
+    }
+
     for (auto layer : layers_order) {
         for (auto& l_surf : m_layer_surfaces) {
-            if (l_surf->get_layer() == layer && l_surf->get_wlr_layer_surface()->output == output) {
+            if (!l_surf || !l_surf->get_wlr_layer_surface()) continue;
+            struct wlr_output* surf_out = l_surf->get_wlr_layer_surface()->output;
+            if (!surf_out) {
+                surf_out = primary_output;
+            }
+            if (l_surf->get_layer() == layer && surf_out == output) {
                 if (layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
                     struct wlr_box bg_usable = full_area;
                     l_surf->configure(&full_area, &bg_usable);
@@ -583,7 +657,7 @@ void Server::handle_xwayland_ready(struct wl_listener* listener, void* data) {
     if (server->m_xwayland && server->m_xwayland->display_name) {
         setenv("DISPLAY", server->m_xwayland->display_name, 1);
         log_info("Xwayland server is ready on DISPLAY=" + std::string(server->m_xwayland->display_name));
-        system("systemctl --user import-environment DISPLAY 2>/dev/null");
+        spawn_async_command({"systemctl", "--user", "import-environment", "DISPLAY"});
     }
 }
 

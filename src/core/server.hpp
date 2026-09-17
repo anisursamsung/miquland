@@ -50,7 +50,8 @@ public:
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
-    bool is_valid_view(View* view) const;
+    bool is_valid_view(const View* view) const;
+    bool is_valid_view_ptr(const void* ptr) const;
     const std::vector<std::unique_ptr<View>>& get_views() const { return m_views; }
     View* get_view_by_id(uint64_t id) const;
     View* view_at(double lx, double ly, struct wlr_surface** surface, double* sx, double* sy);

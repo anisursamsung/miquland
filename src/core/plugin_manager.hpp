@@ -7,13 +7,19 @@
 #include <functional>
 #include <memory>
 
+struct wl_event_source;
+
 namespace miquland {
 
 class Server;
 
 struct LoadedPlugin {
     void* handle = nullptr;
-    PluginInfo info;
+    std::string name;
+    std::string author;
+    std::string description;
+    std::string version;
+    uint32_t abi_version = 0;
     PluginExitFunc exit_func = nullptr;
     std::string path;
 };
@@ -60,6 +66,11 @@ private:
     std::vector<std::function<bool(double, double)>> m_pointer_motion_hooks;
     std::vector<std::function<bool(uint32_t, uint32_t, bool)>> m_key_hooks;
     std::vector<std::function<void(View*)>> m_view_destroy_hooks;
+
+    int m_in_plugin_dispatch = 0;
+    bool m_pending_reload = false;
+    struct wl_event_source* m_idle_reload_source = nullptr;
+    static void handle_idle_reload(void* data);
 };
 
 } // namespace miquland

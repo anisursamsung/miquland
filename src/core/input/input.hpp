@@ -6,8 +6,16 @@
 namespace miquland {
 
 class Server;
-class Keyboard;
 class View;
+class Keyboard;
+class InputManager;
+
+struct InputDeviceNode {
+    struct wlr_input_device* device = nullptr;
+    InputManager* manager = nullptr;
+    bool is_touch = false;
+    struct wl_listener destroy_listener;
+};
 
 enum class CursorMode {
     Passthrough,
@@ -98,6 +106,9 @@ private:
     std::vector<std::unique_ptr<Keyboard>> m_keyboards;
     std::vector<struct wlr_input_device*> m_pointers;
     std::vector<struct wlr_input_device*> m_touch_devices;
+    struct InputDeviceNodeWrapper;
+    std::vector<std::unique_ptr<InputDeviceNode>> m_device_nodes;
+    friend void handle_input_device_destroy(struct wl_listener* listener, void* data);
 
     // Gesture tracking state (touchpad)
     double m_swipe_dx = 0.0;
