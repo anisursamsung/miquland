@@ -1583,8 +1583,9 @@ void View::handle_request_fullscreen(struct wl_listener* listener, void* data) {
 void View::handle_request_maximize(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_request_maximize_listener);
     if (view->m_type == ViewType::Xdg && view->m_xdg_toplevel) {
-        wlr_xdg_toplevel_set_maximized(view->m_xdg_toplevel, false);
-        wlr_xdg_surface_schedule_configure(view->m_xdg_toplevel->base);
+        if (view->m_xdg_toplevel->base && view->m_xdg_toplevel->base->initialized) {
+            wlr_xdg_toplevel_set_maximized(view->m_xdg_toplevel, false);
+        }
     } else if (view->m_type == ViewType::XWayland && view->m_xwayland_surface) {
         if (!view->is_override_redirect()) {
             wlr_xwayland_surface_set_maximized(view->m_xwayland_surface, false, false);
