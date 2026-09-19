@@ -460,10 +460,7 @@ void View::set_geometry(int x, int y, int width, int height) {
             } else {
                 wlr_xdg_toplevel_set_tiled(m_xdg_toplevel, 0);
             }
-            if (m_xdg_toplevel->resource && wl_resource_get_version(m_xdg_toplevel->resource) >= 4) {
-                wlr_xdg_toplevel_set_bounds(m_xdg_toplevel, client_w, client_h);
-            }
-            if (size_changed) {
+            if (m_xdg_toplevel->scheduled.width != client_w || m_xdg_toplevel->scheduled.height != client_h) {
                 wlr_xdg_toplevel_set_size(m_xdg_toplevel, client_w, client_h);
             }
         }
@@ -637,7 +634,7 @@ void View::set_fullscreen(bool fullscreen) {
 
 
 void View::update_frame() {
-    if (m_is_animating_close) return;
+    if (m_is_animating_close || m_is_animating_open) return;
     update_border();
     update_corner_radius();
     update_opacity();
@@ -737,7 +734,7 @@ void View::update_border() {
 }
 
 void View::update_opacity() {
-    if (!m_mapped || !m_surface_scene_tree) return;
+    if (!m_mapped || !m_surface_scene_tree || m_is_animating_close || m_is_animating_open) return;
 
     float opacity = is_focused()
         ? Config::get().get_window_opacity_active()
@@ -828,7 +825,7 @@ void View::apply_animation_transform(double scale, float opacity) {
 
     float safe_opacity = std::clamp(opacity, 0.0f, 1.0f);
 
-    if (scale >= 0.999 && !m_is_animating_geometry) {
+    if (scale >= 0.999 && !m_is_animating_geometry && !m_is_animating_close && !m_is_animating_open) {
         wlr_scene_node_set_position(&m_scene_tree->node, m_x, m_y);
         if (m_surface_scene_tree) {
             wlr_scene_node_set_position(&m_surface_scene_tree->node, bw, bw);
@@ -875,10 +872,15 @@ void View::apply_animation_transform(double scale, float opacity) {
     if (m_surface_scene_tree) {
         wlr_scene_node_set_position(&m_surface_scene_tree->node, scaled_bw, scaled_bw);
 
+        int r = (!m_is_fullscreen && !m_is_override_redirect) ? Config::get().get_window_border_radius() : 0;
+        int base_r = (bw > 0) ? std::max(0, r - bw) : std::max(0, r);
+        int scaled_r = static_cast<int>(std::round(static_cast<double>(base_r) * scale));
+
         struct BufferTransformData {
             double scale;
             float opacity;
-        } data = { scale, safe_opacity };
+            int corner_radius;
+        } data = { scale, safe_opacity, scaled_r };
 
         wlr_scene_node_for_each_buffer(&m_surface_scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
             auto* d = static_cast<BufferTransformData*>(user_data);
@@ -888,6 +890,7 @@ void View::apply_animation_transform(double scale, float opacity) {
                 wlr_scene_buffer_set_dest_size(buf, sw, sh);
             }
             wlr_scene_buffer_set_opacity(buf, d->opacity);
+            wlr_scene_buffer_set_corner_radius(buf, d->corner_radius);
         }, &data);
     }
 
@@ -899,13 +902,18 @@ void View::apply_animation_transform(double scale, float opacity) {
     }
 
     if (m_blur_node) {
-        if (safe_opacity < 0.05f || !Config::get().is_blur_enabled()) {
+        if (safe_opacity < 0.01f || !Config::get().is_blur_enabled()) {
             wlr_scene_node_set_enabled(&m_blur_node->node, false);
         } else {
             wlr_scene_node_set_enabled(&m_blur_node->node, true);
             int blur_w = std::max(1, static_cast<int>(std::round(cur_w)));
             int blur_h = std::max(1, static_cast<int>(std::round(cur_h)));
             wlr_scene_blur_set_size(m_blur_node, blur_w, blur_h);
+            wlr_scene_blur_set_alpha(m_blur_node, safe_opacity);
+            int r = (!m_is_fullscreen && !m_is_override_redirect) ? Config::get().get_window_border_radius() : 0;
+            int base_r = (bw > 0) ? std::max(0, r - bw) : std::max(0, r);
+            int scaled_r = static_cast<int>(std::round(static_cast<double>(base_r) * scale));
+            wlr_scene_blur_set_corner_radius(m_blur_node, scaled_r);
         }
     }
 }
@@ -1332,7 +1340,9 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         Config::get().is_window_animations_enabled() && !view->m_is_fullscreen);
 
     if (will_animate) {
-        view->update_frame();
+        view->m_is_animating_open = true;
+        view->update_border();
+        view->update_corner_radius();
         // Pre-transform the scene node to initial animation scale and initial opacity BEFORE enabling node
         double open_scale = Config::get().get_window_animation_open_scale();
         float target_op = view->is_focused()
@@ -1381,6 +1391,7 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
     view->m_mapped = false;
     view->m_is_mapping = false;
     view->m_is_animating_close = false;
+    view->m_is_animating_open = false;
     view->m_is_animating_geometry = false;
     view->m_x = 0;
     view->m_y = 0;
@@ -1491,6 +1502,13 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
                     int bw = Config::get().get_window_border_width();
                     int client_w = std::max(1, next_box.width - 2 * bw);
                     int client_h = std::max(1, next_box.height - 2 * bw);
+
+                    view->m_width = next_box.width;
+                    view->m_height = next_box.height;
+                    view->m_target_width = next_box.width;
+                    view->m_target_height = next_box.height;
+                    view->m_current_anim_width = next_box.width;
+                    view->m_current_anim_height = next_box.height;
 
                     wlr_xdg_toplevel_set_maximized(view->m_xdg_toplevel, false);
                     wlr_xdg_toplevel_set_tiled(view->m_xdg_toplevel, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);

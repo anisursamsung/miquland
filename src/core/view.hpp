@@ -91,8 +91,10 @@ public:
     int get_current_anim_x() const { return (m_current_anim_width > 0) ? m_current_anim_x : m_x; }
     int get_current_anim_y() const { return (m_current_anim_height > 0) ? m_current_anim_y : m_y; }
     int get_current_anim_width() const { return (m_current_anim_width > 0) ? m_current_anim_width : m_width; }
-    int get_current_anim_height() const { return (m_current_anim_height > 0) ? m_current_anim_height : m_height; }
     bool is_animating_close() const { return m_is_animating_close; }
+    void set_animating_close(bool animating) { m_is_animating_close = animating; }
+    bool is_animating_open() const { return m_is_animating_open; }
+    void set_animating_open(bool animating) { m_is_animating_open = animating; }
     float get_output_scale() const;
 
     void set_overview_scaled(bool scaled, double scale = 1.0);
@@ -148,6 +150,7 @@ private:
     bool m_mapped = false;
     bool m_is_mapping = false;
     bool m_is_animating_close = false;
+    bool m_is_animating_open = false;
     bool m_is_animating_geometry = false;
     bool m_is_override_redirect = false;
     bool m_is_fullscreen = false;

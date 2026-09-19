@@ -471,12 +471,14 @@ void AnimationManager::schedule_window_open(View* view) {
     if (!view || !view->is_mapped()) return;
 
     if (!Config::get().is_window_animations_enabled()) {
+        view->set_animating_open(false);
         view->apply_animation_transform(1.0, 1.0f);
         view->update_frame();
         return;
     }
 
     cancel_for_view(view);
+    view->set_animating_open(true);
 
     int scale_duration = Config::get().get_window_animation_open_duration_ms();
     int fade_duration = Config::get().get_window_animation_fade_in_duration_ms();
@@ -511,6 +513,7 @@ void AnimationManager::schedule_window_open(View* view) {
     anim.fade_easing_fn = fade_easing;
     anim.on_complete = [view, target_opacity]() {
         if (view && view->is_mapped()) {
+            view->set_animating_open(false);
             view->apply_animation_transform(1.0, target_opacity);
             view->update_frame();
         }
@@ -527,11 +530,13 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     }
 
     if (!Config::get().is_window_animations_enabled() || !view->is_mapped() || view->is_fullscreen()) {
+        view->set_animating_close(false);
         if (on_complete) on_complete();
         return;
     }
 
     cancel_for_view(view);
+    view->set_animating_close(true);
 
     int scale_duration = Config::get().get_window_animation_close_duration_ms();
     int fade_duration = Config::get().get_window_animation_fade_out_duration_ms();
@@ -562,8 +567,11 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     anim.scale_easing_fn = scale_easing;
     anim.fade_easing_fn = fade_easing;
     anim.on_complete = [view, on_complete = std::move(on_complete)]() {
-        if (view && view->get_scene_tree()) {
-            wlr_scene_node_set_enabled(&view->get_scene_tree()->node, false);
+        if (view) {
+            if (view->get_scene_tree()) {
+                wlr_scene_node_set_enabled(&view->get_scene_tree()->node, false);
+            }
+            view->set_animating_close(false);
         }
         if (on_complete) on_complete();
     };
@@ -864,6 +872,8 @@ void AnimationManager::schedule_view_geometry(View* view, const struct wlr_box& 
 
 void AnimationManager::cancel_for_view(View* view) {
     if (!view) return;
+    view->set_animating_open(false);
+    view->set_animating_close(false);
     auto it_node = std::remove_if(m_animations.begin(), m_animations.end(), [view](const NodeAnimation& a) {
         return a.bound_view == view;
     });

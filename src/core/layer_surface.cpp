@@ -223,13 +223,14 @@ void LayerSurface::apply_animation_transform(int offset_x, int offset_y, double 
     }, &data);
 
     if (m_blur_node) {
-        if (safe_opacity < 0.05f || !Config::get().is_blur_enabled()) {
+        if (safe_opacity < 0.01f || !Config::get().is_blur_enabled()) {
             wlr_scene_node_set_enabled(&m_blur_node->node, false);
         } else {
             wlr_scene_node_set_enabled(&m_blur_node->node, true);
             int bw = std::max(1, static_cast<int>(std::round(static_cast<double>(m_width) * scale)));
             int bh = std::max(1, static_cast<int>(std::round(static_cast<double>(m_height) * scale)));
             wlr_scene_blur_set_size(m_blur_node, bw, bh);
+            wlr_scene_blur_set_alpha(m_blur_node, safe_opacity);
         }
     }
 }
