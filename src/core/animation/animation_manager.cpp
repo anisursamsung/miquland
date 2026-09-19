@@ -470,7 +470,10 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
 void AnimationManager::schedule_window_open(View* view) {
     if (!view || !view->is_mapped()) return;
 
-    if (!Config::get().is_window_animations_enabled()) {
+    std::string app_id = view->get_app_id();
+    std::string title = view->get_title();
+
+    if (!Config::get().is_window_open_animation_enabled(app_id, title)) {
         view->set_animating_open(false);
         view->apply_animation_transform(1.0, 1.0f);
         view->update_frame();
@@ -480,20 +483,20 @@ void AnimationManager::schedule_window_open(View* view) {
     cancel_for_view(view);
     view->set_animating_open(true);
 
-    int scale_duration = Config::get().get_window_animation_open_duration_ms();
-    int fade_duration = Config::get().get_window_animation_fade_in_duration_ms();
-    auto scale_easing = Easing::from_name(Config::get().get_window_animation_open_curve());
-    auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_in_curve());
-    double open_scale = Config::get().get_window_animation_open_scale();
+    int scale_duration = Config::get().get_window_open_duration_ms(app_id, title);
+    int fade_duration = Config::get().get_window_open_fade_duration_ms(app_id, title);
+    auto scale_easing = Easing::from_name(Config::get().get_window_open_curve(app_id, title));
+    auto fade_easing = Easing::from_name(Config::get().get_window_open_fade_curve(app_id, title));
+    double open_scale = Config::get().get_window_open_scale(app_id, title);
     double now = get_current_time_ms();
 
     float target_opacity = view->is_focused()
         ? Config::get().get_window_opacity_active()
         : Config::get().get_window_opacity_inactive();
-    target_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), target_opacity);
+    target_opacity = Config::get().get_rule_opacity(app_id, title, target_opacity);
     target_opacity = std::clamp(target_opacity, 0.0f, 1.0f);
 
-    bool fade_enabled = Config::get().is_window_animation_fade_enabled();
+    bool fade_enabled = Config::get().is_window_open_fade_enabled(app_id, title);
     float start_opacity = fade_enabled ? 0.0f : target_opacity;
 
     // Initialize with center-scaled start position and start opacity
@@ -529,7 +532,10 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
         return;
     }
 
-    if (!Config::get().is_window_animations_enabled() || !view->is_mapped() || view->is_fullscreen()) {
+    std::string app_id = view->get_app_id();
+    std::string title = view->get_title();
+
+    if (!Config::get().is_window_close_animation_enabled(app_id, title) || !view->is_mapped() || view->is_fullscreen()) {
         view->set_animating_close(false);
         if (on_complete) on_complete();
         return;
@@ -538,20 +544,20 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     cancel_for_view(view);
     view->set_animating_close(true);
 
-    int scale_duration = Config::get().get_window_animation_close_duration_ms();
-    int fade_duration = Config::get().get_window_animation_fade_out_duration_ms();
-    auto scale_easing = Easing::from_name(Config::get().get_window_animation_close_curve());
-    auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_out_curve());
-    double close_scale = Config::get().get_window_animation_close_scale();
+    int scale_duration = Config::get().get_window_close_duration_ms(app_id, title);
+    int fade_duration = Config::get().get_window_close_fade_duration_ms(app_id, title);
+    auto scale_easing = Easing::from_name(Config::get().get_window_close_curve(app_id, title));
+    auto fade_easing = Easing::from_name(Config::get().get_window_close_fade_curve(app_id, title));
+    double close_scale = Config::get().get_window_close_scale(app_id, title);
     double now = get_current_time_ms();
 
     float cur_opacity = view->is_focused()
         ? Config::get().get_window_opacity_active()
         : Config::get().get_window_opacity_inactive();
-    cur_opacity = Config::get().get_rule_opacity(view->get_app_id(), view->get_title(), cur_opacity);
+    cur_opacity = Config::get().get_rule_opacity(app_id, title, cur_opacity);
     cur_opacity = std::clamp(cur_opacity, 0.0f, 1.0f);
 
-    bool fade_enabled = Config::get().is_window_animation_fade_enabled();
+    bool fade_enabled = Config::get().is_window_close_fade_enabled(app_id, title);
     float target_close_opacity = fade_enabled ? 0.0f : cur_opacity;
 
     ViewAnimation anim;
@@ -583,29 +589,41 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
 void AnimationManager::schedule_layer_open(LayerSurface* surface) {
     if (!surface || !surface->is_mapped()) return;
 
-    if (!Config::get().is_layer_animations_enabled()) {
+    if (!Config::get().is_layer_open_animation_enabled()) {
         surface->reset_animation_transform();
         return;
     }
 
     cancel_for_layer(surface);
 
-    Config::LayerAnimStyle style = surface->deduce_animation_style();
+    Config::LayerAnimStyle style = surface->deduce_animation_style(false);
     if (style == Config::LayerAnimStyle::None) {
         surface->reset_animation_transform();
         return;
     }
 
     Config::LayerRule rule = Config::get().get_layer_rule(surface->get_namespace());
-    int duration = (rule.duration_ms > 0) ? rule.duration_ms : Config::get().get_layer_animation_duration_ms();
-    std::string curve_name = (!rule.curve.empty()) ? rule.curve : Config::get().get_layer_animation_curve();
+    int duration = (rule.duration_open_ms > 0) ? rule.duration_open_ms : Config::get().get_layer_open_duration_ms();
+    if (duration <= 0) {
+        surface->reset_animation_transform();
+        return;
+    }
+    std::string curve_name = (!rule.curve_open.empty()) ? rule.curve_open : Config::get().get_layer_open_curve();
     auto easing = Easing::from_name(curve_name);
     double now = get_current_time_ms();
 
+    int fade_dur = (rule.fade_open_duration_ms >= 0) ? rule.fade_open_duration_ms : Config::get().get_layer_animation_fade_in_duration_ms();
+    if (fade_dur <= 0) fade_dur = duration;
+    std::string fade_curve_name = (!rule.fade_open_curve.empty()) ? rule.fade_open_curve : Config::get().get_layer_animation_fade_in_curve();
+    auto fade_easing = Easing::from_name(fade_curve_name);
+    bool fade_enabled = rule.fade_open_enabled && Config::get().is_layer_animation_fade_enabled();
+
     int start_ox = 0, start_oy = 0;
     int target_ox = 0, target_oy = 0;
-    double start_scale = 1.0, target_scale = 1.0;
-    float start_opacity = 0.0f, target_opacity = 1.0f;
+    double start_scale_x = 1.0, start_scale_y = 1.0;
+    double target_scale_x = 1.0, target_scale_y = 1.0;
+    bool center_anchor = true;
+    float start_opacity = fade_enabled ? 0.0f : 1.0f, target_opacity = 1.0f;
 
     int surf_w = surface->get_width();
     int surf_h = surface->get_height();
@@ -620,28 +638,30 @@ void AnimationManager::schedule_layer_open(LayerSurface* surface) {
 
     if (style == Config::LayerAnimStyle::SlideTop) {
         start_oy = -surf_h;
-        start_opacity = 0.0f;
     } else if (style == Config::LayerAnimStyle::SlideBottom) {
         start_oy = +surf_h;
-        start_opacity = 0.0f;
     } else if (style == Config::LayerAnimStyle::SlideLeft) {
         start_ox = -surf_w;
-        start_opacity = 0.0f;
     } else if (style == Config::LayerAnimStyle::SlideRight) {
         start_ox = +surf_w;
-        start_opacity = 0.0f;
     } else if (style == Config::LayerAnimStyle::Slide) {
         start_oy = -surf_h;
-        start_opacity = 0.0f;
     } else if (style == Config::LayerAnimStyle::Popin) {
         double pop_scale = (rule.popin_scale > 0.0) ? rule.popin_scale : Config::get().get_layer_animation_popin_scale();
-        start_scale = std::clamp(pop_scale, 0.1, 1.0);
-        start_opacity = 0.0f;
-    } else if (style == Config::LayerAnimStyle::Fade) {
-        start_opacity = 0.0f;
+        start_scale_x = std::clamp(pop_scale, 0.1, 1.0);
+        start_scale_y = std::clamp(pop_scale, 0.1, 1.0);
+        center_anchor = true;
+    } else if (style == Config::LayerAnimStyle::Unroll) {
+        start_scale_x = 1.0;
+        start_scale_y = 0.0;
+        center_anchor = false;
+    } else if (style == Config::LayerAnimStyle::Unfold) {
+        start_scale_x = 1.0;
+        start_scale_y = 0.0;
+        center_anchor = true;
     }
 
-    surface->apply_animation_transform(start_ox, start_oy, start_scale, start_opacity);
+    surface->apply_animation_transform(start_ox, start_oy, start_scale_x, start_scale_y, start_opacity, center_anchor);
 
     LayerAnimation anim;
     anim.id = m_next_id++;
@@ -650,13 +670,19 @@ void AnimationManager::schedule_layer_open(LayerSurface* surface) {
     anim.start_offset_y = start_oy;
     anim.target_offset_x = target_ox;
     anim.target_offset_y = target_oy;
-    anim.start_scale = start_scale;
-    anim.target_scale = target_scale;
+    anim.start_scale_x = start_scale_x;
+    anim.start_scale_y = start_scale_y;
+    anim.target_scale_x = target_scale_x;
+    anim.target_scale_y = target_scale_y;
+    anim.center_anchor = center_anchor;
     anim.start_opacity = start_opacity;
     anim.target_opacity = target_opacity;
     anim.start_time_ms = now;
     anim.duration_ms = duration;
+    anim.fade_duration_ms = fade_dur;
     anim.easing_fn = easing;
+    anim.fade_easing_fn = fade_easing;
+    anim.fade_enabled = fade_enabled;
     anim.on_complete = [surface]() {
         if (surface && surface->is_mapped()) {
             surface->reset_animation_transform();
@@ -673,12 +699,12 @@ void AnimationManager::schedule_layer_close(LayerSurface* surface, std::function
         return;
     }
 
-    if (!Config::get().is_layer_animations_enabled()) {
+    if (!Config::get().is_layer_close_animation_enabled()) {
         if (on_complete) on_complete();
         return;
     }
 
-    Config::LayerAnimStyle style = surface->deduce_animation_style();
+    Config::LayerAnimStyle style = surface->deduce_animation_style(true);
     if (style == Config::LayerAnimStyle::None) {
         if (on_complete) on_complete();
         return;
@@ -687,15 +713,27 @@ void AnimationManager::schedule_layer_close(LayerSurface* surface, std::function
     cancel_for_layer(surface);
 
     Config::LayerRule rule = Config::get().get_layer_rule(surface->get_namespace());
-    int duration = (rule.duration_ms > 0) ? rule.duration_ms : Config::get().get_layer_animation_duration_ms();
-    std::string curve_name = (!rule.curve.empty()) ? rule.curve : Config::get().get_layer_animation_curve();
+    int duration = (rule.duration_close_ms > 0) ? rule.duration_close_ms : Config::get().get_layer_close_duration_ms();
+    if (duration <= 0) {
+        if (on_complete) on_complete();
+        return;
+    }
+    std::string curve_name = (!rule.curve_close.empty()) ? rule.curve_close : Config::get().get_layer_close_curve();
     auto easing = Easing::from_name(curve_name);
     double now = get_current_time_ms();
 
+    int fade_dur = (rule.fade_close_duration_ms >= 0) ? rule.fade_close_duration_ms : Config::get().get_layer_animation_fade_out_duration_ms();
+    if (fade_dur <= 0) fade_dur = duration;
+    std::string fade_curve_name = (!rule.fade_close_curve.empty()) ? rule.fade_close_curve : Config::get().get_layer_animation_fade_out_curve();
+    auto fade_easing = Easing::from_name(fade_curve_name);
+    bool fade_enabled = rule.fade_close_enabled && Config::get().is_layer_animation_fade_enabled();
+
     int start_ox = 0, start_oy = 0;
     int target_ox = 0, target_oy = 0;
-    double start_scale = 1.0, target_scale = 1.0;
-    float start_opacity = 1.0f, target_opacity = 0.0f;
+    double start_scale_x = 1.0, start_scale_y = 1.0;
+    double target_scale_x = 1.0, target_scale_y = 1.0;
+    bool center_anchor = true;
+    float start_opacity = 1.0f, target_opacity = fade_enabled ? 0.0f : 1.0f;
 
     int surf_w = surface->get_width();
     int surf_h = surface->get_height();
@@ -714,7 +752,17 @@ void AnimationManager::schedule_layer_close(LayerSurface* surface, std::function
         target_oy = -surf_h;
     } else if (style == Config::LayerAnimStyle::Popin) {
         double pop_scale = (rule.popin_scale > 0.0) ? rule.popin_scale : Config::get().get_layer_animation_popin_scale();
-        target_scale = std::clamp(pop_scale, 0.1, 1.0);
+        target_scale_x = std::clamp(pop_scale, 0.1, 1.0);
+        target_scale_y = std::clamp(pop_scale, 0.1, 1.0);
+        center_anchor = true;
+    } else if (style == Config::LayerAnimStyle::Unroll) {
+        target_scale_x = 1.0;
+        target_scale_y = 0.0;
+        center_anchor = false;
+    } else if (style == Config::LayerAnimStyle::Unfold) {
+        target_scale_x = 1.0;
+        target_scale_y = 0.0;
+        center_anchor = true;
     }
 
     LayerAnimation anim;
@@ -724,16 +772,146 @@ void AnimationManager::schedule_layer_close(LayerSurface* surface, std::function
     anim.start_offset_y = start_oy;
     anim.target_offset_x = target_ox;
     anim.target_offset_y = target_oy;
-    anim.start_scale = start_scale;
-    anim.target_scale = target_scale;
+    anim.start_scale_x = start_scale_x;
+    anim.start_scale_y = start_scale_y;
+    anim.target_scale_x = target_scale_x;
+    anim.target_scale_y = target_scale_y;
+    anim.center_anchor = center_anchor;
     anim.start_opacity = start_opacity;
     anim.target_opacity = target_opacity;
     anim.start_time_ms = now;
     anim.duration_ms = duration;
+    anim.fade_duration_ms = fade_dur;
     anim.easing_fn = easing;
+    anim.fade_easing_fn = fade_easing;
+    anim.fade_enabled = fade_enabled;
     anim.on_complete = on_complete;
 
     m_layer_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
+void AnimationManager::schedule_layer_unmap_close(LayerSurface* surface) {
+    if (!surface || !m_server) return;
+
+    if (!Config::get().is_layer_close_animation_enabled()) return;
+
+    Config::LayerAnimStyle style = surface->deduce_animation_style(true);
+    if (style == Config::LayerAnimStyle::None) return;
+
+    struct wlr_buffer* buf = surface->get_current_buffer();
+    if (!buf && surface->get_wlr_layer_surface() && surface->get_wlr_layer_surface()->surface) {
+        if (surface->get_wlr_layer_surface()->surface->buffer) {
+            buf = &surface->get_wlr_layer_surface()->surface->buffer->base;
+        }
+    }
+    if (!buf) return;
+
+    struct wlr_scene_tree* layer_tree = m_server->get_layer_tree(surface->get_layer());
+    if (!layer_tree) return;
+
+    struct wlr_scene_tree* closing_tree = wlr_scene_tree_create(layer_tree);
+    if (!closing_tree) return;
+
+    struct wlr_scene_buffer* scene_buf = wlr_scene_buffer_create(closing_tree, buf);
+    if (!scene_buf) {
+        wlr_scene_node_destroy(&closing_tree->node);
+        return;
+    }
+
+    int base_w = (surface->get_width() > 0) ? surface->get_width() : (buf->width > 0 ? buf->width : 400);
+    int base_h = (surface->get_height() > 0) ? surface->get_height() : (buf->height > 0 ? buf->height : 200);
+
+    struct wlr_scene_blur* blur = nullptr;
+    if (Config::get().is_blur_enabled() && Config::get().is_layer_blur_enabled(surface->get_namespace())) {
+        blur = wlr_scene_blur_create(closing_tree, base_w, base_h);
+        if (blur) {
+            wlr_scene_blur_set_transparency_mask_source(blur, scene_buf);
+        }
+    }
+
+    wlr_scene_node_set_position(&closing_tree->node, surface->get_geo_x(), surface->get_geo_y());
+
+    Config::LayerRule rule = Config::get().get_layer_rule(surface->get_namespace());
+    int duration = (rule.duration_close_ms > 0) ? rule.duration_close_ms : Config::get().get_layer_close_duration_ms();
+    if (duration <= 0) {
+        wlr_scene_node_destroy(&closing_tree->node);
+        return;
+    }
+    std::string curve_name = (!rule.curve_close.empty()) ? rule.curve_close : Config::get().get_layer_close_curve();
+    auto easing = Easing::from_name(curve_name);
+    double now = get_current_time_ms();
+
+    int fade_dur = (rule.fade_close_duration_ms >= 0) ? rule.fade_close_duration_ms : Config::get().get_layer_animation_fade_out_duration_ms();
+    if (fade_dur <= 0) fade_dur = duration;
+    std::string fade_curve_name = (!rule.fade_close_curve.empty()) ? rule.fade_close_curve : Config::get().get_layer_animation_fade_out_curve();
+    auto fade_easing = Easing::from_name(fade_curve_name);
+    bool fade_enabled = rule.fade_close_enabled && Config::get().is_layer_animation_fade_enabled();
+
+    int start_ox = 0, start_oy = 0;
+    int target_ox = 0, target_oy = 0;
+    double start_scale_x = 1.0, start_scale_y = 1.0;
+    double target_scale_x = 1.0, target_scale_y = 1.0;
+    bool center_anchor = true;
+    float start_opacity = 1.0f, target_opacity = fade_enabled ? 0.0f : 1.0f;
+
+    if (style == Config::LayerAnimStyle::SlideTop) {
+        target_oy = -base_h;
+    } else if (style == Config::LayerAnimStyle::SlideBottom) {
+        target_oy = +base_h;
+    } else if (style == Config::LayerAnimStyle::SlideLeft) {
+        target_ox = -base_w;
+    } else if (style == Config::LayerAnimStyle::SlideRight) {
+        target_ox = +base_w;
+    } else if (style == Config::LayerAnimStyle::Slide) {
+        target_oy = -base_h;
+    } else if (style == Config::LayerAnimStyle::Popin) {
+        double pop_scale = (rule.popin_scale > 0.0) ? rule.popin_scale : Config::get().get_layer_animation_popin_scale();
+        target_scale_x = std::clamp(pop_scale, 0.1, 1.0);
+        target_scale_y = std::clamp(pop_scale, 0.1, 1.0);
+        center_anchor = true;
+    } else if (style == Config::LayerAnimStyle::Unroll) {
+        target_scale_x = 1.0;
+        target_scale_y = 0.0;
+        center_anchor = false;
+    } else if (style == Config::LayerAnimStyle::Unfold) {
+        target_scale_x = 1.0;
+        target_scale_y = 0.0;
+        center_anchor = true;
+    }
+
+    ClosingLayerAnimation anim;
+    anim.id = m_next_id++;
+    anim.scene_tree = closing_tree;
+    anim.blur_node = blur;
+    anim.base_geo_x = surface->get_geo_x();
+    anim.base_geo_y = surface->get_geo_y();
+    anim.base_width = base_w;
+    anim.base_height = base_h;
+    anim.start_offset_x = start_ox;
+    anim.start_offset_y = start_oy;
+    anim.target_offset_x = target_ox;
+    anim.target_offset_y = target_oy;
+    anim.start_scale_x = start_scale_x;
+    anim.start_scale_y = start_scale_y;
+    anim.target_scale_x = target_scale_x;
+    anim.target_scale_y = target_scale_y;
+    anim.center_anchor = center_anchor;
+    anim.start_opacity = start_opacity;
+    anim.target_opacity = target_opacity;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.fade_duration_ms = fade_dur;
+    anim.easing_fn = easing;
+    anim.fade_easing_fn = fade_easing;
+    anim.fade_enabled = fade_enabled;
+    anim.on_complete = [closing_tree]() {
+        if (closing_tree) {
+            wlr_scene_node_destroy(&closing_tree->node);
+        }
+    };
+
+    m_closing_layer_animations.push_back(std::move(anim));
     schedule_next_frame();
 }
 
@@ -949,6 +1127,13 @@ void AnimationManager::clear() {
     m_view_animations.clear();
     m_geometry_animations.clear();
     m_layer_animations.clear();
+    for (auto& a : m_closing_layer_animations) {
+        if (a.scene_tree) {
+            wlr_scene_node_destroy(&a.scene_tree->node);
+            a.scene_tree = nullptr;
+        }
+    }
+    m_closing_layer_animations.clear();
 }
 
 void AnimationManager::tick(double now_ms) {
@@ -1093,14 +1278,24 @@ void AnimationManager::tick(double now_ms) {
         }
         float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
 
+        float fade_progress = 1.0f;
+        if (anim.fade_duration_ms > 0.0) {
+            fade_progress = static_cast<float>(elapsed / anim.fade_duration_ms);
+        }
+        if (fade_progress >= 1.0f) {
+            fade_progress = 1.0f;
+        }
+        float fade_eased = anim.fade_easing_fn ? anim.fade_easing_fn(fade_progress) : fade_progress;
+
         int cur_ox = anim.start_offset_x + static_cast<int>(std::round(static_cast<float>(anim.target_offset_x - anim.start_offset_x) * eased));
         int cur_oy = anim.start_offset_y + static_cast<int>(std::round(static_cast<float>(anim.target_offset_y - anim.start_offset_y) * eased));
-        double cur_scale = anim.start_scale + (anim.target_scale - anim.start_scale) * static_cast<double>(eased);
-        float cur_opacity = anim.start_opacity + (anim.target_opacity - anim.start_opacity) * eased;
+        double cur_scale_x = anim.start_scale_x + (anim.target_scale_x - anim.start_scale_x) * static_cast<double>(eased);
+        double cur_scale_y = anim.start_scale_y + (anim.target_scale_y - anim.start_scale_y) * static_cast<double>(eased);
+        float cur_opacity = anim.fade_enabled ? (anim.start_opacity + (anim.target_opacity - anim.start_opacity) * fade_eased) : anim.target_opacity;
 
-        anim.surface->apply_animation_transform(cur_ox, cur_oy, cur_scale, cur_opacity);
+        anim.surface->apply_animation_transform(cur_ox, cur_oy, cur_scale_x, cur_scale_y, cur_opacity, anim.center_anchor);
 
-        if (progress >= 1.0f) {
+        if (progress >= 1.0f && fade_progress >= 1.0f) {
             anim.completed = true;
             if (anim.on_complete) {
                 completions.push_back(anim.on_complete);
@@ -1113,7 +1308,86 @@ void AnimationManager::tick(double now_ms) {
     });
     m_layer_animations.erase(it_layer, m_layer_animations.end());
 
-    // 5. Invoke completions
+    // 5. Tick closing unmap layer animations
+    for (auto& anim : m_closing_layer_animations) {
+        if (!anim.scene_tree) {
+            anim.completed = true;
+            continue;
+        }
+
+        double elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0.0;
+        float progress = (anim.duration_ms > 0.0) ? static_cast<float>(elapsed / anim.duration_ms) : 1.0f;
+        if (progress >= 1.0f) progress = 1.0f;
+        float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
+
+        float fade_progress = (anim.fade_duration_ms > 0.0) ? static_cast<float>(elapsed / anim.fade_duration_ms) : 1.0f;
+        if (fade_progress >= 1.0f) fade_progress = 1.0f;
+        float fade_eased = anim.fade_easing_fn ? anim.fade_easing_fn(fade_progress) : fade_progress;
+
+        int cur_ox = anim.start_offset_x + static_cast<int>(std::round(static_cast<float>(anim.target_offset_x - anim.start_offset_x) * eased));
+        int cur_oy = anim.start_offset_y + static_cast<int>(std::round(static_cast<float>(anim.target_offset_y - anim.start_offset_y) * eased));
+        double cur_scale_x = anim.start_scale_x + (anim.target_scale_x - anim.start_scale_x) * static_cast<double>(eased);
+        double cur_scale_y = anim.start_scale_y + (anim.target_scale_y - anim.start_scale_y) * static_cast<double>(eased);
+        float cur_opacity = anim.fade_enabled ? std::clamp(anim.start_opacity + (anim.target_opacity - anim.start_opacity) * fade_eased, 0.0f, 1.0f) : anim.target_opacity;
+
+        int cur_x = anim.base_geo_x + cur_ox;
+        int cur_y = anim.base_geo_y + cur_oy;
+        if (anim.center_anchor) {
+            if (cur_scale_x < 0.999) {
+                double cur_w = std::max(1.0, static_cast<double>(anim.base_width) * cur_scale_x);
+                cur_x += static_cast<int>(std::round((static_cast<double>(anim.base_width) - cur_w) / 2.0));
+            }
+            if (cur_scale_y < 0.999) {
+                double cur_h = std::max(1.0, static_cast<double>(anim.base_height) * cur_scale_y);
+                cur_y += static_cast<int>(std::round((static_cast<double>(anim.base_height) - cur_h) / 2.0));
+            }
+        }
+        wlr_scene_node_set_position(&anim.scene_tree->node, cur_x, cur_y);
+
+        struct BufferAnimData {
+            double scale_x;
+            double scale_y;
+            float opacity;
+        } bdata = { cur_scale_x, cur_scale_y, cur_opacity };
+
+        wlr_scene_node_for_each_buffer(&anim.scene_tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
+            auto* d = static_cast<BufferAnimData*>(user_data);
+            if ((d->scale_x < 0.999 || d->scale_y < 0.999) && buf->buffer) {
+                int sw = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->width) * d->scale_x)));
+                int sh = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->height) * d->scale_y)));
+                wlr_scene_buffer_set_dest_size(buf, sw, sh);
+            } else {
+                wlr_scene_buffer_set_dest_size(buf, 0, 0);
+            }
+            wlr_scene_buffer_set_opacity(buf, d->opacity);
+        }, &bdata);
+
+        if (anim.blur_node) {
+            if (cur_opacity < 0.01f || !Config::get().is_blur_enabled()) {
+                wlr_scene_node_set_enabled(&anim.blur_node->node, false);
+            } else {
+                wlr_scene_node_set_enabled(&anim.blur_node->node, true);
+                int bw = std::max(1, static_cast<int>(std::round(static_cast<double>(anim.base_width) * cur_scale_x)));
+                int bh = std::max(1, static_cast<int>(std::round(static_cast<double>(anim.base_height) * cur_scale_y)));
+                wlr_scene_blur_set_size(anim.blur_node, bw, bh);
+                wlr_scene_blur_set_alpha(anim.blur_node, cur_opacity);
+            }
+        }
+
+        if (progress >= 1.0f && fade_progress >= 1.0f) {
+            anim.completed = true;
+            if (anim.on_complete) {
+                completions.push_back(anim.on_complete);
+            }
+        }
+    }
+
+    auto it_closing = std::remove_if(m_closing_layer_animations.begin(), m_closing_layer_animations.end(), [](const ClosingLayerAnimation& a) {
+        return a.completed;
+    });
+    m_closing_layer_animations.erase(it_closing, m_closing_layer_animations.end());
+
+    // 6. Invoke completions
     for (auto& cb : completions) {
         if (cb) cb();
     }

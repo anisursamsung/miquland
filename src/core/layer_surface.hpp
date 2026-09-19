@@ -31,8 +31,10 @@ public:
     void update_tree();
     void update_blur();
 
-    Config::LayerAnimStyle deduce_animation_style() const;
-    void apply_animation_transform(int offset_x, int offset_y, double scale, float opacity);
+    struct wlr_buffer* get_current_buffer() const { return m_current_buffer; }
+    Server* get_server() const { return m_server; }
+    Config::LayerAnimStyle deduce_animation_style(bool is_close = false) const;
+    void apply_animation_transform(int offset_x, int offset_y, double scale_x, double scale_y, float opacity, bool center_anchor = true);
     void reset_animation_transform();
 
 private:
@@ -45,6 +47,7 @@ private:
     Server* m_server = nullptr;
     struct wlr_layer_surface_v1* m_wlr_layer_surface = nullptr;
     struct wlr_scene_layer_surface_v1* m_scene_layer_surface = nullptr;
+    struct wlr_buffer* m_current_buffer = nullptr;
     struct wlr_scene_blur* m_blur_node = nullptr;
     struct wlr_scene_tree* m_popups_tree = nullptr;
     enum zwlr_layer_shell_v1_layer m_current_layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;

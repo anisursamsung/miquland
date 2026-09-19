@@ -74,13 +74,48 @@ struct LayerAnimation {
     int start_offset_y = 0;
     int target_offset_x = 0;
     int target_offset_y = 0;
-    double start_scale = 1.0;
-    double target_scale = 1.0;
+    double start_scale_x = 1.0;
+    double start_scale_y = 1.0;
+    double target_scale_x = 1.0;
+    double target_scale_y = 1.0;
+    bool center_anchor = true;
     float start_opacity = 0.0f;
     float target_opacity = 1.0f;
     double start_time_ms = 0.0;
     double duration_ms = 0.0;
+    double fade_duration_ms = 0.0;
     std::function<float(float)> easing_fn;
+    std::function<float(float)> fade_easing_fn;
+    bool fade_enabled = true;
+    std::function<void()> on_complete;
+    bool completed = false;
+};
+
+struct ClosingLayerAnimation {
+    uint64_t id = 0;
+    struct wlr_scene_tree* scene_tree = nullptr;
+    struct wlr_scene_blur* blur_node = nullptr;
+    int base_geo_x = 0;
+    int base_geo_y = 0;
+    int base_width = 0;
+    int base_height = 0;
+    int start_offset_x = 0;
+    int start_offset_y = 0;
+    int target_offset_x = 0;
+    int target_offset_y = 0;
+    double start_scale_x = 1.0;
+    double start_scale_y = 1.0;
+    double target_scale_x = 1.0;
+    double target_scale_y = 1.0;
+    bool center_anchor = true;
+    float start_opacity = 1.0f;
+    float target_opacity = 0.0f;
+    double start_time_ms = 0.0;
+    double duration_ms = 0.0;
+    double fade_duration_ms = 0.0;
+    std::function<float(float)> easing_fn;
+    std::function<float(float)> fade_easing_fn;
+    bool fade_enabled = true;
     std::function<void()> on_complete;
     bool completed = false;
 };
@@ -101,6 +136,7 @@ public:
     // High-level layer surface animations
     void schedule_layer_open(LayerSurface* surface);
     void schedule_layer_close(LayerSurface* surface, std::function<void()> on_complete = nullptr);
+    void schedule_layer_unmap_close(LayerSurface* surface);
     bool is_layer_animating(LayerSurface* surface) const;
 
     // Interactive 1:1 Workspace Gestures
@@ -125,6 +161,7 @@ public:
     bool has_active_animations() const {
         return !m_animations.empty() || !m_view_animations.empty() ||
                !m_geometry_animations.empty() || !m_layer_animations.empty() ||
+               !m_closing_layer_animations.empty() ||
                m_swipe_state.active;
     }
     void schedule_next_frame();
@@ -154,6 +191,7 @@ private:
     std::vector<ViewAnimation> m_view_animations;
     std::vector<ViewGeometryAnimation> m_geometry_animations;
     std::vector<LayerAnimation> m_layer_animations;
+    std::vector<ClosingLayerAnimation> m_closing_layer_animations;
     WorkspaceSwipeState m_swipe_state;
     uint64_t m_next_id = 1;
 };

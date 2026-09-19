@@ -122,8 +122,23 @@ public:
     double get_window_animation_close_scale() const { return m_window_animation_close_scale; }
     void set_window_animation_close_scale(double s) { m_window_animation_close_scale = std::clamp(s, 0.1, 1.0); }
 
-    bool is_window_animation_fade_enabled() const { return m_window_animation_fade; }
-    void set_window_animation_fade_enabled(bool enabled) { m_window_animation_fade = enabled; }
+    bool is_window_open_animation_enabled() const { return is_window_animations_enabled() && m_window_open_animation_enabled; }
+    void set_window_open_animation_enabled(bool enabled) { m_window_open_animation_enabled = enabled; }
+
+    bool is_window_close_animation_enabled() const { return is_window_animations_enabled() && m_window_close_animation_enabled; }
+    void set_window_close_animation_enabled(bool enabled) { m_window_close_animation_enabled = enabled; }
+
+    bool is_window_open_fade_enabled() const { return is_window_animations_enabled() && m_window_open_fade_enabled; }
+    void set_window_open_fade_enabled(bool enabled) { m_window_open_fade_enabled = enabled; }
+
+    bool is_window_close_fade_enabled() const { return is_window_animations_enabled() && m_window_close_fade_enabled; }
+    void set_window_close_fade_enabled(bool enabled) { m_window_close_fade_enabled = enabled; }
+
+    bool is_window_animation_fade_enabled() const { return m_window_open_fade_enabled || m_window_close_fade_enabled; }
+    void set_window_animation_fade_enabled(bool enabled) {
+        m_window_open_fade_enabled = enabled;
+        m_window_close_fade_enabled = enabled;
+    }
 
     // Backward compatibility aliases
     int get_animation_duration_ms() const { return m_workspace_animation_duration_ms; }
@@ -260,32 +275,109 @@ public:
         SlideRight,
         Popin,
         Fade,
+        Unroll,
+        Unfold,
         None
     };
 
     struct LayerRule {
         std::string ns_pattern;
-        LayerAnimStyle anim_style = LayerAnimStyle::DefaultAuto;
+        LayerAnimStyle anim_style_open = LayerAnimStyle::DefaultAuto;
+        LayerAnimStyle anim_style_close = LayerAnimStyle::DefaultAuto;
         double popin_scale = 0.90;
-        int duration_ms = -1;
-        std::string curve = "";
+        int duration_open_ms = -1;
+        int duration_close_ms = -1;
+        std::string curve_open = "";
+        std::string curve_close = "";
+        bool noanim_open = false;
+        bool noanim_close = false;
+        bool fade_open_enabled = true;
+        int fade_open_duration_ms = -1;
+        std::string fade_open_curve = "";
+        bool fade_close_enabled = true;
+        int fade_close_duration_ms = -1;
+        std::string fade_close_curve = "";
     };
 
     bool is_layer_animations_enabled() const { return m_layer_animations_enabled; }
     void set_layer_animations_enabled(bool val) { m_layer_animations_enabled = val; }
 
+    bool is_layer_open_animation_enabled() const { return m_layer_animations_enabled && m_layer_animation_open_enabled; }
+    void set_layer_open_animation_enabled(bool val) { m_layer_animation_open_enabled = val; }
+
+    bool is_layer_close_animation_enabled() const { return m_layer_animations_enabled && m_layer_animation_close_enabled; }
+    void set_layer_close_animation_enabled(bool val) { m_layer_animation_close_enabled = val; }
+
     int get_layer_animation_duration_ms() const { return m_layer_animation_duration_ms; }
     void set_layer_animation_duration_ms(int d) { m_layer_animation_duration_ms = std::max(10, d); }
+
+    int get_layer_open_duration_ms() const {
+        return (m_layer_animation_open_duration_ms > 0) ? m_layer_animation_open_duration_ms : m_layer_animation_duration_ms;
+    }
+    void set_layer_open_duration_ms(int d) { m_layer_animation_open_duration_ms = d; }
+
+    int get_layer_close_duration_ms() const {
+        return (m_layer_animation_close_duration_ms > 0) ? m_layer_animation_close_duration_ms : m_layer_animation_duration_ms;
+    }
+    void set_layer_close_duration_ms(int d) { m_layer_animation_close_duration_ms = d; }
 
     const std::string& get_layer_animation_curve() const { return m_layer_animation_curve; }
     void set_layer_animation_curve(const std::string& c) { m_layer_animation_curve = c; }
 
+    std::string get_layer_open_curve() const {
+        return (!m_layer_animation_open_curve.empty()) ? m_layer_animation_open_curve : m_layer_animation_curve;
+    }
+    void set_layer_open_curve(const std::string& c) { m_layer_animation_open_curve = c; }
+
+    std::string get_layer_close_curve() const {
+        return (!m_layer_animation_close_curve.empty()) ? m_layer_animation_close_curve : m_layer_animation_curve;
+    }
+    void set_layer_close_curve(const std::string& c) { m_layer_animation_close_curve = c; }
+
     double get_layer_animation_popin_scale() const { return m_layer_animation_popin_scale; }
     void set_layer_animation_popin_scale(double s) { m_layer_animation_popin_scale = std::clamp(s, 0.1, 1.0); }
+
+    bool is_layer_animation_fade_enabled() const { return m_layer_animation_fade_enabled; }
+    void set_layer_animation_fade_enabled(bool val) { m_layer_animation_fade_enabled = val; }
+
+    int get_layer_animation_fade_in_duration_ms() const {
+        return (m_layer_animation_fade_in_duration_ms > 0) ? m_layer_animation_fade_in_duration_ms : get_layer_open_duration_ms();
+    }
+    void set_layer_animation_fade_in_duration_ms(int ms) { m_layer_animation_fade_in_duration_ms = std::clamp(ms, 0, 2000); }
+
+    int get_layer_animation_fade_out_duration_ms() const {
+        return (m_layer_animation_fade_out_duration_ms > 0) ? m_layer_animation_fade_out_duration_ms : get_layer_close_duration_ms();
+    }
+    void set_layer_animation_fade_out_duration_ms(int ms) { m_layer_animation_fade_out_duration_ms = std::clamp(ms, 0, 2000); }
+
+    std::string get_layer_animation_fade_in_curve() const {
+        return (!m_layer_animation_fade_in_curve.empty()) ? m_layer_animation_fade_in_curve : get_layer_open_curve();
+    }
+    void set_layer_animation_fade_in_curve(const std::string& c) { m_layer_animation_fade_in_curve = c; }
+
+    std::string get_layer_animation_fade_out_curve() const {
+        return (!m_layer_animation_fade_out_curve.empty()) ? m_layer_animation_fade_out_curve : get_layer_close_curve();
+    }
+    void set_layer_animation_fade_out_curve(const std::string& c) { m_layer_animation_fade_out_curve = c; }
 
     LayerRule get_layer_rule(const std::string& ns) const;
     void add_layer_rule(const LayerRule& rule);
     const std::vector<LayerRule>& get_layer_rules() const { return m_layer_rules; }
+
+    bool is_window_open_animation_enabled(const std::string& app_id, const std::string& title) const;
+    bool is_window_close_animation_enabled(const std::string& app_id, const std::string& title) const;
+    int get_window_open_duration_ms(const std::string& app_id, const std::string& title) const;
+    int get_window_close_duration_ms(const std::string& app_id, const std::string& title) const;
+    std::string get_window_open_curve(const std::string& app_id, const std::string& title) const;
+    std::string get_window_close_curve(const std::string& app_id, const std::string& title) const;
+    double get_window_open_scale(const std::string& app_id, const std::string& title) const;
+    double get_window_close_scale(const std::string& app_id, const std::string& title) const;
+    bool is_window_open_fade_enabled(const std::string& app_id, const std::string& title) const;
+    bool is_window_close_fade_enabled(const std::string& app_id, const std::string& title) const;
+    int get_window_open_fade_duration_ms(const std::string& app_id, const std::string& title) const;
+    int get_window_close_fade_duration_ms(const std::string& app_id, const std::string& title) const;
+    std::string get_window_open_fade_curve(const std::string& app_id, const std::string& title) const;
+    std::string get_window_close_fade_curve(const std::string& app_id, const std::string& title) const;
 
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
@@ -336,6 +428,11 @@ public:
     static bool parse_binding_combo(const std::string& combo, uint32_t& out_modifiers, xkb_keysym_t& out_keysym);
     void add_or_update_binding(uint32_t mods, xkb_keysym_t sym, const std::string& action, const std::string& combo);
 
+    struct SectionFrame {
+        std::string type;
+        std::string param;
+    };
+
 private:
     Config();
     void set_defaults();
@@ -346,6 +443,31 @@ private:
                    std::vector<MonitorRule>& file_monitors, bool& has_monitors_in_file,
                    std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds, int depth = 0);
     std::string resolve_path(const std::string& path) const;
+
+    // Modular section parsers
+    void parse_plugins_entry(const std::string& key, const std::string& value);
+    void parse_autostart_entry(const std::string& key, const std::string& value,
+                               std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds);
+    void parse_monitors_entry(const std::string& key, const std::string& value,
+                              std::vector<MonitorRule>& file_monitors, bool& has_monitors_in_file);
+    void parse_cursor_entry(const std::string& key, const std::string& value);
+    void parse_general_entry(const std::string& path_str, const std::string& top_type,
+                             const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value);
+    void parse_decoration_entry(const std::string& path_str, const std::string& top_type,
+                                const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value);
+    void parse_animations_entry(const std::string& path_str, const std::string& top_type,
+                                const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value);
+    void parse_input_entry(const std::string& path_str, const std::string& top_type,
+                           const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value,
+                           std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file);
+    void parse_xwayland_entry(const std::string& key, const std::string& value);
+    void parse_layerrule_entry(const std::string& ns, const std::string& path_str, const std::string& top_type,
+                               const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value);
+    void parse_windowrule_entry(const std::string& target, const std::string& path_str, const std::string& top_type,
+                                const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value,
+                                std::vector<WindowRule>& file_rules, bool& has_rules_in_file);
+    void parse_binds_entry(const std::string& key, const std::string& value,
+                           std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file);
 
     std::vector<MonitorRule> m_monitor_rules;
     std::vector<std::string> m_exec_commands;
@@ -358,6 +480,8 @@ private:
     int m_workspace_animation_duration_ms = 200;
     std::string m_workspace_animation_curve = "ease_out_cubic";
     bool m_window_animations_enabled = true;
+    bool m_window_open_animation_enabled = true;
+    bool m_window_close_animation_enabled = true;
     int m_window_animation_duration_ms = 180;
     int m_window_animation_open_duration_ms = 180;
     int m_window_animation_close_duration_ms = 140;
@@ -366,15 +490,27 @@ private:
     std::string m_window_animation_close_curve = "smooth_out";
     double m_window_animation_open_scale = 0.85;
     double m_window_animation_close_scale = 0.85;
-    bool m_window_animation_fade = true;
+    bool m_window_open_fade_enabled = true;
+    bool m_window_close_fade_enabled = true;
     int m_window_animation_fade_in_duration_ms = 0;
     int m_window_animation_fade_out_duration_ms = 0;
     std::string m_window_animation_fade_in_curve = "";
     std::string m_window_animation_fade_out_curve = "";
     bool m_layer_animations_enabled = true;
+    bool m_layer_animation_open_enabled = true;
+    bool m_layer_animation_close_enabled = true;
     int m_layer_animation_duration_ms = 200;
+    int m_layer_animation_open_duration_ms = -1;
+    int m_layer_animation_close_duration_ms = -1;
     std::string m_layer_animation_curve = "ease_out_cubic";
+    std::string m_layer_animation_open_curve = "";
+    std::string m_layer_animation_close_curve = "";
     double m_layer_animation_popin_scale = 0.90;
+    bool m_layer_animation_fade_enabled = true;
+    int m_layer_animation_fade_in_duration_ms = 0;
+    int m_layer_animation_fade_out_duration_ms = 0;
+    std::string m_layer_animation_fade_in_curve = "";
+    std::string m_layer_animation_fade_out_curve = "";
     std::vector<LayerRule> m_layer_rules;
 
     bool m_xwayland_force_zero_scaling = false;

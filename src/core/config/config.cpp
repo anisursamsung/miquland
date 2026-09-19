@@ -68,14 +68,22 @@ void Config::set_defaults() {
     m_workspace_animation_duration_ms = 200;
     m_workspace_animation_curve = "smooth_out";
     m_window_animations_enabled = true;
+    m_window_open_animation_enabled = true;
+    m_window_close_animation_enabled = true;
     m_window_animation_duration_ms = 180;
     m_window_animation_open_duration_ms = 180;
     m_window_animation_close_duration_ms = 140;
     m_window_animation_curve = "default";
     m_window_animation_open_curve = "default";
+    m_window_animation_close_curve = "smooth_out";
     m_window_animation_open_scale = 0.85;
     m_window_animation_close_scale = 0.85;
-    m_window_animation_fade = true;
+    m_window_open_fade_enabled = true;
+    m_window_close_fade_enabled = true;
+    m_window_animation_fade_in_duration_ms = 0;
+    m_window_animation_fade_out_duration_ms = 0;
+    m_window_animation_fade_in_curve = "";
+    m_window_animation_fade_out_curve = "";
     m_layer_animations_enabled = true;
     m_layer_animation_duration_ms = 200;
     m_layer_animation_curve = "ease_out_cubic";
@@ -267,7 +275,169 @@ Config::LayerRule Config::get_layer_rule(const std::string& ns) const {
 }
 
 void Config::add_layer_rule(const LayerRule& rule) {
+    for (auto& r : m_layer_rules) {
+        if (r.ns_pattern == rule.ns_pattern) {
+            if (rule.anim_style_open != LayerAnimStyle::DefaultAuto) r.anim_style_open = rule.anim_style_open;
+            if (rule.anim_style_close != LayerAnimStyle::DefaultAuto) r.anim_style_close = rule.anim_style_close;
+            if (rule.duration_open_ms > 0) r.duration_open_ms = rule.duration_open_ms;
+            if (rule.duration_close_ms > 0) r.duration_close_ms = rule.duration_close_ms;
+            if (!rule.curve_open.empty()) r.curve_open = rule.curve_open;
+            if (!rule.curve_close.empty()) r.curve_close = rule.curve_close;
+            if (rule.popin_scale > 0.0) r.popin_scale = rule.popin_scale;
+            if (rule.noanim_open) { r.noanim_open = true; r.anim_style_open = LayerAnimStyle::None; }
+            if (rule.noanim_close) { r.noanim_close = true; r.anim_style_close = LayerAnimStyle::None; }
+            if (rule.fade_open_duration_ms >= 0) r.fade_open_duration_ms = rule.fade_open_duration_ms;
+            if (rule.fade_close_duration_ms >= 0) r.fade_close_duration_ms = rule.fade_close_duration_ms;
+            if (!rule.fade_open_curve.empty()) r.fade_open_curve = rule.fade_open_curve;
+            if (!rule.fade_close_curve.empty()) r.fade_close_curve = rule.fade_close_curve;
+            if (!rule.fade_open_enabled) r.fade_open_enabled = false;
+            if (!rule.fade_close_enabled) r.fade_close_enabled = false;
+            return;
+        }
+    }
     m_layer_rules.push_back(rule);
+}
+
+bool Config::is_window_open_animation_enabled(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_open_enabled" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            return (r.extra == "true" || r.extra == "1" || r.extra == "yes");
+        }
+    }
+    return is_window_open_animation_enabled();
+}
+
+bool Config::is_window_close_animation_enabled(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_close_enabled" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            return (r.extra == "true" || r.extra == "1" || r.extra == "yes");
+        }
+    }
+    return is_window_close_animation_enabled();
+}
+
+int Config::get_window_open_duration_ms(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_open_duration" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try { return std::clamp(std::stoi(r.extra), 10, 2000); } catch (...) {}
+        }
+    }
+    return get_window_animation_open_duration_ms();
+}
+
+int Config::get_window_close_duration_ms(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_close_duration" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try { return std::clamp(std::stoi(r.extra), 10, 2000); } catch (...) {}
+        }
+    }
+    return get_window_animation_close_duration_ms();
+}
+
+std::string Config::get_window_open_curve(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_open_curve" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            if (!r.extra.empty()) return r.extra;
+        }
+    }
+    return get_window_animation_open_curve();
+}
+
+std::string Config::get_window_close_curve(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_close_curve" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            if (!r.extra.empty()) return r.extra;
+        }
+    }
+    return get_window_animation_close_curve();
+}
+
+double Config::get_window_open_scale(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_open_scale" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try {
+                double s = std::stod(r.extra);
+                if (s > 1.0) s /= 100.0;
+                return std::clamp(s, 0.1, 1.0);
+            } catch (...) {}
+        }
+    }
+    return get_window_animation_open_scale();
+}
+
+double Config::get_window_close_scale(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if (r.rule == "animation_close_scale" && (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try {
+                double s = std::stod(r.extra);
+                if (s > 1.0) s /= 100.0;
+                return std::clamp(s, 0.1, 1.0);
+            } catch (...) {}
+        }
+    }
+    return get_window_animation_close_scale();
+}
+
+bool Config::is_window_open_fade_enabled(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_open_fade_enabled" || r.rule == "animation_fade_enabled") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            return (r.extra == "true" || r.extra == "1" || r.extra == "yes");
+        }
+    }
+    return is_window_open_fade_enabled();
+}
+
+bool Config::is_window_close_fade_enabled(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_close_fade_enabled" || r.rule == "animation_fade_enabled") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            return (r.extra == "true" || r.extra == "1" || r.extra == "yes");
+        }
+    }
+    return is_window_close_fade_enabled();
+}
+
+int Config::get_window_open_fade_duration_ms(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_open_fade_duration" || r.rule == "animation_fade_duration") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try { return std::clamp(std::stoi(r.extra), 0, 2000); } catch (...) {}
+        }
+    }
+    int d = get_window_animation_fade_in_duration_ms();
+    return (d > 0) ? d : get_window_open_duration_ms(app_id, title);
+}
+
+int Config::get_window_close_fade_duration_ms(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_close_fade_duration" || r.rule == "animation_fade_duration") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            try { return std::clamp(std::stoi(r.extra), 0, 2000); } catch (...) {}
+        }
+    }
+    int d = get_window_animation_fade_out_duration_ms();
+    return (d > 0) ? d : get_window_close_duration_ms(app_id, title);
+}
+
+std::string Config::get_window_open_fade_curve(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_open_fade_curve" || r.rule == "animation_fade_curve") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            if (!r.extra.empty()) return r.extra;
+        }
+    }
+    return get_window_animation_fade_in_curve();
+}
+
+std::string Config::get_window_close_fade_curve(const std::string& app_id, const std::string& title) const {
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "animation_close_fade_curve" || r.rule == "animation_fade_curve") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            if (!r.extra.empty()) return r.extra;
+        }
+    }
+    return get_window_animation_fade_out_curve();
 }
 
 bool Config::parse_binding_combo(const std::string& combo, uint32_t& out_modifiers, xkb_keysym_t& out_keysym) {
@@ -522,6 +692,781 @@ static std::string resolve_exec_command(const std::string& raw_cmd) {
     return cmd;
 }
 
+struct SectionFrame {
+    std::string type;
+    std::string param;
+};
+
+static void parse_section_header(const std::string& line, std::string& out_type, std::string& out_param) {
+    std::string raw = trim(line);
+    if (!raw.empty() && raw.back() == '{') {
+        raw = trim(raw.substr(0, raw.size() - 1));
+    }
+    size_t q1 = raw.find('"');
+    size_t q2 = raw.rfind('"');
+    if (q1 != std::string::npos && q2 != std::string::npos && q2 > q1) {
+        out_type = trim(raw.substr(0, q1));
+        out_param = raw.substr(q1 + 1, q2 - q1 - 1);
+    } else {
+        size_t sp = raw.find_first_of(" \t");
+        if (sp != std::string::npos) {
+            out_type = trim(raw.substr(0, sp));
+            out_param = trim(raw.substr(sp + 1));
+        } else {
+            out_type = raw;
+            out_param = "";
+        }
+    }
+    std::transform(out_type.begin(), out_type.end(), out_type.begin(), ::tolower);
+}
+
+static void parse_monitor_rule_str(const std::string& value, MonitorRule& rule) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(value);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+        tokens.push_back(trim(tok));
+    }
+    if (tokens.empty()) return;
+
+    rule.name = tokens[0];
+    if (rule.name == "*") rule.name = "";
+
+    if (tokens.size() >= 2) {
+        std::string mode_str = tokens[1];
+        std::string lower_mode = mode_str;
+        std::transform(lower_mode.begin(), lower_mode.end(), lower_mode.begin(), ::tolower);
+        if (lower_mode == "disable" || lower_mode == "off") {
+            rule.disabled = true;
+        } else if (lower_mode == "preferred" || lower_mode == "auto" || lower_mode.empty() || lower_mode == "highrr" || lower_mode == "highres") {
+            rule.width = 0;
+            rule.height = 0;
+            rule.refresh_rate = 0.0;
+        } else {
+            size_t x_idx = lower_mode.find('x');
+            if (x_idx != std::string::npos) {
+                try {
+                    rule.width = std::stoi(lower_mode.substr(0, x_idx));
+                    size_t at_idx = lower_mode.find('@', x_idx);
+                    if (at_idx != std::string::npos) {
+                        rule.height = std::stoi(lower_mode.substr(x_idx + 1, at_idx - x_idx - 1));
+                        rule.refresh_rate = std::stod(lower_mode.substr(at_idx + 1));
+                    } else {
+                        rule.height = std::stoi(lower_mode.substr(x_idx + 1));
+                        rule.refresh_rate = 0.0;
+                    }
+                } catch (...) {}
+            }
+        }
+    }
+
+    if (!rule.disabled && tokens.size() >= 3) {
+        std::string pos_str = tokens[2];
+        std::string lower_pos = pos_str;
+        std::transform(lower_pos.begin(), lower_pos.end(), lower_pos.begin(), ::tolower);
+        if (lower_pos == "auto" || lower_pos.empty()) {
+            rule.x = -1;
+            rule.y = -1;
+        } else {
+            size_t x_idx = lower_pos.find('x');
+            if (x_idx != std::string::npos) {
+                try {
+                    rule.x = std::stoi(lower_pos.substr(0, x_idx));
+                    rule.y = std::stoi(lower_pos.substr(x_idx + 1));
+                } catch (...) {}
+            }
+        }
+    }
+
+    if (!rule.disabled && tokens.size() >= 4) {
+        std::string scale_str = tokens[3];
+        std::string lower_scale = scale_str;
+        std::transform(lower_scale.begin(), lower_scale.end(), lower_scale.begin(), ::tolower);
+        if (lower_scale == "auto" || lower_scale.empty()) {
+            rule.scale = 1.0;
+        } else {
+            try {
+                rule.scale = std::stod(scale_str);
+                if (rule.scale <= 0.0) rule.scale = 1.0;
+            } catch (...) {}
+        }
+    }
+
+    if (!rule.disabled && tokens.size() >= 5) {
+        std::string trans_str = tokens[4];
+        std::string lower_trans = trans_str;
+        std::transform(lower_trans.begin(), lower_trans.end(), lower_trans.begin(), ::tolower);
+        if (lower_trans == "90" || lower_trans == "1") {
+            rule.transform = WL_OUTPUT_TRANSFORM_90;
+        } else if (lower_trans == "180" || lower_trans == "2") {
+            rule.transform = WL_OUTPUT_TRANSFORM_180;
+        } else if (lower_trans == "270" || lower_trans == "3") {
+            rule.transform = WL_OUTPUT_TRANSFORM_270;
+        } else if (lower_trans == "flipped" || lower_trans == "4") {
+            rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED;
+        } else if (lower_trans == "flipped-90" || lower_trans == "5") {
+            rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_90;
+        } else if (lower_trans == "flipped-180" || lower_trans == "6") {
+            rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_180;
+        } else if (lower_trans == "flipped-270" || lower_trans == "7") {
+            rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_270;
+        } else {
+            rule.transform = WL_OUTPUT_TRANSFORM_NORMAL;
+        }
+    }
+}
+
+static bool is_in_path(const std::vector<Config::SectionFrame>& stack, const std::string& target_type) {
+    for (const auto& f : stack) {
+        if (f.type == target_type) return true;
+    }
+    return false;
+}
+
+static std::string get_current_section_path(const std::vector<Config::SectionFrame>& section_stack) {
+    std::string p;
+    for (size_t i = 0; i < section_stack.size(); ++i) {
+        if (i > 0) p += ".";
+        p += section_stack[i].type;
+    }
+    return p;
+}
+
+static void strip_inline_comment(const std::string& key, std::string& value) {
+    if (key == "bind" || key == "gesture" || key == "exec" || key == "exec_once" ||
+        key == "exec-once" || key == "exec_always" || key == "exec-always" || key == "autostart") {
+        return;
+    }
+    size_t comment_pos = std::string::npos;
+    if (!value.empty() && value[0] == '#') {
+        size_t space_pos = value.find_first_of(" \t");
+        if (space_pos != std::string::npos) {
+            comment_pos = value.find('#', space_pos);
+        }
+    } else {
+        comment_pos = value.find('#');
+    }
+    if (comment_pos != std::string::npos) {
+        value = trim(value.substr(0, comment_pos));
+    }
+}
+
+void Config::parse_plugins_entry(const std::string& key, const std::string& value) {
+    if (key == "load" || key == "plugin" || key == "path") {
+        m_plugins.push_back(value);
+    }
+}
+
+void Config::parse_autostart_entry(const std::string& key, const std::string& value,
+                                   std::vector<std::string>& file_exec_cmds, std::vector<std::string>& file_exec_once_cmds) {
+    if (key == "exec_once" || key == "exec-once" || key == "autostart") {
+        std::string resolved_cmd = resolve_exec_command(value);
+        if (!resolved_cmd.empty()) file_exec_once_cmds.push_back(resolved_cmd);
+    } else if (key == "exec" || key == "exec_always" || key == "exec-always") {
+        std::string resolved_cmd = resolve_exec_command(value);
+        if (!resolved_cmd.empty()) file_exec_cmds.push_back(resolved_cmd);
+    }
+}
+
+void Config::parse_monitors_entry(const std::string& key, const std::string& value,
+                                  std::vector<MonitorRule>& file_monitors, bool& has_monitors_in_file) {
+    if (key == "default" || key == "monitor" || key == "output") {
+        MonitorRule rule;
+        parse_monitor_rule_str(value, rule);
+        has_monitors_in_file = true;
+        file_monitors.push_back(rule);
+    }
+}
+
+void Config::parse_cursor_entry(const std::string& key, const std::string& value) {
+    if (key == "theme") m_cursor_theme = value;
+    else if (key == "size") {
+        try { m_cursor_size = std::clamp(std::stoi(value), 8, 128); } catch (...) {}
+    }
+}
+
+void Config::parse_general_entry(const std::string& path_str, const std::string& top_type,
+                                 const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value) {
+    if (path_str == "general" || top_type == "general") {
+        if (key == "layout" || key == "tiling_layout") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_layout_mode = (lower == "stack" || lower == "master") ? LayoutMode::Stack : LayoutMode::Spiral;
+        } else if (key == "default_split_ratio" || key == "split_ratio") {
+            try { m_default_split_ratio = std::clamp(std::stod(value), 0.1, 0.9); } catch (...) {}
+        } else if (key == "smart_gaps") {
+            m_smart_gaps = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "workspace_cycle") {
+            m_workspace_cycle = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "resize_on_border") {
+            m_resize_on_border = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "border_grab_area") {
+            try { m_border_grab_area = std::clamp(std::stoi(value), 1, 30); } catch (...) {}
+        }
+    } else if (path_str == "general.gaps" || (top_type == "gaps" && is_in_path(stack, "general"))) {
+        if (key == "inner" || key == "space_between_windows") {
+            try { m_space_between_windows = std::max(0, std::stoi(value)); } catch (...) {}
+        } else if (key == "outer" || key == "screen_edge_padding") {
+            try { m_screen_edge_padding = std::max(0, std::stoi(value)); } catch (...) {}
+        }
+    } else if (path_str == "general.border" || (top_type == "border" && is_in_path(stack, "general"))) {
+        if (key == "width") {
+            try { m_window_border_width = std::max(0, std::stoi(value)); } catch (...) {}
+        } else if (key == "radius") {
+            try { m_window_border_radius = std::max(0, std::stoi(value)); } catch (...) {}
+        } else if (key == "active") {
+            m_window_border_color_active = value;
+        } else if (key == "inactive") {
+            m_window_border_color_inactive = value;
+        }
+    }
+}
+
+void Config::parse_decoration_entry(const std::string& path_str, const std::string& top_type,
+                                    const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value) {
+    if (path_str == "decoration" || top_type == "decoration") {
+        if (key == "active_opacity") {
+            try { m_window_opacity_active = std::clamp(std::stof(value), 0.0f, 1.0f); } catch (...) {}
+        } else if (key == "inactive_opacity") {
+            try { m_window_opacity_inactive = std::clamp(std::stof(value), 0.0f, 1.0f); } catch (...) {}
+        } else if (key == "rounding") {
+            try { m_window_border_radius = std::max(0, std::stoi(value)); } catch (...) {}
+        }
+    } else if (path_str == "decoration.blur" || (top_type == "blur" && is_in_path(stack, "decoration"))) {
+        if (key == "enabled") {
+            m_blur_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "radius") {
+            try { m_blur_radius = std::max(1, std::stoi(value)); } catch (...) {}
+        } else if (key == "passes") {
+            try { m_blur_num_passes = std::max(1, std::stoi(value)); } catch (...) {}
+        } else if (key == "noise") {
+            try { m_blur_noise = std::stof(value); } catch (...) {}
+        } else if (key == "brightness") {
+            try { m_blur_brightness = std::stof(value); } catch (...) {}
+        } else if (key == "contrast") {
+            try { m_blur_contrast = std::stof(value); } catch (...) {}
+        } else if (key == "saturation") {
+            try { m_blur_saturation = std::stof(value); } catch (...) {}
+        }
+    }
+}
+
+static void parse_window_animation_entry(Config& cfg, const std::string& path_str, const std::string& top_type,
+                                         const std::vector<Config::SectionFrame>& stack,
+                                         const std::string& key, const std::string& value) {
+    bool in_open = (top_type == "open" || is_in_path(stack, "open"));
+    bool in_close = (top_type == "close" || is_in_path(stack, "close"));
+    bool in_fade = (top_type == "fade" || is_in_path(stack, "fade"));
+
+    if (in_fade) {
+        if (key == "enabled") {
+            bool en = (value == "true" || value == "1" || value == "yes");
+            if (in_open) cfg.set_window_open_fade_enabled(en);
+            if (in_close) cfg.set_window_close_fade_enabled(en);
+            if (!in_open && !in_close) {
+                cfg.set_window_open_fade_enabled(en);
+                cfg.set_window_close_fade_enabled(en);
+            }
+        } else if (key == "duration") {
+            try {
+                int d = std::stoi(value);
+                if (in_open) cfg.set_window_animation_fade_in_duration_ms(d);
+                if (in_close) cfg.set_window_animation_fade_out_duration_ms(d);
+                if (!in_open && !in_close) {
+                    cfg.set_window_animation_fade_in_duration_ms(d);
+                    cfg.set_window_animation_fade_out_duration_ms(d);
+                }
+            } catch (...) {}
+        } else if (key == "curve") {
+            if (in_open) cfg.set_window_animation_fade_in_curve(value);
+            if (in_close) cfg.set_window_animation_fade_out_curve(value);
+            if (!in_open && !in_close) {
+                cfg.set_window_animation_fade_in_curve(value);
+                cfg.set_window_animation_fade_out_curve(value);
+            }
+        }
+        return;
+    }
+
+    if (in_open) {
+        if (key == "enabled") cfg.set_window_open_animation_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_window_animation_open_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_window_animation_open_curve(value);
+        else if (key == "scale") { try { cfg.set_window_animation_open_scale(std::stod(value)); } catch (...) {} }
+    } else if (in_close) {
+        if (key == "enabled") cfg.set_window_close_animation_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_window_animation_close_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_window_animation_close_curve(value);
+        else if (key == "scale") { try { cfg.set_window_animation_close_scale(std::stod(value)); } catch (...) {} }
+    } else {
+        if (key == "enabled") cfg.set_window_animations_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_window_animation_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_window_animation_curve(value);
+        else if (key == "fade") cfg.set_window_animation_fade_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "open_scale") { try { cfg.set_window_animation_open_scale(std::stod(value)); } catch (...) {} }
+        else if (key == "close_scale") { try { cfg.set_window_animation_close_scale(std::stod(value)); } catch (...) {} }
+    }
+}
+
+static void parse_layer_animation_entry(Config& cfg, const std::string& path_str, const std::string& top_type,
+                                        const std::vector<Config::SectionFrame>& stack,
+                                        const std::string& key, const std::string& value) {
+    bool in_open = (top_type == "open" || is_in_path(stack, "open"));
+    bool in_close = (top_type == "close" || is_in_path(stack, "close"));
+    bool in_fade = (top_type == "fade" || is_in_path(stack, "fade"));
+
+    if (in_fade) {
+        if (key == "enabled") {
+            cfg.set_layer_animation_fade_enabled(value == "true" || value == "1" || value == "yes");
+        } else if (key == "duration") {
+            try {
+                int d = std::stoi(value);
+                if (in_open) cfg.set_layer_animation_fade_in_duration_ms(d);
+                if (in_close) cfg.set_layer_animation_fade_out_duration_ms(d);
+                if (!in_open && !in_close) {
+                    cfg.set_layer_animation_fade_in_duration_ms(d);
+                    cfg.set_layer_animation_fade_out_duration_ms(d);
+                }
+            } catch (...) {}
+        } else if (key == "curve") {
+            if (in_open) cfg.set_layer_animation_fade_in_curve(value);
+            if (in_close) cfg.set_layer_animation_fade_out_curve(value);
+            if (!in_open && !in_close) {
+                cfg.set_layer_animation_fade_in_curve(value);
+                cfg.set_layer_animation_fade_out_curve(value);
+            }
+        }
+        return;
+    }
+
+    if (in_open) {
+        if (key == "enabled") cfg.set_layer_open_animation_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_layer_open_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_layer_open_curve(value);
+    } else if (in_close) {
+        if (key == "enabled") cfg.set_layer_close_animation_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_layer_close_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_layer_close_curve(value);
+    } else {
+        if (key == "enabled") cfg.set_layer_animations_enabled(value == "true" || value == "1" || value == "yes");
+        else if (key == "duration") { try { cfg.set_layer_animation_duration_ms(std::stoi(value)); } catch (...) {} }
+        else if (key == "curve") cfg.set_layer_animation_curve(value);
+        else if (key == "popin_scale") {
+            try {
+                double s = std::stod(value);
+                if (s > 1.0) s /= 100.0;
+                cfg.set_layer_animation_popin_scale(s);
+            } catch (...) {}
+        }
+    }
+}
+
+static void parse_workspace_animation_entry(Config& cfg, const std::string& key, const std::string& value) {
+    if (key == "enabled") cfg.set_workspace_animations_enabled(value == "true" || value == "1" || value == "yes");
+    else if (key == "duration") { try { cfg.set_workspace_animation_duration_ms(std::stoi(value)); } catch (...) {} }
+    else if (key == "curve") cfg.set_workspace_animation_curve(value);
+}
+
+void Config::parse_animations_entry(const std::string& path_str, const std::string& top_type,
+                                    const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value) {
+    if (path_str == "animations" || (top_type == "animations" && stack.size() <= 1)) {
+        if (key == "enabled") m_animations_enabled = (value == "true" || value == "1" || value == "yes");
+    } else if (is_in_path(stack, "windows") || top_type == "windows") {
+        parse_window_animation_entry(*this, path_str, top_type, stack, key, value);
+    } else if (is_in_path(stack, "layers") || top_type == "layers") {
+        parse_layer_animation_entry(*this, path_str, top_type, stack, key, value);
+    } else if (is_in_path(stack, "workspaces") || top_type == "workspaces") {
+        parse_workspace_animation_entry(*this, key, value);
+    }
+}
+
+void Config::parse_input_entry(const std::string& path_str, const std::string& top_type,
+                               const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value,
+                               std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file) {
+    if (path_str == "input" || top_type == "input") {
+        if (key == "focus_follows_mouse") m_focus_follows_mouse = (value == "true" || value == "1" || value == "yes");
+        else if (key == "terminal") m_terminal = value;
+    } else if (path_str == "input.keyboard" || (top_type == "keyboard" && is_in_path(stack, "input"))) {
+        if (key == "layout") m_kb_layout = value;
+        else if (key == "variant") m_kb_variant = value;
+        else if (key == "options") m_kb_options = value;
+        else if (key == "model") m_kb_model = value;
+        else if (key == "repeat_rate") { try { m_repeat_rate = std::max(1, std::stoi(value)); } catch (...) {} }
+        else if (key == "repeat_delay") { try { m_repeat_delay = std::max(100, std::stoi(value)); } catch (...) {} }
+    } else if (path_str == "input.touchpad" || (top_type == "touchpad" && is_in_path(stack, "input"))) {
+        if (key == "tap_to_click") m_tap_to_click = (value == "true" || value == "1" || value == "yes");
+        else if (key == "natural_scroll") m_natural_scroll = (value == "true" || value == "1" || value == "yes");
+        else if (key == "disable_while_typing" || key == "dwt") m_dwt = (value == "true" || value == "1" || value == "yes");
+        else if (key == "accel_speed") { try { m_accel_speed = std::clamp(std::stod(value), -1.0, 1.0); } catch (...) {} }
+        else if (key == "accel_profile") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_accel_profile = (lower == "flat") ? "flat" : "adaptive";
+        }
+    } else if (path_str == "input.mouse" || (top_type == "mouse" && is_in_path(stack, "input"))) {
+        if (key == "sensitivity" || key == "accel_speed") { try { m_accel_speed = std::clamp(std::stod(value), -1.0, 1.0); } catch (...) {} }
+        else if (key == "natural_scroll") m_natural_scroll = (value == "true" || value == "1" || value == "yes");
+        else if (key == "accel_profile") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            m_accel_profile = (lower == "flat") ? "flat" : "adaptive";
+        }
+    } else if (path_str == "input.touchscreen" || (top_type == "touchscreen" && is_in_path(stack, "input"))) {
+        if (key == "output") m_touchscreen_output = value;
+    } else if (path_str == "input.gestures.workspace_swipe" || (top_type == "workspace_swipe" && is_in_path(stack, "gestures"))) {
+        if (key == "touchpad_multiplier") { try { m_touchpad_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0); } catch (...) {} }
+        else if (key == "touchscreen_multiplier") { try { m_touchscreen_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0); } catch (...) {} }
+        else if (key == "swipe_threshold") { try { m_touchpad_swipe_threshold = std::max(5.0, std::stod(value)); } catch (...) {} }
+        else if (key == "touchscreen_threshold") { try { m_touchscreen_swipe_threshold = std::max(5.0, std::stod(value)); } catch (...) {} }
+        else if (key == "cancel_ratio") { try { m_workspace_swipe_cancel_ratio = std::clamp(std::stod(value), 0.05, 0.95); } catch (...) {} }
+        else if (key == "min_speed_to_force") { try { m_workspace_swipe_min_speed_to_force = std::clamp(std::stod(value), 0.05, 10.0); } catch (...) {} }
+        else if (key == "edge_resistance") { try { m_workspace_swipe_edge_resistance = std::clamp(std::stod(value), 0.0, 0.5); } catch (...) {} }
+    } else if (path_str == "input.gestures" || top_type == "gestures") {
+        if (key == "bind" || key == "gesture") {
+            size_t comma = value.rfind(',');
+            if (comma != std::string::npos) {
+                std::string pattern = trim(value.substr(0, comma));
+                std::string action = trim(value.substr(comma + 1));
+                std::transform(pattern.begin(), pattern.end(), pattern.begin(), ::tolower);
+                if (!pattern.empty() && !action.empty()) {
+                    has_gestures_in_file = true;
+                    file_gestures.push_back({ pattern, action });
+                }
+            }
+        }
+    }
+}
+
+void Config::parse_xwayland_entry(const std::string& key, const std::string& value) {
+    if (key == "force_zero_scaling") {
+        m_xwayland_force_zero_scaling = (value == "true" || value == "1" || value == "yes");
+    }
+}
+
+static Config::LayerAnimStyle parse_layer_anim_style(const std::string& str) {
+    std::string lower = str;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "none" || lower == "noanim") return Config::LayerAnimStyle::None;
+    if (lower == "fade") return Config::LayerAnimStyle::Fade;
+    if (lower == "unroll") return Config::LayerAnimStyle::Unroll;
+    if (lower == "fold" || lower == "roll") return Config::LayerAnimStyle::Unroll;
+    if (lower == "unfold" || lower == "unroll_center" || lower == "expand_vertical") return Config::LayerAnimStyle::Unfold;
+    if (lower == "popin") return Config::LayerAnimStyle::Popin;
+    if (lower == "slidetop" || lower == "slide_top" || lower == "top") return Config::LayerAnimStyle::SlideTop;
+    if (lower == "slidebottom" || lower == "slide_bottom" || lower == "bottom") return Config::LayerAnimStyle::SlideBottom;
+    if (lower == "slideleft" || lower == "slide_left" || lower == "left") return Config::LayerAnimStyle::SlideLeft;
+    if (lower == "slideright" || lower == "slide_right" || lower == "right") return Config::LayerAnimStyle::SlideRight;
+    if (lower == "slide") return Config::LayerAnimStyle::Slide;
+    return Config::LayerAnimStyle::DefaultAuto;
+}
+
+static std::string layer_anim_style_to_string(Config::LayerAnimStyle style) {
+    switch (style) {
+        case Config::LayerAnimStyle::None: return "none";
+        case Config::LayerAnimStyle::Fade: return "fade";
+        case Config::LayerAnimStyle::Unroll: return "unroll";
+        case Config::LayerAnimStyle::Unfold: return "unfold";
+        case Config::LayerAnimStyle::Popin: return "popin";
+        case Config::LayerAnimStyle::SlideTop: return "slide top";
+        case Config::LayerAnimStyle::SlideBottom: return "slide bottom";
+        case Config::LayerAnimStyle::SlideLeft: return "slide left";
+        case Config::LayerAnimStyle::SlideRight: return "slide right";
+        case Config::LayerAnimStyle::Slide: return "slide";
+        default: return "default";
+    }
+}
+
+static std::string find_section_param(const std::vector<Config::SectionFrame>& stack, const std::string& type) {
+    for (const auto& f : stack) {
+        if (f.type == type) return f.param;
+    }
+    return "";
+}
+
+void Config::parse_layerrule_entry(const std::string& ns, const std::string& path_str, const std::string& top_type,
+                                   const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value) {
+    if (ns.empty()) return;
+    bool in_open = (top_type == "open" || is_in_path(stack, "open"));
+    bool in_close = (top_type == "close" || is_in_path(stack, "close"));
+    bool in_fade = (top_type == "fade" || is_in_path(stack, "fade"));
+    bool in_blur = (top_type == "blur" || is_in_path(stack, "blur"));
+
+    if (in_blur) {
+        if (key == "enabled") {
+            if (value == "true" || value == "1" || value == "yes") add_blurred_layer(ns);
+        }
+        return;
+    }
+
+    if (in_fade) {
+        LayerRule r;
+        r.ns_pattern = ns;
+        if (key == "enabled") {
+            bool en = (value == "true" || value == "1" || value == "yes");
+            if (in_open) r.fade_open_enabled = en;
+            if (in_close) r.fade_close_enabled = en;
+            if (!in_open && !in_close) { r.fade_open_enabled = en; r.fade_close_enabled = en; }
+        } else if (key == "duration") {
+            try {
+                int d = std::stoi(value);
+                if (in_open) r.fade_open_duration_ms = d;
+                if (in_close) r.fade_close_duration_ms = d;
+                if (!in_open && !in_close) { r.fade_open_duration_ms = d; r.fade_close_duration_ms = d; }
+            } catch (...) {}
+        } else if (key == "curve") {
+            if (in_open) r.fade_open_curve = value;
+            if (in_close) r.fade_close_curve = value;
+            if (!in_open && !in_close) { r.fade_open_curve = value; r.fade_close_curve = value; }
+        }
+        add_layer_rule(r);
+        return;
+    }
+
+    if (in_open || in_close) {
+        LayerRule r;
+        r.ns_pattern = ns;
+        if (key == "enabled") {
+            bool en = (value == "true" || value == "1" || value == "yes");
+            if (in_open) { r.noanim_open = !en; if (!en) r.anim_style_open = LayerAnimStyle::None; }
+            if (in_close) { r.noanim_close = !en; if (!en) r.anim_style_close = LayerAnimStyle::None; }
+        } else if (key == "style" || key == "animation") {
+            LayerAnimStyle style = parse_layer_anim_style(value);
+            if (in_open) r.anim_style_open = style;
+            if (in_close) r.anim_style_close = style;
+        } else if (key == "duration") {
+            try {
+                int d = std::stoi(value);
+                if (in_open) r.duration_open_ms = d;
+                if (in_close) r.duration_close_ms = d;
+            } catch (...) {}
+        } else if (key == "curve") {
+            LayerAnimStyle style = parse_layer_anim_style(value);
+            if (style != LayerAnimStyle::DefaultAuto) {
+                if (in_open) r.anim_style_open = style;
+                if (in_close) r.anim_style_close = style;
+            } else {
+                if (in_open) r.curve_open = value;
+                if (in_close) r.curve_close = value;
+            }
+        } else if (key == "scale" || key == "popin_scale") {
+            try {
+                double s = std::stod(value);
+                if (s > 1.0) s /= 100.0;
+                r.popin_scale = std::clamp(s, 0.1, 1.0);
+            } catch (...) {}
+        } else if (key == "slide_edge") {
+            std::string lower = value;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            LayerAnimStyle style = (lower == "top") ? LayerAnimStyle::SlideTop :
+                                   (lower == "bottom") ? LayerAnimStyle::SlideBottom :
+                                   (lower == "left") ? LayerAnimStyle::SlideLeft :
+                                   (lower == "right") ? LayerAnimStyle::SlideRight : LayerAnimStyle::Slide;
+            if (in_open) r.anim_style_open = style;
+            if (in_close) r.anim_style_close = style;
+        }
+        add_layer_rule(r);
+        return;
+    }
+
+    // Top-level properties in layerrule
+    if (key == "blur") {
+        if (value == "true" || value == "1" || value == "yes") add_blurred_layer(ns);
+    } else if (key == "animation" || key == "animation_open" || key == "animation_close") {
+        LayerRule r;
+        r.ns_pattern = ns;
+        int dur = -1;
+        std::string curve;
+        double pop_scale = -1.0;
+        bool noanim = false;
+        LayerAnimStyle style = LayerAnimStyle::DefaultAuto;
+
+        std::stringstream ss(value);
+        std::string token;
+        while (ss >> token) {
+            std::string lower = token;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            LayerAnimStyle s = parse_layer_anim_style(lower);
+            if (s != LayerAnimStyle::DefaultAuto) {
+                style = s;
+                if (s == LayerAnimStyle::None) noanim = true;
+            } else if (lower.back() == '%' || (lower.size() >= 3 && lower.substr(0, 2) == "0.")) {
+                try {
+                    std::string st = lower;
+                    if (st.back() == '%') st.pop_back();
+                    double v = std::stod(st);
+                    if (v > 1.0) v /= 100.0;
+                    pop_scale = std::clamp(v, 0.1, 1.0);
+                } catch (...) {}
+            } else if (lower.size() > 2 && lower.substr(lower.size() - 2) == "ms") {
+                try { dur = std::stoi(lower.substr(0, lower.size() - 2)); } catch (...) {}
+            } else if (!lower.empty() && std::isdigit(lower[0])) {
+                try { dur = std::stoi(lower); } catch (...) {}
+            } else {
+                curve = lower;
+            }
+        }
+
+        if (key == "animation_open") {
+            r.anim_style_open = style;
+            if (dur > 0) r.duration_open_ms = dur;
+            if (!curve.empty()) r.curve_open = curve;
+            if (noanim) { r.noanim_open = true; r.anim_style_open = LayerAnimStyle::None; }
+        } else if (key == "animation_close") {
+            r.anim_style_close = style;
+            if (dur > 0) r.duration_close_ms = dur;
+            if (!curve.empty()) r.curve_close = curve;
+            if (noanim) { r.noanim_close = true; r.anim_style_close = LayerAnimStyle::None; }
+        } else {
+            r.anim_style_open = style;
+            r.anim_style_close = style;
+            if (dur > 0) { r.duration_open_ms = dur; r.duration_close_ms = dur; }
+            if (!curve.empty()) { r.curve_open = curve; r.curve_close = curve; }
+            if (noanim) {
+                r.noanim_open = true; r.noanim_close = true;
+                r.anim_style_open = LayerAnimStyle::None; r.anim_style_close = LayerAnimStyle::None;
+            }
+        }
+        if (pop_scale > 0.0) r.popin_scale = pop_scale;
+        add_layer_rule(r);
+    } else if (key == "duration") {
+        try { int d = std::stoi(value); LayerRule r; r.ns_pattern = ns; r.duration_open_ms = d; r.duration_close_ms = d; add_layer_rule(r); } catch (...) {}
+    } else if (key == "open_duration") {
+        try { int d = std::stoi(value); LayerRule r; r.ns_pattern = ns; r.duration_open_ms = d; add_layer_rule(r); } catch (...) {}
+    } else if (key == "close_duration") {
+        try { int d = std::stoi(value); LayerRule r; r.ns_pattern = ns; r.duration_close_ms = d; add_layer_rule(r); } catch (...) {}
+    } else if (key == "curve") {
+        LayerRule r; r.ns_pattern = ns; r.curve_open = value; r.curve_close = value; add_layer_rule(r);
+    } else if (key == "open_curve") {
+        LayerRule r; r.ns_pattern = ns; r.curve_open = value; add_layer_rule(r);
+    } else if (key == "close_curve") {
+        LayerRule r; r.ns_pattern = ns; r.curve_close = value; add_layer_rule(r);
+    } else if (key == "popin_scale") {
+        try {
+            double s = std::stod(value);
+            if (s > 1.0) s /= 100.0;
+            LayerRule r; r.ns_pattern = ns; r.popin_scale = std::clamp(s, 0.1, 1.0); add_layer_rule(r);
+        } catch (...) {}
+    }
+}
+
+void Config::parse_windowrule_entry(const std::string& target, const std::string& path_str, const std::string& top_type,
+                                    const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value,
+                                    std::vector<WindowRule>& file_rules, bool& has_rules_in_file) {
+    if (target.empty()) return;
+    bool in_open = (top_type == "open" || is_in_path(stack, "open"));
+    bool in_close = (top_type == "close" || is_in_path(stack, "close"));
+    bool in_fade = (top_type == "fade" || is_in_path(stack, "fade"));
+    bool in_blur = (top_type == "blur" || is_in_path(stack, "blur"));
+
+    if (in_blur) {
+        if (key == "enabled") {
+            file_rules.push_back({ "blur", target, value });
+            has_rules_in_file = true;
+        } else if (key == "radius" || key == "passes") {
+            file_rules.push_back({ "blur_" + key, target, value });
+            has_rules_in_file = true;
+        }
+        return;
+    }
+
+    if (in_fade) {
+        if (in_open) {
+            if (key == "enabled") file_rules.push_back({ "animation_open_fade_enabled", target, value });
+            else if (key == "duration") file_rules.push_back({ "animation_open_fade_duration", target, value });
+            else if (key == "curve") file_rules.push_back({ "animation_open_fade_curve", target, value });
+        } else if (in_close) {
+            if (key == "enabled") file_rules.push_back({ "animation_close_fade_enabled", target, value });
+            else if (key == "duration") file_rules.push_back({ "animation_close_fade_duration", target, value });
+            else if (key == "curve") file_rules.push_back({ "animation_close_fade_curve", target, value });
+        } else {
+            if (key == "enabled") file_rules.push_back({ "animation_fade_enabled", target, value });
+            else if (key == "duration") file_rules.push_back({ "animation_fade_duration", target, value });
+            else if (key == "curve") file_rules.push_back({ "animation_fade_curve", target, value });
+        }
+        has_rules_in_file = true;
+        return;
+    }
+
+    if (in_open) {
+        if (key == "enabled") {
+            file_rules.push_back({ "animation_open_enabled", target, value });
+            has_rules_in_file = true;
+        } else if (key == "style" || key == "animation") {
+            file_rules.push_back({ "animation_open_style", target, value });
+            has_rules_in_file = true;
+        } else if (key == "duration") {
+            file_rules.push_back({ "animation_open_duration", target, value });
+            has_rules_in_file = true;
+        } else if (key == "curve") {
+            file_rules.push_back({ "animation_open_curve", target, value });
+            has_rules_in_file = true;
+        } else if (key == "scale") {
+            file_rules.push_back({ "animation_open_scale", target, value });
+            has_rules_in_file = true;
+        }
+        return;
+    }
+
+    if (in_close) {
+        if (key == "enabled") {
+            file_rules.push_back({ "animation_close_enabled", target, value });
+            has_rules_in_file = true;
+        } else if (key == "style" || key == "animation") {
+            file_rules.push_back({ "animation_close_style", target, value });
+            has_rules_in_file = true;
+        } else if (key == "duration") {
+            file_rules.push_back({ "animation_close_duration", target, value });
+            has_rules_in_file = true;
+        } else if (key == "curve") {
+            file_rules.push_back({ "animation_close_curve", target, value });
+            has_rules_in_file = true;
+        } else if (key == "scale") {
+            file_rules.push_back({ "animation_close_scale", target, value });
+            has_rules_in_file = true;
+        }
+        return;
+    }
+
+    // Top-level properties in windowrule
+    if (key == "float") {
+        file_rules.push_back({ "float", target, "" });
+        has_rules_in_file = true;
+    } else if (key == "workspace") {
+        file_rules.push_back({ "workspace", target, value });
+        has_rules_in_file = true;
+    } else if (key == "opacity") {
+        file_rules.push_back({ "opacity", target, value });
+        has_rules_in_file = true;
+    } else if (key == "center") {
+        file_rules.push_back({ "center", target, "" });
+        has_rules_in_file = true;
+    } else if (key == "size") {
+        file_rules.push_back({ "size", target, value });
+        has_rules_in_file = true;
+    } else if (key == "blur") {
+        file_rules.push_back({ "blur", target, value });
+        has_rules_in_file = true;
+    }
+}
+
+void Config::parse_binds_entry(const std::string& key, const std::string& value,
+                               std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file) {
+    if (key == "bind") {
+        size_t comma = value.rfind(',');
+        if (comma != std::string::npos) {
+            std::string combo = trim(value.substr(0, comma));
+            std::string action = trim(value.substr(comma + 1));
+            uint32_t mods = 0;
+            xkb_keysym_t sym = XKB_KEY_NoSymbol;
+            if (parse_binding_combo(combo, mods, sym)) {
+                has_bindings_in_file = true;
+                xkb_keysym_t norm_sym = (sym >= XKB_KEY_A && sym <= XKB_KEY_Z) ? (sym - XKB_KEY_A + XKB_KEY_a) : sym;
+                file_bindings.push_back({ mods, norm_sym, action, combo });
+            }
+        }
+    }
+}
+
 void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bindings, bool& has_bindings_in_file,
                        std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file,
                        std::vector<WindowRule>& file_rules, bool& has_rules_in_file,
@@ -538,522 +1483,80 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
         return;
     }
 
-    std::string current_section = "";
+    std::vector<SectionFrame> section_stack;
     std::string line;
+
     while (std::getline(file, line)) {
         std::string trimmed = trim(line);
-        if (trimmed.empty() || trimmed[0] == '#') {
+        if (trimmed.empty() || trimmed[0] == '#') continue;
+
+        if (trimmed.back() == '{') {
+            std::string stype, sparam;
+            parse_section_header(trimmed, stype, sparam);
+            section_stack.push_back({ stype, sparam });
             continue;
         }
 
-        if (trimmed.back() == '{') {
-            current_section = trim(trimmed.substr(0, trimmed.size() - 1));
-            std::transform(current_section.begin(), current_section.end(), current_section.begin(), ::tolower);
-            continue;
-        } else if (trimmed == "}") {
-            current_section = "";
-            continue;
-        } else if (trimmed.front() == '[' && trimmed.back() == ']') {
-            current_section = trim(trimmed.substr(1, trimmed.size() - 2));
-            std::transform(current_section.begin(), current_section.end(), current_section.begin(), ::tolower);
+        if (trimmed == "}") {
+            if (!section_stack.empty()) section_stack.pop_back();
             continue;
         }
 
         size_t eq_pos = trimmed.find('=');
-        if (eq_pos == std::string::npos) {
-            continue;
-        }
+        if (eq_pos == std::string::npos) continue;
 
         std::string key = trim(trimmed.substr(0, eq_pos));
         std::string value = trim(trimmed.substr(eq_pos + 1));
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
 
-        if (key != "bind" && key != "gesture" && key != "windowrule" && key != "window_rule" &&
-            key != "monitor" && key != "output" &&
-            key != "exec" && key != "exec_once" && key != "exec-once" &&
-            key != "exec_always" && key != "exec-always" && key != "autostart") {
-            size_t comment_pos = std::string::npos;
-            if (!value.empty() && value[0] == '#') {
-                size_t space_pos = value.find_first_of(" \t");
-                if (space_pos != std::string::npos) {
-                    comment_pos = value.find('#', space_pos);
-                }
-            } else {
-                comment_pos = value.find('#');
-            }
-
-            if (comment_pos != std::string::npos) {
-                value = trim(value.substr(0, comment_pos));
-            }
+        strip_inline_comment(key, value);
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
         }
+
+        std::string path_str = get_current_section_path(section_stack);
+        std::string top_type = section_stack.empty() ? "" : section_stack.back().type;
 
         if (key == "source" || key == "include") {
             std::string resolved = resolve_path(value);
             if (!resolved.empty() && fs::exists(resolved)) {
                 log_info("Sourcing configuration from " + resolved);
-                load_file(resolved, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, depth + 1);
+                load_file(resolved, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file,
+                          file_rules, has_rules_in_file, file_monitors, has_monitors_in_file,
+                          file_exec_cmds, file_exec_once_cmds, depth + 1);
             } else {
                 log_error("Config source file not found: " + value + " (resolved to " + resolved + ")");
             }
-        } else if (key == "exec" || key == "exec_always" || key == "exec-always") {
-            std::string resolved_cmd = resolve_exec_command(value);
-            if (!resolved_cmd.empty()) {
-                file_exec_cmds.push_back(resolved_cmd);
-            }
-        } else if (key == "exec_once" || key == "exec-once" || key == "autostart") {
-            std::string resolved_cmd = resolve_exec_command(value);
-            if (!resolved_cmd.empty()) {
-                file_exec_once_cmds.push_back(resolved_cmd);
-            }
-        } else if (key == "plugin") {
-            m_plugins.push_back(value);
-        } else if (key == "focus_follows_mouse" || key == "focus_mouse") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_focus_follows_mouse = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "smart_gaps" || key == "smart_gap") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_smart_gaps = (lower == "true" || lower == "1" || lower == "yes");
-        } else if ((current_section == "xwayland" && (key == "force_zero_scaling" || key == "force_zero_scale")) ||
-                   key == "xwayland_force_zero_scaling" || key == "xwayland:force_zero_scaling" ||
-                   key == "force_zero_scaling") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_xwayland_force_zero_scaling = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "cursor_theme" || key == "xcursor_theme") {
-            m_cursor_theme = value;
-        } else if (key == "cursor_size" || key == "xcursor_size") {
-            try { m_cursor_size = std::clamp(std::stoi(value), 8, 128); } catch (...) {}
-        } else if (key == "default_split_ratio" || key == "split_ratio") {
-            try { m_default_split_ratio = std::clamp(std::stod(value), 0.1, 0.9); } catch (...) {}
-        } else if (key == "workspace_cycle" || key == "cycle_workspaces") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_workspace_cycle = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "tap_to_click") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_tap_to_click = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "natural_scroll") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_natural_scroll = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "disable_while_typing" || key == "dwt") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_dwt = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "accel_speed" || key == "pointer_speed" || key == "mouse_speed") {
-            try {
-                m_accel_speed = std::clamp(std::stod(value), -1.0, 1.0);
-            } catch (...) {}
-        } else if (key == "accel_profile" || key == "pointer_profile") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_accel_profile = (lower == "flat") ? "flat" : "adaptive";
-        } else if (key == "touchscreen_output" || key == "touch_output") {
-            m_touchscreen_output = value;
-        } else if (key == "kb_layout" || key == "keyboard_layout" || key == "layout_keyboard") {
-            m_kb_layout = value;
-        } else if (key == "kb_variant" || key == "keyboard_variant") {
-            m_kb_variant = value;
-        } else if (key == "kb_options" || key == "keyboard_options" || key == "xkb_options") {
-            m_kb_options = value;
-        } else if (key == "kb_model" || key == "keyboard_model") {
-            m_kb_model = value;
-        } else if (key == "repeat_rate" || key == "keyboard_repeat_rate") {
-            try { m_repeat_rate = std::max(1, std::stoi(value)); } catch (...) {}
-        } else if (key == "repeat_delay" || key == "keyboard_repeat_delay") {
-            try { m_repeat_delay = std::max(100, std::stoi(value)); } catch (...) {}
-        } else if (key == "terminal") {
-            m_terminal = value;
-        } else if (key == "window_border_width" || key == "border_width") {
-            try {
-                m_window_border_width = std::max(0, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "window_border_radius" || key == "border_radius") {
-            try {
-                m_window_border_radius = std::max(0, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "resize_on_border" || key == "border_resize") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            m_resize_on_border = (lower == "true" || lower == "1" || lower == "yes");
-        } else if (key == "border_grab_area" || key == "grab_area") {
-            try {
-                m_border_grab_area = std::clamp(std::stoi(value), 1, 30);
-            } catch (...) {}
-        } else if (key == "window_border_color_active" || key == "border_color_active") {
-            m_window_border_color_active = value;
-        } else if (key == "window_border_color_inactive" || key == "border_color_inactive") {
-            m_window_border_color_inactive = value;
-        } else if (key == "space_between_windows" || key == "window_spacing" || key == "inner_gap") {
-            try {
-                m_space_between_windows = std::max(0, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "layout" || key == "tiling_layout" || key == "tiling_mode" || key == "layout_mode") {
-            std::string lower = value;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            if (lower == "stack" || lower == "master" || lower == "main") {
-                m_layout_mode = LayoutMode::Stack;
-            } else {
-                m_layout_mode = LayoutMode::Spiral;
-            }
-        } else if (key == "screen_edge_padding" || key == "screen_padding" || key == "outer_gap") {
-            try {
-                m_screen_edge_padding = std::max(0, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "window_opacity_active" || key == "active_opacity" || key == "opacity_active") {
-            try {
-                m_window_opacity_active = std::clamp(std::stof(value), 0.0f, 1.0f);
-            } catch (...) {}
-        } else if (key == "window_opacity_inactive" || key == "inactive_opacity" || key == "opacity_inactive") {
-            try {
-                m_window_opacity_inactive = std::clamp(std::stof(value), 0.0f, 1.0f);
-            } catch (...) {}
-        } else if (key == "window_opacity" || key == "opacity") {
-            try {
-                float val = std::clamp(std::stof(value), 0.0f, 1.0f);
-                m_window_opacity_active = val;
-                m_window_opacity_inactive = val;
-            } catch (...) {}
-        } else if (key == "blur" || key == "blur_enabled") {
-            m_blur_enabled = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "blur_radius") {
-            try {
-                m_blur_radius = std::max(1, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "blur_passes" || key == "blur_num_passes") {
-            try {
-                m_blur_num_passes = std::max(1, std::stoi(value));
-            } catch (...) {}
-        } else if (key == "blur_noise") {
-            try {
-                m_blur_noise = std::stof(value);
-            } catch (...) {}
-        } else if (key == "blur_brightness") {
-            try {
-                m_blur_brightness = std::stof(value);
-            } catch (...) {}
-        } else if (key == "blur_contrast") {
-            try {
-                m_blur_contrast = std::stof(value);
-            } catch (...) {}
-        } else if (key == "blur_saturation") {
-            try {
-                m_blur_saturation = std::stof(value);
-            } catch (...) {}
-        } else if (key == "animations" || key == "animation" || key == "animations_enabled") {
-            m_animations_enabled = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "workspace_animations" || key == "workspace_animation" || key == "workspace_animations_enabled") {
-            m_workspace_animations_enabled = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "workspace_animation_duration" || key == "workspace_animation_duration_ms") {
-            try {
-                m_workspace_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "workspace_animation_curve" || key == "workspace_animation_easing") {
-            m_workspace_animation_curve = value;
-        } else if (key == "window_animations" || key == "window_animation" || key == "window_animations_enabled") {
-            m_window_animations_enabled = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "window_animation_duration" || key == "window_animation_duration_ms") {
-            try {
-                int d = std::clamp(std::stoi(value), 10, 2000);
-                m_window_animation_duration_ms = d;
-                m_window_animation_open_duration_ms = d;
-                m_window_animation_close_duration_ms = d;
-            } catch (...) {}
-        } else if (key == "window_animation_open_duration" || key == "window_animation_open_duration_ms" || key == "window_open_duration") {
-            try {
-                m_window_animation_open_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "window_animation_close_duration" || key == "window_animation_close_duration_ms" || key == "window_close_duration") {
-            try {
-                m_window_animation_close_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "window_animation_curve" || key == "window_animation_easing") {
-            m_window_animation_curve = value;
-            m_window_animation_open_curve = value;
-            m_window_animation_close_curve = value;
-        } else if (key == "window_animation_open_curve" || key == "window_animation_open_easing" || key == "window_open_curve") {
-            m_window_animation_open_curve = value;
-        } else if (key == "window_animation_close_curve" || key == "window_animation_close_easing" || key == "window_close_curve") {
-            m_window_animation_close_curve = value;
-        } else if (key == "window_animation_open_scale" || key == "window_open_scale") {
-            try {
-                m_window_animation_open_scale = std::clamp(std::stod(value), 0.1, 1.0);
-            } catch (...) {}
-        } else if (key == "window_animation_close_scale" || key == "window_close_scale") {
-            try {
-                m_window_animation_close_scale = std::clamp(std::stod(value), 0.1, 1.0);
-            } catch (...) {}
-        } else if (key == "window_animation_fade" || key == "window_fade" || key == "fade_animations") {
-            m_window_animation_fade = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "window_animation_fade_in_duration" || key == "window_animation_fade_in_duration_ms" || key == "window_fade_in_duration") {
-            try {
-                m_window_animation_fade_in_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "window_animation_fade_out_duration" || key == "window_animation_fade_out_duration_ms" || key == "window_fade_out_duration") {
-            try {
-                m_window_animation_fade_out_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "window_animation_fade_duration" || key == "window_animation_fade_duration_ms" || key == "window_fade_duration") {
-            try {
-                int d = std::clamp(std::stoi(value), 10, 2000);
-                m_window_animation_fade_in_duration_ms = d;
-                m_window_animation_fade_out_duration_ms = d;
-            } catch (...) {}
-        } else if (key == "window_animation_fade_in_curve" || key == "window_animation_fade_in_easing" || key == "window_fade_in_curve") {
-            m_window_animation_fade_in_curve = value;
-        } else if (key == "window_animation_fade_out_curve" || key == "window_animation_fade_out_easing" || key == "window_fade_out_curve") {
-            m_window_animation_fade_out_curve = value;
-        } else if (key == "window_animation_fade_curve" || key == "window_animation_fade_easing" || key == "window_fade_curve") {
-            m_window_animation_fade_in_curve = value;
-            m_window_animation_fade_out_curve = value;
-        } else if (key == "animation_duration" || key == "animation_duration_ms") {
-            try {
-                m_workspace_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "animation_curve" || key == "animation_easing") {
-            m_workspace_animation_curve = value;
-        } else if (key == "layer_animations" || key == "layer_animation_enabled") {
-            m_layer_animations_enabled = (value == "true" || value == "1" || value == "yes");
-        } else if (key == "layer_animation_duration" || key == "layer_animation_duration_ms") {
-            try {
-                m_layer_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
-            } catch (...) {}
-        } else if (key == "layer_animation_curve" || key == "layer_animation_easing") {
-            m_layer_animation_curve = value;
-        } else if (key == "layer_animation_popin_scale" || key == "layer_popin_scale") {
-            try {
-                double s = std::stod(value);
-                if (s > 1.0) s /= 100.0;
-                m_layer_animation_popin_scale = std::clamp(s, 0.1, 1.0);
-            } catch (...) {}
-        } else if (key == "layerrule") {
-            // Hyprland syntax: layerrule = blur, waybar
-            // or: layerrule = animation slide, waybar
-            // or: layerrule = animation popin 80%, miqulauncher
-            // or: layerrule = animation fade, miqupolkit
-            // or: layerrule = noanim, miqubg
-            size_t comma = value.find(',');
-            if (comma != std::string::npos) {
-                std::string rule = trim(value.substr(0, comma));
-                std::string ns = trim(value.substr(comma + 1));
-                std::string lower_rule = rule;
-                std::transform(lower_rule.begin(), lower_rule.end(), lower_rule.begin(), ::tolower);
-                if (lower_rule == "blur" && !ns.empty()) {
-                    add_blurred_layer(ns);
-                } else if ((lower_rule == "noanim" || lower_rule == "none") && !ns.empty()) {
-                    LayerRule r;
-                    r.ns_pattern = ns;
-                    r.anim_style = LayerAnimStyle::None;
-                    add_layer_rule(r);
-                } else if (lower_rule.rfind("animation", 0) == 0 && !ns.empty()) {
-                    std::string anim_spec = trim(lower_rule.substr(9));
-                    LayerRule r;
-                    r.ns_pattern = ns;
-                    if (anim_spec.rfind("slide", 0) == 0) {
-                        if (anim_spec == "slide top" || anim_spec == "slide_top") r.anim_style = LayerAnimStyle::SlideTop;
-                        else if (anim_spec == "slide bottom" || anim_spec == "slide_bottom") r.anim_style = LayerAnimStyle::SlideBottom;
-                        else if (anim_spec == "slide left" || anim_spec == "slide_left") r.anim_style = LayerAnimStyle::SlideLeft;
-                        else if (anim_spec == "slide right" || anim_spec == "slide_right") r.anim_style = LayerAnimStyle::SlideRight;
-                        else r.anim_style = LayerAnimStyle::Slide;
-                    } else if (anim_spec.rfind("popin", 0) == 0) {
-                        r.anim_style = LayerAnimStyle::Popin;
-                        std::string scale_str = trim(anim_spec.substr(5));
-                        if (!scale_str.empty()) {
-                            try {
-                                if (scale_str.back() == '%') scale_str.pop_back();
-                                double s = std::stod(scale_str);
-                                if (s > 1.0) s /= 100.0;
-                                r.popin_scale = std::clamp(s, 0.1, 1.0);
-                            } catch (...) {}
-                        }
-                    } else if (anim_spec == "fade") {
-                        r.anim_style = LayerAnimStyle::Fade;
-                    } else if (anim_spec == "none" || anim_spec == "noanim") {
-                        r.anim_style = LayerAnimStyle::None;
-                    }
-                    add_layer_rule(r);
-                }
-            }
-        } else if (key == "blur_layers") {
-            std::stringstream ss(value);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-                item = trim(item);
-                if (!item.empty()) {
-                    add_blurred_layer(item);
-                }
-            }
-        } else if (key == "bind") {
-            // Format: bind = Super+F, firefox or bind = Super, K, kitty
-            size_t comma = value.rfind(',');
-            if (comma != std::string::npos) {
-                std::string combo = trim(value.substr(0, comma));
-                std::string action = trim(value.substr(comma + 1));
-                uint32_t mods = 0;
-                xkb_keysym_t sym = XKB_KEY_NoSymbol;
-                if (parse_binding_combo(combo, mods, sym)) {
-                    has_bindings_in_file = true;
-                    xkb_keysym_t norm_sym = (sym >= XKB_KEY_A && sym <= XKB_KEY_Z) ? (sym - XKB_KEY_A + XKB_KEY_a) : sym;
-                    file_bindings.push_back({ mods, norm_sym, action, combo });
-                }
-            }
-        } else if (key == "gesture") {
-            // Format: gesture = swipe:3:left, next_ws
-            size_t comma = value.rfind(',');
-            if (comma != std::string::npos) {
-                std::string pattern = trim(value.substr(0, comma));
-                std::string action = trim(value.substr(comma + 1));
-                std::transform(pattern.begin(), pattern.end(), pattern.begin(), ::tolower);
-                if (!pattern.empty() && !action.empty()) {
-                    has_gestures_in_file = true;
-                    file_gestures.push_back({ pattern, action });
-                }
-            }
-        } else if (key == "touchpad_workspace_swipe_multiplier" || key == "workspace_swipe_multiplier") {
-            try {
-                m_touchpad_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0);
-            } catch (...) {}
-        } else if (key == "touchpad_swipe_threshold" || key == "swipe_threshold") {
-            try {
-                m_touchpad_swipe_threshold = std::max(5.0, std::stod(value));
-            } catch (...) {}
-        } else if (key == "touchscreen_workspace_swipe_multiplier" || key == "workspace_swipe_touch_multiplier") {
-            try {
-                m_touchscreen_workspace_swipe_multiplier = std::clamp(std::stod(value), 0.1, 10.0);
-            } catch (...) {}
-        } else if (key == "touchscreen_swipe_threshold") {
-            try {
-                m_touchscreen_swipe_threshold = std::max(5.0, std::stod(value));
-            } catch (...) {}
-        } else if (key == "workspace_swipe_cancel_ratio" || key == "workspace_swipe_commit_ratio") {
-            try {
-                m_workspace_swipe_cancel_ratio = std::clamp(std::stod(value), 0.05, 0.95);
-            } catch (...) {}
-        } else if (key == "workspace_swipe_min_speed_to_force" || key == "workspace_swipe_min_speed") {
-            try {
-                m_workspace_swipe_min_speed_to_force = std::clamp(std::stod(value), 0.05, 10.0);
-            } catch (...) {}
-        } else if (key == "workspace_swipe_edge_resistance" || key == "workspace_swipe_resistance") {
-            try {
-                m_workspace_swipe_edge_resistance = std::clamp(std::stod(value), 0.0, 0.5);
-            } catch (...) {}
-        } else if (key == "windowrule" || key == "window_rule") {
-            size_t comma = value.find(',');
-            if (comma != std::string::npos) {
-                std::string left = trim(value.substr(0, comma));
-                std::string target = trim(value.substr(comma + 1));
-                size_t space_pos = left.find(' ');
-                std::string rule_name = (space_pos == std::string::npos) ? left : left.substr(0, space_pos);
-                std::string extra = (space_pos == std::string::npos) ? "" : trim(left.substr(space_pos + 1));
-                std::transform(rule_name.begin(), rule_name.end(), rule_name.begin(), ::tolower);
-                if (!rule_name.empty() && !target.empty()) {
-                    file_rules.push_back({ rule_name, target, extra });
-                    has_rules_in_file = true;
-                }
-            }
-        } else if (key == "monitor" || key == "output") {
-            // Hyprland format: monitor = name, resolution@refresh, position, scale, [transform]
-            // or: monitor = name, disable
-            // or: monitor = , preferred, auto, 1
-            std::vector<std::string> tokens;
-            std::stringstream ss(value);
-            std::string tok;
-            while (std::getline(ss, tok, ',')) {
-                tokens.push_back(trim(tok));
-            }
-            if (!tokens.empty()) {
-                MonitorRule rule;
-                rule.name = tokens[0];
-                if (rule.name == "*") rule.name = "";
+            continue;
+        }
 
-                if (tokens.size() >= 2) {
-                    std::string mode_str = tokens[1];
-                    std::string lower_mode = mode_str;
-                    std::transform(lower_mode.begin(), lower_mode.end(), lower_mode.begin(), ::tolower);
-                    if (lower_mode == "disable" || lower_mode == "off") {
-                        rule.disabled = true;
-                    } else if (lower_mode == "preferred" || lower_mode == "auto" || lower_mode.empty() || lower_mode == "highrr" || lower_mode == "highres") {
-                        rule.width = 0;
-                        rule.height = 0;
-                        rule.refresh_rate = 0.0;
-                    } else {
-                        size_t x_idx = lower_mode.find('x');
-                        if (x_idx != std::string::npos) {
-                            try {
-                                rule.width = std::stoi(lower_mode.substr(0, x_idx));
-                                size_t at_idx = lower_mode.find('@', x_idx);
-                                if (at_idx != std::string::npos) {
-                                    rule.height = std::stoi(lower_mode.substr(x_idx + 1, at_idx - x_idx - 1));
-                                    rule.refresh_rate = std::stod(lower_mode.substr(at_idx + 1));
-                                } else {
-                                    rule.height = std::stoi(lower_mode.substr(x_idx + 1));
-                                    rule.refresh_rate = 0.0;
-                                }
-                            } catch (...) {}
-                        }
-                    }
-                }
-
-                if (!rule.disabled && tokens.size() >= 3) {
-                    std::string pos_str = tokens[2];
-                    std::string lower_pos = pos_str;
-                    std::transform(lower_pos.begin(), lower_pos.end(), lower_pos.begin(), ::tolower);
-                    if (lower_pos == "auto" || lower_pos.empty()) {
-                        rule.x = -1;
-                        rule.y = -1;
-                    } else {
-                        size_t x_idx = lower_pos.find('x');
-                        if (x_idx != std::string::npos) {
-                            try {
-                                rule.x = std::stoi(lower_pos.substr(0, x_idx));
-                                rule.y = std::stoi(lower_pos.substr(x_idx + 1));
-                            } catch (...) {}
-                        }
-                    }
-                }
-
-                if (!rule.disabled && tokens.size() >= 4) {
-                    std::string scale_str = tokens[3];
-                    std::string lower_scale = scale_str;
-                    std::transform(lower_scale.begin(), lower_scale.end(), lower_scale.begin(), ::tolower);
-                    if (lower_scale == "auto" || lower_scale.empty()) {
-                        rule.scale = 1.0;
-                    } else {
-                        try {
-                            rule.scale = std::stod(scale_str);
-                            if (rule.scale <= 0.0) rule.scale = 1.0;
-                        } catch (...) {}
-                    }
-                }
-
-                if (!rule.disabled && tokens.size() >= 5) {
-                    std::string trans_str = tokens[4];
-                    std::string lower_trans = trans_str;
-                    std::transform(lower_trans.begin(), lower_trans.end(), lower_trans.begin(), ::tolower);
-                    if (lower_trans == "90" || lower_trans == "1") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_90;
-                    } else if (lower_trans == "180" || lower_trans == "2") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_180;
-                    } else if (lower_trans == "270" || lower_trans == "3") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_270;
-                    } else if (lower_trans == "flipped" || lower_trans == "4") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED;
-                    } else if (lower_trans == "flipped-90" || lower_trans == "5") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_90;
-                    } else if (lower_trans == "flipped-180" || lower_trans == "6") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_180;
-                    } else if (lower_trans == "flipped-270" || lower_trans == "7") {
-                        rule.transform = WL_OUTPUT_TRANSFORM_FLIPPED_270;
-                    } else {
-                        rule.transform = WL_OUTPUT_TRANSFORM_NORMAL;
-                    }
-                }
-
-                has_monitors_in_file = true;
-                file_monitors.push_back(rule);
-            }
+        if (is_in_path(section_stack, "layerrule")) {
+            std::string ns = find_section_param(section_stack, "layerrule");
+            parse_layerrule_entry(ns, path_str, top_type, section_stack, key, value);
+        } else if (is_in_path(section_stack, "windowrule")) {
+            std::string target = find_section_param(section_stack, "windowrule");
+            parse_windowrule_entry(target, path_str, top_type, section_stack, key, value, file_rules, has_rules_in_file);
+        } else if (path_str == "plugins" || top_type == "plugins" || key == "plugin") {
+            parse_plugins_entry(key, value);
+        } else if (path_str == "autostart" || top_type == "autostart" || key == "autostart" ||
+                   key == "exec" || key == "exec_once" || key == "exec_always") {
+            parse_autostart_entry(key, value, file_exec_cmds, file_exec_once_cmds);
+        } else if (path_str == "monitors" || top_type == "monitors" || key == "monitor" || key == "output") {
+            parse_monitors_entry(key, value, file_monitors, has_monitors_in_file);
+        } else if (path_str == "cursor" || top_type == "cursor") {
+            parse_cursor_entry(key, value);
+        } else if (path_str.rfind("general", 0) == 0 || top_type == "general" || top_type == "gaps" || top_type == "border") {
+            parse_general_entry(path_str, top_type, section_stack, key, value);
+        } else if (path_str.rfind("decoration", 0) == 0 || top_type == "decoration" || top_type == "blur") {
+            parse_decoration_entry(path_str, top_type, section_stack, key, value);
+        } else if (path_str.rfind("animations", 0) == 0 || top_type == "animations" || top_type == "windows" || top_type == "layers" || top_type == "workspaces") {
+            parse_animations_entry(path_str, top_type, section_stack, key, value);
+        } else if (path_str.rfind("input", 0) == 0 || top_type == "input" || top_type == "keyboard" || top_type == "touchpad" || top_type == "mouse" || top_type == "touchscreen" || top_type == "gestures" || top_type == "workspace_swipe") {
+            parse_input_entry(path_str, top_type, section_stack, key, value, file_gestures, has_gestures_in_file);
+        } else if (path_str == "xwayland" || top_type == "xwayland") {
+            parse_xwayland_entry(key, value);
+        } else if (path_str == "binds" || top_type == "binds" || key == "bind") {
+            parse_binds_entry(key, value, file_bindings, has_bindings_in_file);
         }
     }
 }
@@ -1101,35 +1604,44 @@ void Config::save() {
     }
 
     file << "# miquland configuration file\n\n";
-    file << "# ==========================================\n";
-    file << "# Appearance & Cursor\n";
-    file << "# ==========================================\n";
-    if (!m_cursor_theme.empty()) file << "cursor_theme = " << m_cursor_theme << "\n";
-    file << "cursor_size = " << m_cursor_size << "\n\n";
 
-    file << "# ==========================================\n";
-    file << "# Monitors & Display Configuration\n";
-    file << "# Format: monitor = <name>, <resolution>@<refresh_rate>, <position>, <scale>, [transform]\n";
-    file << "# ==========================================\n";
+    if (!m_plugins.empty()) {
+        file << "plugins {\n";
+        for (const auto& p : m_plugins) {
+            file << "    load = " << p << "\n";
+        }
+        file << "}\n\n";
+    }
+
+    file << "autostart {\n";
+    for (const auto& cmd : m_exec_once_commands) {
+        file << "    exec_once = " << cmd << "\n";
+    }
+    for (const auto& cmd : m_exec_commands) {
+        file << "    exec = " << cmd << "\n";
+    }
+    file << "}\n\n";
+
+    file << "cursor {\n";
+    if (!m_cursor_theme.empty()) file << "    theme = " << m_cursor_theme << "\n";
+    file << "    size = " << m_cursor_size << "\n";
+    file << "}\n\n";
+
+    file << "monitors {\n";
     for (const auto& m : m_monitor_rules) {
         if (m.disabled) {
-            file << "monitor = " << (m.name.empty() ? "" : m.name) << ", disable\n";
+            file << "    monitor = " << (m.name.empty() ? "" : m.name) << ", disable\n";
         } else {
-            file << "monitor = " << (m.name.empty() ? "" : m.name) << ", ";
+            file << "    monitor = " << (m.name.empty() ? "" : m.name) << ", ";
             if (m.width > 0 && m.height > 0) {
                 file << m.width << "x" << m.height;
-                if (m.refresh_rate > 0.0) {
-                    file << "@" << m.refresh_rate;
-                }
+                if (m.refresh_rate > 0.0) file << "@" << m.refresh_rate;
             } else {
                 file << "preferred";
             }
             file << ", ";
-            if (m.x >= 0 && m.y >= 0) {
-                file << m.x << "x" << m.y;
-            } else {
-                file << "auto";
-            }
+            if (m.x >= 0 && m.y >= 0) file << m.x << "x" << m.y;
+            else file << "auto";
             file << ", " << m.scale;
             if (m.transform != WL_OUTPUT_TRANSFORM_NORMAL) {
                 file << ", " << (int)m.transform;
@@ -1137,126 +1649,180 @@ void Config::save() {
             file << "\n";
         }
     }
-    file << "\n";
+    file << "}\n\n";
 
-    file << "# ==========================================\n";
-    file << "# Input Settings\n";
-    file << "# ==========================================\n";
-    file << "focus_follows_mouse = " << (m_focus_follows_mouse ? "true" : "false") << "\n";
-    file << "kb_layout = " << m_kb_layout << "\n";
-    if (!m_kb_variant.empty()) file << "kb_variant = " << m_kb_variant << "\n";
-    if (!m_kb_options.empty()) file << "kb_options = " << m_kb_options << "\n";
-    if (!m_kb_model.empty()) file << "kb_model = " << m_kb_model << "\n";
-    file << "repeat_rate = " << m_repeat_rate << "\n";
-    file << "repeat_delay = " << m_repeat_delay << "\n";
-    file << "tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";
-    file << "natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n";
-    file << "disable_while_typing = " << (m_dwt ? "true" : "false") << "\n";
-    file << "accel_speed = " << m_accel_speed << "\n";
-    file << "accel_profile = " << m_accel_profile << "\n";
+    file << "general {\n";
+    file << "    layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
+    file << "    default_split_ratio = " << m_default_split_ratio << "\n";
+    file << "    smart_gaps = " << (m_smart_gaps ? "true" : "false") << "\n";
+    file << "    workspace_cycle = " << (m_workspace_cycle ? "true" : "false") << "\n";
+    file << "    resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
+    file << "    border_grab_area = " << m_border_grab_area << "\n";
+    file << "    gaps {\n";
+    file << "        inner = " << m_space_between_windows << "\n";
+    file << "        outer = " << m_screen_edge_padding << "\n";
+    file << "    }\n";
+    file << "    border {\n";
+    file << "        width = " << m_window_border_width << "\n";
+    file << "        radius = " << m_window_border_radius << "\n";
+    file << "        active = " << m_window_border_color_active << "\n";
+    file << "        inactive = " << m_window_border_color_inactive << "\n";
+    file << "    }\n";
+    file << "}\n\n";
+
+    file << "decoration {\n";
+    file << "    active_opacity = " << m_window_opacity_active << "\n";
+    file << "    inactive_opacity = " << m_window_opacity_inactive << "\n";
+    file << "    blur {\n";
+    file << "        enabled = " << (m_blur_enabled ? "true" : "false") << "\n";
+    file << "        radius = " << m_blur_radius << "\n";
+    file << "        passes = " << m_blur_num_passes << "\n";
+    file << "        noise = " << m_blur_noise << "\n";
+    file << "        brightness = " << m_blur_brightness << "\n";
+    file << "        contrast = " << m_blur_contrast << "\n";
+    file << "        saturation = " << m_blur_saturation << "\n";
+    file << "    }\n";
+    file << "}\n\n";
+
+    file << "animations {\n";
+    file << "    enabled = " << (m_animations_enabled ? "true" : "false") << "\n";
+    file << "    windows {\n";
+    file << "        enabled = " << (m_window_animations_enabled ? "true" : "false") << "\n";
+    file << "        duration = " << m_window_animation_duration_ms << "\n";
+    file << "        curve = " << m_window_animation_curve << "\n";
+    file << "        open {\n";
+    file << "            duration = " << m_window_animation_open_duration_ms << "\n";
+    file << "            curve = " << m_window_animation_open_curve << "\n";
+    file << "            scale = " << m_window_animation_open_scale << "\n";
+    file << "        }\n";
+    file << "        close {\n";
+    file << "            duration = " << m_window_animation_close_duration_ms << "\n";
+    file << "            curve = " << m_window_animation_close_curve << "\n";
+    file << "            scale = " << m_window_animation_close_scale << "\n";
+    file << "        }\n";
+    file << "    }\n";
+    file << "    layers {\n";
+    file << "        enabled = " << (m_layer_animations_enabled ? "true" : "false") << "\n";
+    file << "        duration = " << m_layer_animation_duration_ms << "\n";
+    file << "        curve = " << m_layer_animation_curve << "\n";
+    file << "        popin_scale = " << m_layer_animation_popin_scale << "\n";
+    file << "        open {\n";
+    file << "            enabled = " << (m_layer_animation_open_enabled ? "true" : "false") << "\n";
+    file << "            duration = " << m_layer_animation_open_duration_ms << "\n";
+    file << "            curve = " << m_layer_animation_open_curve << "\n";
+    file << "        }\n";
+    file << "        close {\n";
+    file << "            enabled = " << (m_layer_animation_close_enabled ? "true" : "false") << "\n";
+    file << "            duration = " << m_layer_animation_close_duration_ms << "\n";
+    file << "            curve = " << m_layer_animation_close_curve << "\n";
+    file << "        }\n";
+    file << "    }\n";
+    file << "    workspaces {\n";
+    file << "        enabled = " << (m_workspace_animations_enabled ? "true" : "false") << "\n";
+    file << "        duration = " << m_workspace_animation_duration_ms << "\n";
+    file << "        curve = " << m_workspace_animation_curve << "\n";
+    file << "    }\n";
+    file << "}\n\n";
+
+    file << "input {\n";
+    file << "    focus_follows_mouse = " << (m_focus_follows_mouse ? "true" : "false") << "\n";
+    file << "    terminal = " << m_terminal << "\n";
+    file << "    keyboard {\n";
+    file << "        layout = " << m_kb_layout << "\n";
+    if (!m_kb_variant.empty()) file << "        variant = " << m_kb_variant << "\n";
+    if (!m_kb_options.empty()) file << "        options = " << m_kb_options << "\n";
+    if (!m_kb_model.empty()) file << "        model = " << m_kb_model << "\n";
+    file << "        repeat_rate = " << m_repeat_rate << "\n";
+    file << "        repeat_delay = " << m_repeat_delay << "\n";
+    file << "    }\n";
+    file << "    touchpad {\n";
+    file << "        tap_to_click = " << (m_tap_to_click ? "true" : "false") << "\n";
+    file << "        natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n";
+    file << "        disable_while_typing = " << (m_dwt ? "true" : "false") << "\n";
+    file << "        accel_speed = " << m_accel_speed << "\n";
+    file << "        accel_profile = " << m_accel_profile << "\n";
+    file << "    }\n";
+    file << "    mouse {\n";
+    file << "        accel_speed = " << m_accel_speed << "\n";
+    file << "        accel_profile = " << m_accel_profile << "\n";
+    file << "        natural_scroll = " << (m_natural_scroll ? "true" : "false") << "\n";
+    file << "    }\n";
     if (!m_touchscreen_output.empty()) {
-        file << "touchscreen_output = " << m_touchscreen_output << "\n";
+        file << "    touchscreen {\n";
+        file << "        output = " << m_touchscreen_output << "\n";
+        file << "    }\n";
     }
-    file << "\n";
-
-    file << "# ==========================================\n";
-    file << "# Window Tiling, Borders & Gaps\n";
-    file << "# ==========================================\n";
-    file << "layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
-    file << "default_split_ratio = " << m_default_split_ratio << "\n";
-    file << "smart_gaps = " << (m_smart_gaps ? "true" : "false") << "\n";
-    file << "workspace_cycle = " << (m_workspace_cycle ? "true" : "false") << "\n";
-    file << "window_border_width = " << m_window_border_width << "\n";
-    file << "window_border_radius = " << m_window_border_radius << "\n";
-    file << "window_border_color_active = " << m_window_border_color_active << "\n";
-    file << "window_border_color_inactive = " << m_window_border_color_inactive << "\n";
-    file << "resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
-    file << "border_grab_area = " << m_border_grab_area << "\n";
-    file << "space_between_windows = " << m_space_between_windows << "\n";
-    file << "screen_edge_padding = " << m_screen_edge_padding << "\n";
-    file << "window_opacity_active = " << m_window_opacity_active << "\n";
-    file << "window_opacity_inactive = " << m_window_opacity_inactive << "\n\n";
-
-    file << "# ==========================================\n";
-    file << "# Animations (Master Toggle)\n";
-    file << "# ==========================================\n";
-    file << "animations = " << (m_animations_enabled ? "true" : "false") << "\n\n";
-
-    file << "# ==========================================\n";
-    file << "# Workspace Animations\n";
-    file << "# ==========================================\n";
-    file << "workspace_animations = " << (m_workspace_animations_enabled ? "true" : "false") << "\n";
-    file << "workspace_animation_duration = " << m_workspace_animation_duration_ms << "\n";
-    file << "workspace_animation_curve = " << m_workspace_animation_curve << "\n\n";
-
-    file << "# ==========================================\n";
-    file << "# Window Animations\n";
-    file << "# ==========================================\n";
-    file << "window_animations = " << (m_window_animations_enabled ? "true" : "false") << "\n";
-    file << "window_animation_duration = " << m_window_animation_duration_ms << "\n";
-    file << "window_animation_curve = " << m_window_animation_curve << "\n";
-    file << "window_animation_open_scale = " << m_window_animation_open_scale << "\n";
-    file << "window_animation_close_scale = " << m_window_animation_close_scale << "\n\n";
-
-    file << "# ==========================================\n";
-    file << "# Blur Effects (SceneFX Dual Kawase)\n";
-    file << "# ==========================================\n";
-    file << "blur = " << (m_blur_enabled ? "true" : "false") << "\n";
-    file << "blur_radius = " << m_blur_radius << "\n";
-    file << "blur_passes = " << m_blur_num_passes << "\n";
-    file << "blur_noise = " << m_blur_noise << "\n";
-    file << "blur_brightness = " << m_blur_brightness << "\n";
-    file << "blur_contrast = " << m_blur_contrast << "\n";
-    file << "blur_saturation = " << m_blur_saturation << "\n\n";
-
-    file << "# Layer Rules (Blur is opt-in per namespace)\n";
-    for (const auto& layer : m_blurred_layers) {
-        file << "layerrule = blur, " << layer << "\n";
+    file << "    gestures {\n";
+    file << "        workspace_swipe {\n";
+    file << "            touchpad_multiplier = " << m_touchpad_workspace_swipe_multiplier << "\n";
+    file << "            touchscreen_multiplier = " << m_touchscreen_workspace_swipe_multiplier << "\n";
+    file << "            swipe_threshold = " << m_touchpad_swipe_threshold << "\n";
+    file << "            touchscreen_threshold = " << m_touchscreen_swipe_threshold << "\n";
+    file << "            cancel_ratio = " << m_workspace_swipe_cancel_ratio << "\n";
+    file << "            min_speed_to_force = " << m_workspace_swipe_min_speed_to_force << "\n";
+    file << "            edge_resistance = " << m_workspace_swipe_edge_resistance << "\n";
+    file << "        }\n";
+    for (const auto& g : m_gesture_bindings) {
+        file << "        gesture = " << g.pattern << ", " << g.action << "\n";
     }
-    file << "\n";
+    file << "    }\n";
+    file << "}\n\n";
 
-    file << "# ==========================================\n";
-    file << "# Window Rules\n";
-    file << "# ==========================================\n";
-    for (const auto& r : m_window_rules) {
-        if (!r.extra.empty()) {
-            file << "windowrule = " << r.rule << " " << r.extra << ", " << r.target << "\n";
-        } else {
-            file << "windowrule = " << r.rule << ", " << r.target << "\n";
-        }
-    }
-    file << "\n";
-
-    file << "# ==========================================\n";
-    file << "# Applications\n";
-    file << "# ==========================================\n";
-    file << "terminal = " << m_terminal << "\n\n";
-
-    file << "# ==========================================\n";
-    file << "# Keybindings\n";
-    file << "# ==========================================\n";
-    for (const auto& kb : m_keybindings) {
-        file << "bind = " << kb.combo_str << ", " << kb.action << "\n";
-    }
-    file << "\n";
-
-    file << "# ==========================================\n";
-    file << "# XWayland Settings\n";
-    file << "# ==========================================\n";
     file << "xwayland {\n";
     file << "    force_zero_scaling = " << (m_xwayland_force_zero_scaling ? "true" : "false") << "\n";
     file << "}\n\n";
 
-    file << "# ==========================================\n";
-    file << "# Touchpad & Touchscreen Gestures\n";
-    file << "# ==========================================\n";
-    file << "touchpad_workspace_swipe_multiplier = " << m_touchpad_workspace_swipe_multiplier << "\n";
-    file << "touchpad_swipe_threshold = " << m_touchpad_swipe_threshold << "\n";
-    file << "touchscreen_workspace_swipe_multiplier = " << m_touchscreen_workspace_swipe_multiplier << "\n";
-    file << "touchscreen_swipe_threshold = " << m_touchscreen_swipe_threshold << "\n";
-    for (const auto& g : m_gesture_bindings) {
-        file << "gesture = " << g.pattern << ", " << g.action << "\n";
+    for (const auto& lr : m_layer_rules) {
+        file << "layerrule \"" << lr.ns_pattern << "\" {\n";
+        if (is_layer_blur_enabled(lr.ns_pattern)) {
+            file << "    blur = true\n";
+        }
+        if (lr.anim_style_open != LayerAnimStyle::DefaultAuto || lr.duration_open_ms > 0 || !lr.curve_open.empty()) {
+            file << "    open {\n";
+            if (lr.noanim_open) file << "        enabled = false\n";
+            if (lr.anim_style_open != LayerAnimStyle::DefaultAuto) {
+                file << "        animation = " << layer_anim_style_to_string(lr.anim_style_open) << "\n";
+            }
+            if (lr.duration_open_ms > 0) file << "        duration = " << lr.duration_open_ms << "\n";
+            if (!lr.curve_open.empty()) file << "        curve = " << lr.curve_open << "\n";
+            file << "    }\n";
+        }
+        if (lr.anim_style_close != LayerAnimStyle::DefaultAuto || lr.duration_close_ms > 0 || !lr.curve_close.empty()) {
+            file << "    close {\n";
+            if (lr.noanim_close) file << "        enabled = false\n";
+            if (lr.anim_style_close != LayerAnimStyle::DefaultAuto) {
+                file << "        animation = " << (lr.anim_style_close == LayerAnimStyle::Unroll ? "fold" : layer_anim_style_to_string(lr.anim_style_close)) << "\n";
+            }
+            if (lr.duration_close_ms > 0) file << "        duration = " << lr.duration_close_ms << "\n";
+            if (!lr.curve_close.empty()) file << "        curve = " << lr.curve_close << "\n";
+            file << "    }\n";
+        }
+        file << "}\n\n";
     }
+
+    for (const auto& layer : m_blurred_layers) {
+        if (get_layer_rule(layer).ns_pattern.empty()) {
+            file << "layerrule \"" << layer << "\" {\n";
+            file << "    blur = true\n";
+            file << "}\n\n";
+        }
+    }
+
+    for (const auto& r : m_window_rules) {
+        file << "windowrule \"" << r.target << "\" {\n";
+        if (r.rule == "float") file << "    float = true\n";
+        else if (r.rule == "workspace") file << "    workspace = " << r.extra << "\n";
+        else if (r.rule == "opacity") file << "    opacity = " << r.extra << "\n";
+        else if (r.rule == "center") file << "    center = true\n";
+        else if (r.rule == "size") file << "    size = " << r.extra << "\n";
+        file << "}\n\n";
+    }
+
+    file << "binds {\n";
+    for (const auto& kb : m_keybindings) {
+        file << "    bind = " << kb.combo_str << ", " << kb.action << "\n";
+    }
+    file << "}\n";
 
     log_info("Saved configuration to " + path);
 }
