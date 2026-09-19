@@ -15,6 +15,7 @@ namespace miquland {
 class Server;
 class View;
 class Workspace;
+class LayerSurface;
 
 struct NodeAnimation {
     uint64_t id = 0;
@@ -25,8 +26,8 @@ struct NodeAnimation {
     int start_y = 0;
     int target_x = 0;
     int target_y = 0;
-    uint64_t start_time_ms = 0;
-    uint64_t duration_ms = 0;
+    double start_time_ms = 0.0;
+    double duration_ms = 0.0;
     std::function<float(float)> easing_fn;
     std::function<void()> on_complete;
     bool completed = false;
@@ -39,9 +40,9 @@ struct ViewAnimation {
     double target_scale = 1.0;
     float start_opacity = 0.0f;
     float target_opacity = 1.0f;
-    uint64_t start_time_ms = 0;
-    uint64_t scale_duration_ms = 0;
-    uint64_t fade_duration_ms = 0;
+    double start_time_ms = 0.0;
+    double scale_duration_ms = 0.0;
+    double fade_duration_ms = 0.0;
     std::function<float(float)> scale_easing_fn;
     std::function<float(float)> fade_easing_fn;
     std::function<void()> on_complete;
@@ -59,8 +60,26 @@ struct ViewGeometryAnimation {
     int target_y = 0;
     int target_w = 0;
     int target_h = 0;
-    uint64_t start_time_ms = 0;
-    uint64_t duration_ms = 0;
+    double start_time_ms = 0.0;
+    double duration_ms = 0.0;
+    std::function<float(float)> easing_fn;
+    std::function<void()> on_complete;
+    bool completed = false;
+};
+
+struct LayerAnimation {
+    uint64_t id = 0;
+    LayerSurface* surface = nullptr;
+    int start_offset_x = 0;
+    int start_offset_y = 0;
+    int target_offset_x = 0;
+    int target_offset_y = 0;
+    double start_scale = 1.0;
+    double target_scale = 1.0;
+    float start_opacity = 0.0f;
+    float target_opacity = 1.0f;
+    double start_time_ms = 0.0;
+    double duration_ms = 0.0;
     std::function<float(float)> easing_fn;
     std::function<void()> on_complete;
     bool completed = false;
@@ -79,6 +98,11 @@ public:
     void schedule_window_close(View* view, std::function<void()> on_complete);
     void schedule_view_geometry(View* view, const struct wlr_box& from_box, const struct wlr_box& to_box);
 
+    // High-level layer surface animations
+    void schedule_layer_open(LayerSurface* surface);
+    void schedule_layer_close(LayerSurface* surface, std::function<void()> on_complete = nullptr);
+    bool is_layer_animating(LayerSurface* surface) const;
+
     // Interactive 1:1 Workspace Gestures
     void begin_workspace_swipe(int fingers);
     void update_workspace_swipe(double dx, double dy);
@@ -92,17 +116,22 @@ public:
     // Lifecycle cancellation
     void cancel_for_view(View* view);
     void cancel_for_workspace(Workspace* ws);
+    void cancel_for_layer(LayerSurface* surface);
     void cancel_for_node(struct wlr_scene_node* node);
     void clear();
 
     // VSync Frame Driver
-    void tick(uint64_t now_ms);
-    bool has_active_animations() const { return !m_animations.empty() || !m_view_animations.empty() || !m_geometry_animations.empty() || m_swipe_state.active; }
+    void tick(double now_ms = 0.0);
+    bool has_active_animations() const {
+        return !m_animations.empty() || !m_view_animations.empty() ||
+               !m_geometry_animations.empty() || !m_layer_animations.empty() ||
+               m_swipe_state.active;
+    }
     void schedule_next_frame();
 
 private:
     struct SwipeSample {
-        uint64_t time_ms = 0;
+        double time_ms = 0.0;
         double delta_x = 0.0;
     };
 
@@ -118,12 +147,13 @@ private:
         std::vector<SwipeSample> sample_history;
     };
 
-    uint64_t get_current_time_ms() const;
+    double get_current_time_ms() const;
 
     Server* m_server = nullptr;
     std::vector<NodeAnimation> m_animations;
     std::vector<ViewAnimation> m_view_animations;
     std::vector<ViewGeometryAnimation> m_geometry_animations;
+    std::vector<LayerAnimation> m_layer_animations;
     WorkspaceSwipeState m_swipe_state;
     uint64_t m_next_id = 1;
 };

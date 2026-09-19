@@ -251,6 +251,42 @@ public:
     void add_blurred_layer(const std::string& ns);
     const std::vector<std::string>& get_blurred_layers() const { return m_blurred_layers; }
 
+    enum class LayerAnimStyle {
+        DefaultAuto,
+        Slide,
+        SlideTop,
+        SlideBottom,
+        SlideLeft,
+        SlideRight,
+        Popin,
+        Fade,
+        None
+    };
+
+    struct LayerRule {
+        std::string ns_pattern;
+        LayerAnimStyle anim_style = LayerAnimStyle::DefaultAuto;
+        double popin_scale = 0.90;
+        int duration_ms = -1;
+        std::string curve = "";
+    };
+
+    bool is_layer_animations_enabled() const { return m_layer_animations_enabled; }
+    void set_layer_animations_enabled(bool val) { m_layer_animations_enabled = val; }
+
+    int get_layer_animation_duration_ms() const { return m_layer_animation_duration_ms; }
+    void set_layer_animation_duration_ms(int d) { m_layer_animation_duration_ms = std::max(10, d); }
+
+    const std::string& get_layer_animation_curve() const { return m_layer_animation_curve; }
+    void set_layer_animation_curve(const std::string& c) { m_layer_animation_curve = c; }
+
+    double get_layer_animation_popin_scale() const { return m_layer_animation_popin_scale; }
+    void set_layer_animation_popin_scale(double s) { m_layer_animation_popin_scale = std::clamp(s, 0.1, 1.0); }
+
+    LayerRule get_layer_rule(const std::string& ns) const;
+    void add_layer_rule(const LayerRule& rule);
+    const std::vector<LayerRule>& get_layer_rules() const { return m_layer_rules; }
+
     static bool parse_hex_color(const std::string& hex, float& r, float& g, float& b, float& a);
 
     const std::vector<KeyBinding>& get_keybindings() const { return m_keybindings; }
@@ -335,6 +371,12 @@ private:
     int m_window_animation_fade_out_duration_ms = 0;
     std::string m_window_animation_fade_in_curve = "";
     std::string m_window_animation_fade_out_curve = "";
+    bool m_layer_animations_enabled = true;
+    int m_layer_animation_duration_ms = 200;
+    std::string m_layer_animation_curve = "ease_out_cubic";
+    double m_layer_animation_popin_scale = 0.90;
+    std::vector<LayerRule> m_layer_rules;
+
     bool m_xwayland_force_zero_scaling = false;
     std::string m_cursor_theme = "";
     int m_cursor_size = 24;

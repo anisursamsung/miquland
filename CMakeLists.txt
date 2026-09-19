@@ -142,5 +142,5 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/miquland.pc DESTINATION ${CMAKE_INSTAL
 
 # Install assets and desktop entry
 install(FILES assets/miquland.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/wayland-sessions)
-install(FILES assets/miquland.conf assets/wallpaper.png DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)
+install(FILES assets/miquland.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/miquland)
 

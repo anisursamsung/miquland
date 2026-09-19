@@ -123,7 +123,7 @@ void Output::handle_frame(struct wl_listener* listener, void* data) {
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    uint64_t now_ms = static_cast<uint64_t>(now.tv_sec) * 1000 + static_cast<uint64_t>(now.tv_nsec) / 1000000;
+    double now_ms = static_cast<double>(now.tv_sec) * 1000.0 + static_cast<double>(now.tv_nsec) / 1000000.0;
 
     if (output->m_server && output->m_server->get_animation_manager()) {
         output->m_server->get_animation_manager()->tick(now_ms);

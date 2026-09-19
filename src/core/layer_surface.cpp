@@ -3,8 +3,10 @@
 #include "core/server.hpp"
 #include "core/output.hpp"
 #include "core/input/input.hpp"
+#include "core/animation/animation_manager.hpp"
 #include "core/config/config.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace miquland {
 
@@ -12,6 +14,7 @@ LayerSurface::LayerSurface(Server* server, struct wlr_layer_surface_v1* layer_su
     : m_server(server), m_wlr_layer_surface(layer_surface)
 {
     m_current_layer = layer_surface->pending.layer;
+    m_namespace = layer_surface->_namespace ? layer_surface->_namespace : "";
 
     // Default to primary output if not specified by client
     if (!layer_surface->output && server->get_output_manager()) {
@@ -39,10 +42,13 @@ LayerSurface::LayerSurface(Server* server, struct wlr_layer_surface_v1* layer_su
     m_new_popup_listener.notify = handle_new_popup;
     wl_signal_add(&layer_surface->events.new_popup, &m_new_popup_listener);
 
-    log_info("New layer surface created: namespace=" + std::string(layer_surface->_namespace ? layer_surface->_namespace : ""));
+    log_info("New layer surface created: namespace=" + m_namespace);
 }
 
 LayerSurface::~LayerSurface() {
+    if (m_server && m_server->get_animation_manager()) {
+        m_server->get_animation_manager()->cancel_for_layer(this);
+    }
     m_popups.clear();
     wl_list_remove(&m_map_listener.link);
     wl_list_remove(&m_unmap_listener.link);
@@ -55,6 +61,14 @@ LayerSurface::~LayerSurface() {
 void LayerSurface::configure(const struct wlr_box* full_area, struct wlr_box* usable_area) {
     if (!m_scene_layer_surface) return;
     wlr_scene_layer_surface_v1_configure(m_scene_layer_surface, full_area, usable_area);
+    if (m_scene_layer_surface && m_scene_layer_surface->tree) {
+        m_geo_x = m_scene_layer_surface->tree->node.x;
+        m_geo_y = m_scene_layer_surface->tree->node.y;
+    }
+    if (m_wlr_layer_surface && m_wlr_layer_surface->surface) {
+        m_width = m_wlr_layer_surface->surface->current.width;
+        m_height = m_wlr_layer_surface->surface->current.height;
+    }
 }
 
 void LayerSurface::update_tree() {
@@ -130,11 +144,116 @@ void LayerSurface::update_blur() {
     }
 }
 
+Config::LayerAnimStyle LayerSurface::deduce_animation_style() const {
+    if (!m_wlr_layer_surface) return Config::LayerAnimStyle::None;
+
+    // 1. User layer rule override
+    Config::LayerRule rule = Config::get().get_layer_rule(m_namespace);
+    if (rule.anim_style != Config::LayerAnimStyle::DefaultAuto) {
+        return rule.anim_style;
+    }
+
+    // 2. Background layer is static by default
+    if (m_current_layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND) {
+        return Config::LayerAnimStyle::None;
+    }
+
+    // 3. Anchor heuristic
+    uint32_t anchor = m_wlr_layer_surface->current.anchor;
+    bool top = (anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP) != 0;
+    bool bottom = (anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM) != 0;
+    bool left = (anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT) != 0;
+    bool right = (anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) != 0;
+
+    if (top && !bottom && !left && !right) return Config::LayerAnimStyle::SlideTop;
+    if (bottom && !top && !left && !right) return Config::LayerAnimStyle::SlideBottom;
+    if (left && !right && !top && !bottom) return Config::LayerAnimStyle::SlideLeft;
+    if (right && !left && !top && !bottom) return Config::LayerAnimStyle::SlideRight;
+
+    // Stretched along single edge
+    if (top && !bottom) return Config::LayerAnimStyle::SlideTop;
+    if (bottom && !top) return Config::LayerAnimStyle::SlideBottom;
+    if (left && !right) return Config::LayerAnimStyle::SlideLeft;
+    if (right && !left) return Config::LayerAnimStyle::SlideRight;
+
+    // 4. Centered / Floating dialogs (e.g. miqulauncher, miqulock, miqupolkit, rofi)
+    if (m_current_layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY || m_current_layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
+        if (top && bottom && left && right) {
+            return Config::LayerAnimStyle::Fade;
+        }
+        return Config::LayerAnimStyle::Popin;
+    }
+
+    return Config::LayerAnimStyle::Popin;
+}
+
+void LayerSurface::apply_animation_transform(int offset_x, int offset_y, double scale, float opacity) {
+    if (!m_scene_layer_surface || !m_scene_layer_surface->tree) return;
+
+    m_animating = true;
+    float safe_opacity = std::clamp(opacity, 0.0f, 1.0f);
+
+    if (scale >= 0.999) {
+        wlr_scene_node_set_position(&m_scene_layer_surface->tree->node, m_geo_x + offset_x, m_geo_y + offset_y);
+    } else {
+        int base_w = (m_width > 0) ? m_width : (m_wlr_layer_surface && m_wlr_layer_surface->surface ? m_wlr_layer_surface->surface->current.width : 0);
+        int base_h = (m_height > 0) ? m_height : (m_wlr_layer_surface && m_wlr_layer_surface->surface ? m_wlr_layer_surface->surface->current.height : 0);
+        double cur_w = std::max(1.0, static_cast<double>(base_w) * scale);
+        double cur_h = std::max(1.0, static_cast<double>(base_h) * scale);
+        int cur_x = m_geo_x + offset_x + static_cast<int>(std::round((static_cast<double>(base_w) - cur_w) / 2.0));
+        int cur_y = m_geo_y + offset_y + static_cast<int>(std::round((static_cast<double>(base_h) - cur_h) / 2.0));
+        wlr_scene_node_set_position(&m_scene_layer_surface->tree->node, cur_x, cur_y);
+    }
+
+    struct BufferAnimData {
+        double scale;
+        float opacity;
+    } data = { scale, safe_opacity };
+
+    wlr_scene_node_for_each_buffer(&m_scene_layer_surface->tree->node, [](struct wlr_scene_buffer* buf, int sx, int sy, void* user_data) {
+        auto* d = static_cast<BufferAnimData*>(user_data);
+        if (d->scale < 0.999 && buf->buffer) {
+            int sw = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->width) * d->scale)));
+            int sh = std::max(1, static_cast<int>(std::round(static_cast<double>(buf->buffer->height) * d->scale)));
+            wlr_scene_buffer_set_dest_size(buf, sw, sh);
+        } else {
+            wlr_scene_buffer_set_dest_size(buf, 0, 0);
+        }
+        wlr_scene_buffer_set_opacity(buf, d->opacity);
+    }, &data);
+
+    if (m_blur_node) {
+        if (safe_opacity < 0.05f || !Config::get().is_blur_enabled()) {
+            wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        } else {
+            wlr_scene_node_set_enabled(&m_blur_node->node, true);
+            int bw = std::max(1, static_cast<int>(std::round(static_cast<double>(m_width) * scale)));
+            int bh = std::max(1, static_cast<int>(std::round(static_cast<double>(m_height) * scale)));
+            wlr_scene_blur_set_size(m_blur_node, bw, bh);
+        }
+    }
+}
+
+void LayerSurface::reset_animation_transform() {
+    m_animating = false;
+    if (!m_scene_layer_surface || !m_scene_layer_surface->tree) return;
+    wlr_scene_node_set_position(&m_scene_layer_surface->tree->node, m_geo_x, m_geo_y);
+    wlr_scene_node_for_each_buffer(&m_scene_layer_surface->tree->node, [](struct wlr_scene_buffer* buf, int, int, void*) {
+        wlr_scene_buffer_set_dest_size(buf, 0, 0);
+        wlr_scene_buffer_set_opacity(buf, 1.0f);
+    }, nullptr);
+    update_blur();
+}
+
 void LayerSurface::handle_map(struct wl_listener* listener, void* data) {
     LayerSurface* surface = wl_container_of(listener, surface, m_map_listener);
 
     surface->m_server->arrange_layers(surface->m_wlr_layer_surface->output);
     surface->update_blur();
+
+    if (surface->m_server && surface->m_server->get_animation_manager()) {
+        surface->m_server->get_animation_manager()->schedule_layer_open(surface);
+    }
 
     // If layer surface requires keyboard interaction (e.g. rofi, fuzzel, swaylock), focus it
     if (surface->m_wlr_layer_surface->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
@@ -144,6 +263,10 @@ void LayerSurface::handle_map(struct wl_listener* listener, void* data) {
 
 void LayerSurface::handle_unmap(struct wl_listener* listener, void* data) {
     LayerSurface* surface = wl_container_of(listener, surface, m_unmap_listener);
+
+    if (surface->m_server && surface->m_server->get_animation_manager()) {
+        surface->m_server->get_animation_manager()->cancel_for_layer(surface);
+    }
 
     if (surface->m_server->get_focused_layer_surface() == surface) {
         surface->m_server->focus_layer_surface(nullptr);
@@ -158,6 +281,9 @@ void LayerSurface::handle_unmap(struct wl_listener* listener, void* data) {
 
 void LayerSurface::handle_destroy(struct wl_listener* listener, void* data) {
     LayerSurface* surface = wl_container_of(listener, surface, m_destroy_listener);
+    if (surface->m_server && surface->m_server->get_animation_manager()) {
+        surface->m_server->get_animation_manager()->cancel_for_layer(surface);
+    }
     surface->m_server->remove_layer_surface(surface);
 }
 

@@ -889,14 +889,6 @@ void View::apply_animation_transform(double scale, float opacity) {
             }
             wlr_scene_buffer_set_opacity(buf, d->opacity);
         }, &data);
-
-        struct wlr_box clip = {
-            .x = geom_x,
-            .y = geom_y,
-            .width = geom_w,
-            .height = geom_h,
-        };
-        wlr_scene_subsurface_tree_set_clip(&m_surface_scene_tree->node, &clip);
     }
 
     if (m_border_scene_buffer) {

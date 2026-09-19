@@ -1,6 +1,7 @@
 #include "core/animation/animation_manager.hpp"
 #include "core/server.hpp"
 #include "core/view.hpp"
+#include "core/layer_surface.hpp"
 #include "core/workspace.hpp"
 #include "core/output.hpp"
 #include "core/input/input.hpp"
@@ -20,10 +21,10 @@ AnimationManager::~AnimationManager() {
     clear();
 }
 
-uint64_t AnimationManager::get_current_time_ms() const {
+double AnimationManager::get_current_time_ms() const {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return static_cast<uint64_t>(ts.tv_sec) * 1000 + static_cast<uint64_t>(ts.tv_nsec) / 1000000;
+    return static_cast<double>(ts.tv_sec) * 1000.0 + static_cast<double>(ts.tv_nsec) / 1000000.0;
 }
 
 void AnimationManager::schedule_workspace_transition(
@@ -46,7 +47,7 @@ void AnimationManager::schedule_workspace_transition(
     int duration = Config::get().get_workspace_animation_duration_ms();
     auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
     int offset = slide_right ? screen_width : -screen_width;
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
 
     // Position target workspace off-screen and make visible
     if (to_ws->get_scene_tree()) {
@@ -163,7 +164,7 @@ void AnimationManager::update_workspace_swipe(double dx, double dy) {
 
     m_swipe_state.raw_delta_x += dx;
 
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
     m_swipe_state.sample_history.push_back({ now, m_swipe_state.raw_delta_x });
     while (m_swipe_state.sample_history.size() > 2 && (now - m_swipe_state.sample_history.front().time_ms) > 120) {
         m_swipe_state.sample_history.erase(m_swipe_state.sample_history.begin());
@@ -267,9 +268,9 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
     if (m_swipe_state.sample_history.size() >= 2) {
         const auto& oldest = m_swipe_state.sample_history.front();
         const auto& newest = m_swipe_state.sample_history.back();
-        uint64_t dt = newest.time_ms - oldest.time_ms;
-        if (dt >= 10) {
-            release_velocity = (newest.delta_x - oldest.delta_x) / static_cast<double>(dt);
+        double dt = newest.time_ms - oldest.time_ms;
+        if (dt >= 10.0) {
+            release_velocity = (newest.delta_x - oldest.delta_x) / dt;
         }
     }
 
@@ -319,7 +320,7 @@ void AnimationManager::end_workspace_swipe(bool cancelled) {
     }
 
     auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
     int base_dur = Config::get().get_workspace_animation_duration_ms();
     double v_abs = std::abs(release_velocity);
 
@@ -482,7 +483,7 @@ void AnimationManager::schedule_window_open(View* view) {
     auto scale_easing = Easing::from_name(Config::get().get_window_animation_open_curve());
     auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_in_curve());
     double open_scale = Config::get().get_window_animation_open_scale();
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
 
     float target_opacity = view->is_focused()
         ? Config::get().get_window_opacity_active()
@@ -537,7 +538,7 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     auto scale_easing = Easing::from_name(Config::get().get_window_animation_close_curve());
     auto fade_easing = Easing::from_name(Config::get().get_window_animation_fade_out_curve());
     double close_scale = Config::get().get_window_animation_close_scale();
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
 
     float cur_opacity = view->is_focused()
         ? Config::get().get_window_opacity_active()
@@ -571,6 +572,179 @@ void AnimationManager::schedule_window_close(View* view, std::function<void()> o
     schedule_next_frame();
 }
 
+void AnimationManager::schedule_layer_open(LayerSurface* surface) {
+    if (!surface || !surface->is_mapped()) return;
+
+    if (!Config::get().is_layer_animations_enabled()) {
+        surface->reset_animation_transform();
+        return;
+    }
+
+    cancel_for_layer(surface);
+
+    Config::LayerAnimStyle style = surface->deduce_animation_style();
+    if (style == Config::LayerAnimStyle::None) {
+        surface->reset_animation_transform();
+        return;
+    }
+
+    Config::LayerRule rule = Config::get().get_layer_rule(surface->get_namespace());
+    int duration = (rule.duration_ms > 0) ? rule.duration_ms : Config::get().get_layer_animation_duration_ms();
+    std::string curve_name = (!rule.curve.empty()) ? rule.curve : Config::get().get_layer_animation_curve();
+    auto easing = Easing::from_name(curve_name);
+    double now = get_current_time_ms();
+
+    int start_ox = 0, start_oy = 0;
+    int target_ox = 0, target_oy = 0;
+    double start_scale = 1.0, target_scale = 1.0;
+    float start_opacity = 0.0f, target_opacity = 1.0f;
+
+    int surf_w = surface->get_width();
+    int surf_h = surface->get_height();
+    if (surf_w <= 0 && surface->get_wlr_layer_surface() && surface->get_wlr_layer_surface()->surface) {
+        surf_w = surface->get_wlr_layer_surface()->surface->current.width;
+    }
+    if (surf_h <= 0 && surface->get_wlr_layer_surface() && surface->get_wlr_layer_surface()->surface) {
+        surf_h = surface->get_wlr_layer_surface()->surface->current.height;
+    }
+    if (surf_w <= 0) surf_w = 400;
+    if (surf_h <= 0) surf_h = 200;
+
+    if (style == Config::LayerAnimStyle::SlideTop) {
+        start_oy = -surf_h;
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::SlideBottom) {
+        start_oy = +surf_h;
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::SlideLeft) {
+        start_ox = -surf_w;
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::SlideRight) {
+        start_ox = +surf_w;
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::Slide) {
+        start_oy = -surf_h;
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::Popin) {
+        double pop_scale = (rule.popin_scale > 0.0) ? rule.popin_scale : Config::get().get_layer_animation_popin_scale();
+        start_scale = std::clamp(pop_scale, 0.1, 1.0);
+        start_opacity = 0.0f;
+    } else if (style == Config::LayerAnimStyle::Fade) {
+        start_opacity = 0.0f;
+    }
+
+    surface->apply_animation_transform(start_ox, start_oy, start_scale, start_opacity);
+
+    LayerAnimation anim;
+    anim.id = m_next_id++;
+    anim.surface = surface;
+    anim.start_offset_x = start_ox;
+    anim.start_offset_y = start_oy;
+    anim.target_offset_x = target_ox;
+    anim.target_offset_y = target_oy;
+    anim.start_scale = start_scale;
+    anim.target_scale = target_scale;
+    anim.start_opacity = start_opacity;
+    anim.target_opacity = target_opacity;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.easing_fn = easing;
+    anim.on_complete = [surface]() {
+        if (surface && surface->is_mapped()) {
+            surface->reset_animation_transform();
+        }
+    };
+
+    m_layer_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
+void AnimationManager::schedule_layer_close(LayerSurface* surface, std::function<void()> on_complete) {
+    if (!surface || !surface->is_mapped()) {
+        if (on_complete) on_complete();
+        return;
+    }
+
+    if (!Config::get().is_layer_animations_enabled()) {
+        if (on_complete) on_complete();
+        return;
+    }
+
+    Config::LayerAnimStyle style = surface->deduce_animation_style();
+    if (style == Config::LayerAnimStyle::None) {
+        if (on_complete) on_complete();
+        return;
+    }
+
+    cancel_for_layer(surface);
+
+    Config::LayerRule rule = Config::get().get_layer_rule(surface->get_namespace());
+    int duration = (rule.duration_ms > 0) ? rule.duration_ms : Config::get().get_layer_animation_duration_ms();
+    std::string curve_name = (!rule.curve.empty()) ? rule.curve : Config::get().get_layer_animation_curve();
+    auto easing = Easing::from_name(curve_name);
+    double now = get_current_time_ms();
+
+    int start_ox = 0, start_oy = 0;
+    int target_ox = 0, target_oy = 0;
+    double start_scale = 1.0, target_scale = 1.0;
+    float start_opacity = 1.0f, target_opacity = 0.0f;
+
+    int surf_w = surface->get_width();
+    int surf_h = surface->get_height();
+    if (surf_w <= 0) surf_w = 400;
+    if (surf_h <= 0) surf_h = 200;
+
+    if (style == Config::LayerAnimStyle::SlideTop) {
+        target_oy = -surf_h;
+    } else if (style == Config::LayerAnimStyle::SlideBottom) {
+        target_oy = +surf_h;
+    } else if (style == Config::LayerAnimStyle::SlideLeft) {
+        target_ox = -surf_w;
+    } else if (style == Config::LayerAnimStyle::SlideRight) {
+        target_ox = +surf_w;
+    } else if (style == Config::LayerAnimStyle::Slide) {
+        target_oy = -surf_h;
+    } else if (style == Config::LayerAnimStyle::Popin) {
+        double pop_scale = (rule.popin_scale > 0.0) ? rule.popin_scale : Config::get().get_layer_animation_popin_scale();
+        target_scale = std::clamp(pop_scale, 0.1, 1.0);
+    }
+
+    LayerAnimation anim;
+    anim.id = m_next_id++;
+    anim.surface = surface;
+    anim.start_offset_x = start_ox;
+    anim.start_offset_y = start_oy;
+    anim.target_offset_x = target_ox;
+    anim.target_offset_y = target_oy;
+    anim.start_scale = start_scale;
+    anim.target_scale = target_scale;
+    anim.start_opacity = start_opacity;
+    anim.target_opacity = target_opacity;
+    anim.start_time_ms = now;
+    anim.duration_ms = duration;
+    anim.easing_fn = easing;
+    anim.on_complete = on_complete;
+
+    m_layer_animations.push_back(std::move(anim));
+    schedule_next_frame();
+}
+
+bool AnimationManager::is_layer_animating(LayerSurface* surface) const {
+    if (!surface) return !m_layer_animations.empty();
+    for (const auto& anim : m_layer_animations) {
+        if (anim.surface == surface) return true;
+    }
+    return false;
+}
+
+void AnimationManager::cancel_for_layer(LayerSurface* surface) {
+    if (!surface) return;
+    auto it = std::remove_if(m_layer_animations.begin(), m_layer_animations.end(), [surface](const LayerAnimation& a) {
+        return a.surface == surface;
+    });
+    m_layer_animations.erase(it, m_layer_animations.end());
+}
+
 bool AnimationManager::is_view_animating(View* view) const {
     if (!view) return !m_view_animations.empty() || !m_geometry_animations.empty();
     for (const auto& anim : m_view_animations) {
@@ -592,12 +766,13 @@ bool AnimationManager::is_view_geometry_animating(View* view) const {
 
 struct wlr_box AnimationManager::get_view_current_box(View* view, const struct wlr_box& fallback) const {
     if (!view) return fallback;
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
     for (const auto& anim : m_geometry_animations) {
         if (anim.view == view) {
             float progress = 1.0f;
-            if (anim.duration_ms > 0) {
-                progress = static_cast<float>(now - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+            if (anim.duration_ms > 0.0) {
+                double elapsed = (now >= anim.start_time_ms) ? (now - anim.start_time_ms) : 0.0;
+                progress = static_cast<float>(elapsed / anim.duration_ms);
             }
             progress = std::clamp(progress, 0.0f, 1.0f);
             float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
@@ -626,7 +801,7 @@ void AnimationManager::schedule_view_geometry(View* view, const struct wlr_box& 
     }
 
     struct wlr_box actual_from = from_box;
-    uint64_t now = get_current_time_ms();
+    double now = get_current_time_ms();
 
     auto it_existing = std::find_if(m_geometry_animations.begin(), m_geometry_animations.end(), [view](const ViewGeometryAnimation& a) {
         return a.view == view;
@@ -634,8 +809,9 @@ void AnimationManager::schedule_view_geometry(View* view, const struct wlr_box& 
 
     if (it_existing != m_geometry_animations.end()) {
         float progress = 1.0f;
-        if (it_existing->duration_ms > 0) {
-            progress = static_cast<float>(now - it_existing->start_time_ms) / static_cast<float>(it_existing->duration_ms);
+        if (it_existing->duration_ms > 0.0) {
+            double elapsed = (now >= it_existing->start_time_ms) ? (now - it_existing->start_time_ms) : 0.0;
+            progress = static_cast<float>(elapsed / it_existing->duration_ms);
         }
         progress = std::clamp(progress, 0.0f, 1.0f);
         float eased = it_existing->easing_fn ? it_existing->easing_fn(progress) : progress;
@@ -762,12 +938,13 @@ void AnimationManager::clear() {
     m_animations.clear();
     m_view_animations.clear();
     m_geometry_animations.clear();
+    m_layer_animations.clear();
 }
 
-void AnimationManager::tick(uint64_t now_ms) {
+void AnimationManager::tick(double now_ms) {
     if (!has_active_animations()) return;
 
-    if (now_ms == 0) {
+    if (now_ms <= 0.0) {
         now_ms = get_current_time_ms();
     }
 
@@ -780,9 +957,10 @@ void AnimationManager::tick(uint64_t now_ms) {
             continue;
         }
 
+        double elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0.0;
         float progress = 1.0f;
-        if (anim.duration_ms > 0) {
-            progress = static_cast<float>(now_ms - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+        if (anim.duration_ms > 0.0) {
+            progress = static_cast<float>(elapsed / anim.duration_ms);
         }
 
         if (progress >= 1.0f) {
@@ -813,9 +991,10 @@ void AnimationManager::tick(uint64_t now_ms) {
             continue;
         }
 
+        double elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0.0;
         float progress = 1.0f;
-        if (anim.duration_ms > 0) {
-            progress = static_cast<float>(now_ms - anim.start_time_ms) / static_cast<float>(anim.duration_ms);
+        if (anim.duration_ms > 0.0) {
+            progress = static_cast<float>(elapsed / anim.duration_ms);
         }
 
         if (progress >= 1.0f) {
@@ -848,12 +1027,12 @@ void AnimationManager::tick(uint64_t now_ms) {
             continue;
         }
 
-        uint64_t elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0;
+        double elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0.0;
 
         // 1. Scale interpolation
         float scale_progress = 1.0f;
-        if (anim.scale_duration_ms > 0) {
-            scale_progress = static_cast<float>(elapsed) / static_cast<float>(anim.scale_duration_ms);
+        if (anim.scale_duration_ms > 0.0) {
+            scale_progress = static_cast<float>(elapsed / anim.scale_duration_ms);
         }
         if (scale_progress >= 1.0f) {
             scale_progress = 1.0f;
@@ -863,8 +1042,8 @@ void AnimationManager::tick(uint64_t now_ms) {
 
         // 2. Fade interpolation
         float fade_progress = 1.0f;
-        if (anim.fade_duration_ms > 0) {
-            fade_progress = static_cast<float>(elapsed) / static_cast<float>(anim.fade_duration_ms);
+        if (anim.fade_duration_ms > 0.0) {
+            fade_progress = static_cast<float>(elapsed / anim.fade_duration_ms);
         }
         if (fade_progress >= 1.0f) {
             fade_progress = 1.0f;
@@ -887,7 +1066,44 @@ void AnimationManager::tick(uint64_t now_ms) {
     });
     m_view_animations.erase(it_view, m_view_animations.end());
 
-    // 4. Invoke completions
+    // 4. Tick layer surface animations (slide, popin, fade)
+    for (auto& anim : m_layer_animations) {
+        if (!anim.surface || !anim.surface->is_mapped()) {
+            anim.completed = true;
+            continue;
+        }
+
+        double elapsed = (now_ms >= anim.start_time_ms) ? (now_ms - anim.start_time_ms) : 0.0;
+        float progress = 1.0f;
+        if (anim.duration_ms > 0.0) {
+            progress = static_cast<float>(elapsed / anim.duration_ms);
+        }
+        if (progress >= 1.0f) {
+            progress = 1.0f;
+        }
+        float eased = anim.easing_fn ? anim.easing_fn(progress) : progress;
+
+        int cur_ox = anim.start_offset_x + static_cast<int>(std::round(static_cast<float>(anim.target_offset_x - anim.start_offset_x) * eased));
+        int cur_oy = anim.start_offset_y + static_cast<int>(std::round(static_cast<float>(anim.target_offset_y - anim.start_offset_y) * eased));
+        double cur_scale = anim.start_scale + (anim.target_scale - anim.start_scale) * static_cast<double>(eased);
+        float cur_opacity = anim.start_opacity + (anim.target_opacity - anim.start_opacity) * eased;
+
+        anim.surface->apply_animation_transform(cur_ox, cur_oy, cur_scale, cur_opacity);
+
+        if (progress >= 1.0f) {
+            anim.completed = true;
+            if (anim.on_complete) {
+                completions.push_back(anim.on_complete);
+            }
+        }
+    }
+
+    auto it_layer = std::remove_if(m_layer_animations.begin(), m_layer_animations.end(), [](const LayerAnimation& a) {
+        return a.completed;
+    });
+    m_layer_animations.erase(it_layer, m_layer_animations.end());
+
+    // 5. Invoke completions
     for (auto& cb : completions) {
         if (cb) cb();
     }

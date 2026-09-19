@@ -73,10 +73,14 @@ void Config::set_defaults() {
     m_window_animation_close_duration_ms = 140;
     m_window_animation_curve = "default";
     m_window_animation_open_curve = "default";
-    m_window_animation_close_curve = "smooth_out";
     m_window_animation_open_scale = 0.85;
     m_window_animation_close_scale = 0.85;
     m_window_animation_fade = true;
+    m_layer_animations_enabled = true;
+    m_layer_animation_duration_ms = 200;
+    m_layer_animation_curve = "ease_out_cubic";
+    m_layer_animation_popin_scale = 0.90;
+    m_layer_rules.clear();
     m_blur_enabled = true;
     m_blur_radius = 5;
     m_blur_num_passes = 3;
@@ -246,6 +250,24 @@ void Config::add_blurred_layer(const std::string& ns) {
     if (!is_layer_blur_enabled(ns)) {
         m_blurred_layers.push_back(ns);
     }
+}
+
+Config::LayerRule Config::get_layer_rule(const std::string& ns) const {
+    if (ns.empty()) return LayerRule{};
+    std::string lower_ns = ns;
+    std::transform(lower_ns.begin(), lower_ns.end(), lower_ns.begin(), ::tolower);
+    for (const auto& rule : m_layer_rules) {
+        std::string lower_pattern = rule.ns_pattern;
+        std::transform(lower_pattern.begin(), lower_pattern.end(), lower_pattern.begin(), ::tolower);
+        if (lower_pattern == lower_ns || lower_pattern == "*" || lower_ns.find(lower_pattern) != std::string::npos) {
+            return rule;
+        }
+    }
+    return LayerRule{};
+}
+
+void Config::add_layer_rule(const LayerRule& rule) {
+    m_layer_rules.push_back(rule);
 }
 
 bool Config::parse_binding_combo(const std::string& combo, uint32_t& out_modifiers, xkb_keysym_t& out_keysym) {
@@ -792,15 +814,66 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             } catch (...) {}
         } else if (key == "animation_curve" || key == "animation_easing") {
             m_workspace_animation_curve = value;
+        } else if (key == "layer_animations" || key == "layer_animation_enabled") {
+            m_layer_animations_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "layer_animation_duration" || key == "layer_animation_duration_ms") {
+            try {
+                m_layer_animation_duration_ms = std::clamp(std::stoi(value), 10, 2000);
+            } catch (...) {}
+        } else if (key == "layer_animation_curve" || key == "layer_animation_easing") {
+            m_layer_animation_curve = value;
+        } else if (key == "layer_animation_popin_scale" || key == "layer_popin_scale") {
+            try {
+                double s = std::stod(value);
+                if (s > 1.0) s /= 100.0;
+                m_layer_animation_popin_scale = std::clamp(s, 0.1, 1.0);
+            } catch (...) {}
         } else if (key == "layerrule") {
             // Hyprland syntax: layerrule = blur, waybar
+            // or: layerrule = animation slide, waybar
+            // or: layerrule = animation popin 80%, miqulauncher
+            // or: layerrule = animation fade, miqupolkit
+            // or: layerrule = noanim, miqubg
             size_t comma = value.find(',');
             if (comma != std::string::npos) {
                 std::string rule = trim(value.substr(0, comma));
                 std::string ns = trim(value.substr(comma + 1));
-                std::transform(rule.begin(), rule.end(), rule.begin(), ::tolower);
-                if (rule == "blur" && !ns.empty()) {
+                std::string lower_rule = rule;
+                std::transform(lower_rule.begin(), lower_rule.end(), lower_rule.begin(), ::tolower);
+                if (lower_rule == "blur" && !ns.empty()) {
                     add_blurred_layer(ns);
+                } else if ((lower_rule == "noanim" || lower_rule == "none") && !ns.empty()) {
+                    LayerRule r;
+                    r.ns_pattern = ns;
+                    r.anim_style = LayerAnimStyle::None;
+                    add_layer_rule(r);
+                } else if (lower_rule.rfind("animation", 0) == 0 && !ns.empty()) {
+                    std::string anim_spec = trim(lower_rule.substr(9));
+                    LayerRule r;
+                    r.ns_pattern = ns;
+                    if (anim_spec.rfind("slide", 0) == 0) {
+                        if (anim_spec == "slide top" || anim_spec == "slide_top") r.anim_style = LayerAnimStyle::SlideTop;
+                        else if (anim_spec == "slide bottom" || anim_spec == "slide_bottom") r.anim_style = LayerAnimStyle::SlideBottom;
+                        else if (anim_spec == "slide left" || anim_spec == "slide_left") r.anim_style = LayerAnimStyle::SlideLeft;
+                        else if (anim_spec == "slide right" || anim_spec == "slide_right") r.anim_style = LayerAnimStyle::SlideRight;
+                        else r.anim_style = LayerAnimStyle::Slide;
+                    } else if (anim_spec.rfind("popin", 0) == 0) {
+                        r.anim_style = LayerAnimStyle::Popin;
+                        std::string scale_str = trim(anim_spec.substr(5));
+                        if (!scale_str.empty()) {
+                            try {
+                                if (scale_str.back() == '%') scale_str.pop_back();
+                                double s = std::stod(scale_str);
+                                if (s > 1.0) s /= 100.0;
+                                r.popin_scale = std::clamp(s, 0.1, 1.0);
+                            } catch (...) {}
+                        }
+                    } else if (anim_spec == "fade") {
+                        r.anim_style = LayerAnimStyle::Fade;
+                    } else if (anim_spec == "none" || anim_spec == "noanim") {
+                        r.anim_style = LayerAnimStyle::None;
+                    }
+                    add_layer_rule(r);
                 }
             }
         } else if (key == "blur_layers") {
@@ -1000,6 +1073,7 @@ void Config::load() {
     std::vector<std::string> file_exec_cmds;
     std::vector<std::string> file_exec_once_cmds;
     m_blurred_layers.clear();
+    m_layer_rules.clear();
     m_plugins.clear();
 
     load_file(path, file_bindings, has_bindings_in_file, file_gestures, has_gestures_in_file, file_rules, has_rules_in_file, file_monitors, has_monitors_in_file, file_exec_cmds, file_exec_once_cmds, 0);

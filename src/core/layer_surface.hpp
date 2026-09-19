@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/common/util.hpp"
+#include "core/config/config.hpp"
 #include <vector>
 #include <memory>
+#include <string>
 
 namespace miquland {
 
@@ -19,9 +21,19 @@ public:
     enum zwlr_layer_shell_v1_layer get_layer() const { return m_current_layer; }
     bool is_mapped() const { return m_wlr_layer_surface && m_wlr_layer_surface->surface->mapped; }
 
+    int get_geo_x() const { return m_geo_x; }
+    int get_geo_y() const { return m_geo_y; }
+    int get_width() const { return m_width; }
+    int get_height() const { return m_height; }
+    const std::string& get_namespace() const { return m_namespace; }
+
     void configure(const struct wlr_box* full_area, struct wlr_box* usable_area);
     void update_tree();
     void update_blur();
+
+    Config::LayerAnimStyle deduce_animation_style() const;
+    void apply_animation_transform(int offset_x, int offset_y, double scale, float opacity);
+    void reset_animation_transform();
 
 private:
     static void handle_map(struct wl_listener* listener, void* data);
@@ -36,6 +48,13 @@ private:
     struct wlr_scene_blur* m_blur_node = nullptr;
     struct wlr_scene_tree* m_popups_tree = nullptr;
     enum zwlr_layer_shell_v1_layer m_current_layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+
+    int m_geo_x = 0;
+    int m_geo_y = 0;
+    int m_width = 0;
+    int m_height = 0;
+    std::string m_namespace;
+    bool m_animating = false;
 
     struct wl_listener m_map_listener;
     struct wl_listener m_unmap_listener;
