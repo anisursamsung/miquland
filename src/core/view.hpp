@@ -40,6 +40,7 @@ public:
 
     void update_frame();
     void update_border();
+    void update_shadow();
     void update_opacity();
     void update_corner_radius();
     void apply_animation_transform(double scale, float opacity);
@@ -71,6 +72,7 @@ public:
     struct wlr_scene_tree* get_surface_scene_tree() const { return m_surface_scene_tree; }
     struct wlr_scene_buffer* get_border_scene_buffer() const { return m_border_scene_buffer; }
     struct wlr_scene_blur* get_blur_node() const { return m_blur_node; }
+    struct wlr_scene_shadow* get_shadow_node() const { return m_shadow_node; }
     struct wlr_foreign_toplevel_handle_v1* get_foreign_toplevel() const { return m_foreign_toplevel; }
     bool is_mapped() const { return m_mapped; }
     bool is_override_redirect() const {
@@ -132,6 +134,7 @@ private:
 
     void setup_foreign_toplevel();
     void update_blur();
+    void sync_shadow_geometry(int w, int h, int r, float sigma, int ox, int oy);
 
     Server* m_server = nullptr;
     Workspace* m_workspace = nullptr;
@@ -145,6 +148,7 @@ private:
     struct wlr_scene_buffer* m_border_scene_buffer = nullptr;
     struct wlr_scene_tree* m_surface_scene_tree = nullptr;
     struct wlr_scene_blur* m_blur_node = nullptr;
+    struct wlr_scene_shadow* m_shadow_node = nullptr;
     std::unique_ptr<CairoBuffer> m_border_buffer;
 
     bool m_mapped = false;

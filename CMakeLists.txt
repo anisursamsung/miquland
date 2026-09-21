@@ -74,6 +74,7 @@ add_executable(miquland
     src/core/config/config.cpp
     src/core/session_lock.cpp
     src/core/common/cairo_buffer.cpp
+    src/core/common/border_paint.cpp
     src/core/plugin_manager.cpp
     src/core/animation/animation_manager.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/xdg-shell-protocol.h

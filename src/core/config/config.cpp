@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <algorithm>
+#include <cctype>
 
 namespace miquland {
 
@@ -99,6 +100,18 @@ void Config::set_defaults() {
 
     m_window_border_color_active = "#0066ff";
     m_window_border_color_inactive = "#99c2ff";
+    m_border_paint_active = BorderPaint::parse(m_window_border_color_active);
+    m_border_paint_inactive = BorderPaint::parse(m_window_border_color_inactive);
+    m_window_border_shading = false;
+    m_window_border_shading_strength = 0.35f;
+
+    m_shadow_enabled = true;
+    m_shadow_blur_sigma = 12.0f;
+    m_shadow_color_active = "#00000066";
+    m_shadow_color_inactive = "#00000044";
+    m_shadow_offset_x = 0;
+    m_shadow_offset_y = 4;
+
     m_window_border_width = 2;
     m_window_border_radius = 10;
     m_space_between_windows = 8;
@@ -832,20 +845,47 @@ static std::string get_current_section_path(const std::vector<Config::SectionFra
     return p;
 }
 
+static bool is_hex_color_at(const std::string& str, size_t pos) {
+    if (pos >= str.size() || str[pos] != '#') return false;
+    size_t i = pos + 1;
+    while (i < str.size() && std::isxdigit(static_cast<unsigned char>(str[i]))) {
+        ++i;
+    }
+    size_t len = i - (pos + 1);
+    if (len == 3 || len == 4 || len == 6 || len == 8) {
+        if (i == str.size() || std::isspace(static_cast<unsigned char>(str[i])) ||
+            str[i] == ',' || str[i] == '"' || str[i] == '\'') {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void strip_inline_comment(const std::string& key, std::string& value) {
     if (key == "bind" || key == "gesture" || key == "exec" || key == "exec_once" ||
         key == "exec-once" || key == "exec_always" || key == "exec-always" || key == "autostart") {
         return;
     }
+
+    bool in_quotes = false;
+    char quote_char = 0;
     size_t comment_pos = std::string::npos;
-    if (!value.empty() && value[0] == '#') {
-        size_t space_pos = value.find_first_of(" \t");
-        if (space_pos != std::string::npos) {
-            comment_pos = value.find('#', space_pos);
+
+    for (size_t i = 0; i < value.size(); ++i) {
+        char c = value[i];
+        if (!in_quotes && (c == '"' || c == '\'')) {
+            in_quotes = true;
+            quote_char = c;
+        } else if (in_quotes && c == quote_char) {
+            in_quotes = false;
+        } else if (!in_quotes && c == '#') {
+            if (!is_hex_color_at(value, i)) {
+                comment_pos = i;
+                break;
+            }
         }
-    } else {
-        comment_pos = value.find('#');
     }
+
     if (comment_pos != std::string::npos) {
         value = trim(value.substr(0, comment_pos));
     }
@@ -915,11 +955,25 @@ void Config::parse_general_entry(const std::string& path_str, const std::string&
         } else if (key == "radius") {
             try { m_window_border_radius = std::max(0, std::stoi(value)); } catch (...) {}
         } else if (key == "active") {
-            m_window_border_color_active = value;
+            set_window_border_color_active(value);
         } else if (key == "inactive") {
-            m_window_border_color_inactive = value;
+            set_window_border_color_inactive(value);
+        } else if (key == "shading") {
+            m_window_border_shading = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "shading_strength") {
+            try { m_window_border_shading_strength = std::clamp(std::stof(value), 0.0f, 1.0f); } catch (...) {}
         }
     }
+}
+
+void Config::set_window_border_color_active(const std::string& color) {
+    m_window_border_color_active = color;
+    m_border_paint_active = BorderPaint::parse(color);
+}
+
+void Config::set_window_border_color_inactive(const std::string& color) {
+    m_window_border_color_inactive = color;
+    m_border_paint_inactive = BorderPaint::parse(color);
 }
 
 void Config::parse_decoration_entry(const std::string& path_str, const std::string& top_type,
@@ -947,6 +1001,23 @@ void Config::parse_decoration_entry(const std::string& path_str, const std::stri
             try { m_blur_contrast = std::stof(value); } catch (...) {}
         } else if (key == "saturation") {
             try { m_blur_saturation = std::stof(value); } catch (...) {}
+        }
+    } else if (path_str == "decoration.shadow" || (top_type == "shadow" && is_in_path(stack, "decoration"))) {
+        if (key == "enabled") {
+            m_shadow_enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "range" || key == "blur_sigma" || key == "radius" || key == "size") {
+            try { m_shadow_blur_sigma = std::max(0.0f, std::stof(value)); } catch (...) {}
+        } else if (key == "color") {
+            m_shadow_color_active = value;
+        } else if (key == "color_inactive" || key == "inactive_color") {
+            m_shadow_color_inactive = value;
+        } else if (key == "offset") {
+            std::istringstream iss(value);
+            int ox = 0, oy = 0;
+            if (iss >> ox >> oy) {
+                m_shadow_offset_x = ox;
+                m_shadow_offset_y = oy;
+            }
         }
     }
 }
@@ -1547,7 +1618,7 @@ void Config::load_file(const std::string& path, std::vector<KeyBinding>& file_bi
             parse_cursor_entry(key, value);
         } else if (path_str.rfind("general", 0) == 0 || top_type == "general" || top_type == "gaps" || top_type == "border") {
             parse_general_entry(path_str, top_type, section_stack, key, value);
-        } else if (path_str.rfind("decoration", 0) == 0 || top_type == "decoration" || top_type == "blur") {
+        } else if (path_str.rfind("decoration", 0) == 0 || top_type == "decoration" || top_type == "blur" || top_type == "shadow") {
             parse_decoration_entry(path_str, top_type, section_stack, key, value);
         } else if (path_str.rfind("animations", 0) == 0 || top_type == "animations" || top_type == "windows" || top_type == "layers" || top_type == "workspaces") {
             parse_animations_entry(path_str, top_type, section_stack, key, value);
@@ -1667,6 +1738,8 @@ void Config::save() {
     file << "        radius = " << m_window_border_radius << "\n";
     file << "        active = " << m_window_border_color_active << "\n";
     file << "        inactive = " << m_window_border_color_inactive << "\n";
+    file << "        shading = " << (m_window_border_shading ? "true" : "false") << "\n";
+    file << "        shading_strength = " << m_window_border_shading_strength << "\n";
     file << "    }\n";
     file << "}\n\n";
 
@@ -1681,6 +1754,13 @@ void Config::save() {
     file << "        brightness = " << m_blur_brightness << "\n";
     file << "        contrast = " << m_blur_contrast << "\n";
     file << "        saturation = " << m_blur_saturation << "\n";
+    file << "    }\n";
+    file << "    shadow {\n";
+    file << "        enabled = " << (m_shadow_enabled ? "true" : "false") << "\n";
+    file << "        range = " << m_shadow_blur_sigma << "\n";
+    file << "        color = " << m_shadow_color_active << "\n";
+    file << "        color_inactive = " << m_shadow_color_inactive << "\n";
+    file << "        offset = " << m_shadow_offset_x << " " << m_shadow_offset_y << "\n";
     file << "    }\n";
     file << "}\n\n";
 

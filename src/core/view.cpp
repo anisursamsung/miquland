@@ -326,6 +326,7 @@ View::~View() {
         m_scene_tree = nullptr;
     }
     m_blur_node = nullptr;
+    m_shadow_node = nullptr;
 }
 
 void View::setup_foreign_toplevel() {
@@ -578,9 +579,12 @@ void View::set_fullscreen(bool fullscreen) {
             wlr_xwayland_surface_configure(m_xwayland_surface, conf_x, conf_y, conf_w, conf_h);
         }
 
-        // Disable border in fullscreen
+        // Disable border and shadow in fullscreen
         if (m_border_scene_buffer) {
             wlr_scene_node_set_enabled(&m_border_scene_buffer->node, false);
+        }
+        if (m_shadow_node) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, false);
         }
 
         m_is_fullscreen = true;
@@ -616,9 +620,12 @@ void View::set_fullscreen(bool fullscreen) {
             wlr_xwayland_surface_set_fullscreen(m_xwayland_surface, false);
         }
 
-        // Re-enable border
+        // Re-enable border and shadow
         if (m_border_scene_buffer) {
             wlr_scene_node_set_enabled(&m_border_scene_buffer->node, true);
+        }
+        if (m_shadow_node) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, true);
         }
 
         update_corner_radius();
@@ -639,6 +646,7 @@ void View::update_frame() {
     update_corner_radius();
     update_opacity();
     update_blur();
+    update_shadow();
 }
 
 void View::update_blur() {
@@ -669,6 +677,104 @@ void View::update_blur() {
         wlr_scene_blur_set_corner_radius(m_blur_node, r);
         wlr_scene_node_set_enabled(&m_blur_node->node, true);
     }
+}
+
+using CairoPatternPtr = std::unique_ptr<cairo_pattern_t, decltype(&cairo_pattern_destroy)>;
+
+static void render_border_stroke(cairo_t* cr, const BorderPaint& paint, int bw, int width, int height) {
+    cairo_set_line_width(cr, bw);
+    if (paint.is_gradient()) {
+        CairoPatternPtr pat(paint.create_cairo_pattern(width, height), &cairo_pattern_destroy);
+        if (pat) {
+            cairo_set_source(cr, pat.get());
+            cairo_stroke_preserve(cr);
+            return;
+        }
+    }
+    float r = 0.0f, g = 0.8f, b = 1.0f, a = 1.0f;
+    paint.get_single_color(r, g, b, a);
+    cairo_set_source_rgba(cr, r, g, b, a);
+    cairo_stroke_preserve(cr);
+}
+
+static void render_border_shading(cairo_t* cr, int height, float strength) {
+    CairoPatternPtr shade_pat(cairo_pattern_create_linear(0, 0, 0, height), &cairo_pattern_destroy);
+    if (shade_pat) {
+        cairo_pattern_add_color_stop_rgba(shade_pat.get(), 0.0, 1.0, 1.0, 1.0, 0.5f * strength);
+        cairo_pattern_add_color_stop_rgba(shade_pat.get(), 0.3, 1.0, 1.0, 1.0, 0.1f * strength);
+        cairo_pattern_add_color_stop_rgba(shade_pat.get(), 0.7, 0.0, 0.0, 0.0, 0.1f * strength);
+        cairo_pattern_add_color_stop_rgba(shade_pat.get(), 1.0, 0.0, 0.0, 0.0, 0.6f * strength);
+        cairo_set_source(cr, shade_pat.get());
+        cairo_stroke(cr);
+    } else {
+        cairo_new_path(cr);
+    }
+}
+
+void View::sync_shadow_geometry(int w, int h, int r, float sigma, int ox, int oy) {
+    if (!m_shadow_node) return;
+    int pad = static_cast<int>(std::ceil(std::max(4.0f, sigma * 2.5f)));
+
+    wlr_scene_node_set_position(&m_shadow_node->node, -pad + ox, -pad + oy);
+    wlr_scene_shadow_set_size(m_shadow_node, w + 2 * pad, h + 2 * pad);
+    wlr_scene_shadow_set_blur_sigma(m_shadow_node, sigma);
+    wlr_scene_shadow_set_corner_radius(m_shadow_node, r);
+
+    struct clipped_region cr = clipped_region_get_default();
+    cr.area.x = pad - ox;
+    cr.area.y = pad - oy;
+    cr.area.width = w;
+    cr.area.height = h;
+    cr.corners = corner_radii_all(r);
+    wlr_scene_shadow_set_clipped_region(m_shadow_node, cr);
+}
+
+void View::update_shadow() {
+    if (!Config::get().is_shadow_enabled() || !m_mapped || m_width <= 0 || m_height <= 0 ||
+        m_is_fullscreen || m_is_override_redirect) {
+        if (m_shadow_node) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, false);
+        }
+        return;
+    }
+
+    float sigma = Config::get().get_shadow_blur_sigma();
+    if (sigma <= 0.0f) {
+        if (m_shadow_node) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, false);
+        }
+        return;
+    }
+
+    if (!m_shadow_node && m_scene_tree) {
+        float initial_color[4] = {0.0f, 0.0f, 0.0f, 0.4f};
+        m_shadow_node = wlr_scene_shadow_create(m_scene_tree, m_width, m_height, 0, sigma, initial_color);
+        if (m_shadow_node) {
+            wlr_scene_node_lower_to_bottom(&m_shadow_node->node);
+        }
+    }
+
+    if (!m_shadow_node) return;
+
+    int ox = Config::get().get_shadow_offset_x();
+    int oy = Config::get().get_shadow_offset_y();
+    int radius = Config::get().get_window_border_radius();
+
+    sync_shadow_geometry(m_width, m_height, radius, sigma, ox, oy);
+
+    const std::string& col_str = is_focused()
+        ? Config::get().get_shadow_color_active()
+        : Config::get().get_shadow_color_inactive();
+    float sr = 0.0f, sg = 0.0f, sb = 0.0f, sa = 0.4f;
+    BorderPaint::parse_hex_color(col_str, sr, sg, sb, sa);
+
+    float opacity = is_focused()
+        ? Config::get().get_window_opacity_active()
+        : Config::get().get_window_opacity_inactive();
+    float final_col[4] = { sr, sg, sb, sa * opacity };
+    wlr_scene_shadow_set_color(m_shadow_node, final_col);
+
+    wlr_scene_node_set_enabled(&m_shadow_node->node, true);
 }
 
 void View::update_border() {
@@ -703,22 +809,6 @@ void View::update_border() {
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
     if (bw > 0) {
-        float r = 0.0f, g = 0.8f, b = 1.0f, a = 1.0f;
-        const std::string& color_str = is_focused()
-            ? Config::get().get_window_border_color_active()
-            : Config::get().get_window_border_color_inactive();
-
-        if (!Config::parse_hex_color(color_str, r, g, b, a)) {
-            if (is_focused()) {
-                r = 0.0f; g = 0.82f; b = 1.0f; a = 1.0f;
-            } else {
-                r = 0.16f; g = 0.16f; b = 0.21f; a = 1.0f;
-            }
-        }
-
-        cairo_set_source_rgba(cr, r, g, b, a);
-        cairo_set_line_width(cr, bw);
-
         double half_bw = bw / 2.0;
         double draw_x = half_bw;
         double draw_y = half_bw;
@@ -727,7 +817,18 @@ void View::update_border() {
         double draw_r = std::max(0.0, (double)radius - half_bw);
 
         draw_rounded_rectangle(cr, draw_x, draw_y, draw_w, draw_h, draw_r);
-        cairo_stroke(cr);
+
+        const BorderPaint& paint = is_focused()
+            ? Config::get().get_window_border_paint_active()
+            : Config::get().get_window_border_paint_inactive();
+
+        render_border_stroke(cr, paint, bw, m_width, m_height);
+
+        if (Config::get().is_window_border_shading_enabled()) {
+            render_border_shading(cr, m_height, Config::get().get_window_border_shading_strength());
+        } else {
+            cairo_new_path(cr);
+        }
     }
 
     wlr_scene_buffer_set_buffer(m_border_scene_buffer, m_border_buffer->get_wlr_buffer());
@@ -855,6 +956,13 @@ void View::apply_animation_transform(double scale, float opacity) {
                 wlr_scene_blur_set_size(m_blur_node, m_width, m_height);
             }
         }
+        if (m_shadow_node) {
+            if (safe_opacity < 0.05f || !Config::get().is_shadow_enabled() || m_is_fullscreen || m_is_override_redirect) {
+                wlr_scene_node_set_enabled(&m_shadow_node->node, false);
+            } else {
+                wlr_scene_node_set_enabled(&m_shadow_node->node, true);
+            }
+        }
         update_frame();
         return;
     }
@@ -914,6 +1022,31 @@ void View::apply_animation_transform(double scale, float opacity) {
             int base_r = (bw > 0) ? std::max(0, r - bw) : std::max(0, r);
             int scaled_r = static_cast<int>(std::round(static_cast<double>(base_r) * scale));
             wlr_scene_blur_set_corner_radius(m_blur_node, scaled_r);
+        }
+    }
+
+    if (m_shadow_node) {
+        if (safe_opacity < 0.01f || !Config::get().is_shadow_enabled() || m_is_fullscreen || m_is_override_redirect) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, false);
+        } else {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, true);
+            float sigma = Config::get().get_shadow_blur_sigma() * static_cast<float>(scale);
+            int ox = static_cast<int>(std::round(static_cast<double>(Config::get().get_shadow_offset_x()) * scale));
+            int oy = static_cast<int>(std::round(static_cast<double>(Config::get().get_shadow_offset_y()) * scale));
+            int r = (!m_is_fullscreen && !m_is_override_redirect) ? Config::get().get_window_border_radius() : 0;
+            int scaled_r = static_cast<int>(std::round(static_cast<double>(r) * scale));
+            int anim_w = std::max(1, static_cast<int>(std::round(cur_w)));
+            int anim_h = std::max(1, static_cast<int>(std::round(cur_h)));
+
+            sync_shadow_geometry(anim_w, anim_h, scaled_r, sigma, ox, oy);
+
+            const std::string& col_str = is_focused()
+                ? Config::get().get_shadow_color_active()
+                : Config::get().get_shadow_color_inactive();
+            float sr = 0.0f, sg = 0.0f, sb = 0.0f, sa = 0.4f;
+            BorderPaint::parse_hex_color(col_str, sr, sg, sb, sa);
+            float final_col[4] = { sr, sg, sb, sa * safe_opacity };
+            wlr_scene_shadow_set_color(m_shadow_node, final_col);
         }
     }
 }
@@ -1014,6 +1147,14 @@ void View::apply_geometry_animation(int cur_x, int cur_y, int cur_w, int cur_h) 
     if (m_blur_node) {
         wlr_scene_blur_set_size(m_blur_node, cur_w, cur_h);
     }
+
+    if (m_shadow_node && Config::get().is_shadow_enabled() && !m_is_fullscreen && !m_is_override_redirect) {
+        float sigma = Config::get().get_shadow_blur_sigma();
+        int ox = Config::get().get_shadow_offset_x();
+        int oy = Config::get().get_shadow_offset_y();
+        int r = Config::get().get_window_border_radius();
+        sync_shadow_geometry(cur_w, cur_h, r, sigma, ox, oy);
+    }
 }
 
 void View::finish_geometry_animation(int target_x, int target_y, int target_w, int target_h) {
@@ -1080,6 +1221,9 @@ void View::set_overview_scaled(bool scaled, double scale) {
         }
         if (m_blur_node) {
             wlr_scene_node_set_enabled(&m_blur_node->node, false);
+        }
+        if (m_shadow_node) {
+            wlr_scene_node_set_enabled(&m_shadow_node->node, false);
         }
         reapply_overview_scale();
     } else {
@@ -1417,6 +1561,10 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
 
     if (view->m_blur_node) {
         wlr_scene_node_set_enabled(&view->m_blur_node->node, false);
+    }
+
+    if (view->m_shadow_node) {
+        wlr_scene_node_set_enabled(&view->m_shadow_node->node, false);
     }
 
     // Reparent scene tree back to root scene and disable it so that if the workspace is pruned

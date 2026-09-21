@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <xkbcommon/xkbcommon.h>
 #include <wayland-server-protocol.h>
+#include "core/common/border_paint.hpp"
 
 namespace miquland {
 
@@ -214,10 +215,36 @@ public:
     void set_border_grab_area(int area) { m_border_grab_area = area; }
 
     const std::string& get_window_border_color_active() const { return m_window_border_color_active; }
-    void set_window_border_color_active(const std::string& color) { m_window_border_color_active = color; }
+    void set_window_border_color_active(const std::string& color);
 
     const std::string& get_window_border_color_inactive() const { return m_window_border_color_inactive; }
-    void set_window_border_color_inactive(const std::string& color) { m_window_border_color_inactive = color; }
+    void set_window_border_color_inactive(const std::string& color);
+
+    const BorderPaint& get_window_border_paint_active() const { return m_border_paint_active; }
+    const BorderPaint& get_window_border_paint_inactive() const { return m_border_paint_inactive; }
+
+    bool is_window_border_shading_enabled() const { return m_window_border_shading; }
+    void set_window_border_shading_enabled(bool enabled) { m_window_border_shading = enabled; }
+
+    float get_window_border_shading_strength() const { return m_window_border_shading_strength; }
+    void set_window_border_shading_strength(float strength) { m_window_border_shading_strength = std::clamp(strength, 0.0f, 1.0f); }
+
+    // Drop shadows (SceneFX)
+    bool is_shadow_enabled() const { return m_shadow_enabled; }
+    void set_shadow_enabled(bool enabled) { m_shadow_enabled = enabled; }
+
+    float get_shadow_blur_sigma() const { return m_shadow_blur_sigma; }
+    void set_shadow_blur_sigma(float sigma) { m_shadow_blur_sigma = std::max(0.0f, sigma); }
+
+    const std::string& get_shadow_color_active() const { return m_shadow_color_active; }
+    void set_shadow_color_active(const std::string& color) { m_shadow_color_active = color; }
+
+    const std::string& get_shadow_color_inactive() const { return m_shadow_color_inactive; }
+    void set_shadow_color_inactive(const std::string& color) { m_shadow_color_inactive = color; }
+
+    int get_shadow_offset_x() const { return m_shadow_offset_x; }
+    int get_shadow_offset_y() const { return m_shadow_offset_y; }
+    void set_shadow_offset(int x, int y) { m_shadow_offset_x = x; m_shadow_offset_y = y; }
 
     enum class LayoutMode {
         Spiral, // Recursive binary space partitioning (Fibonacci / BSP)
@@ -560,6 +587,17 @@ private:
 
     std::string m_window_border_color_active = "#0066ff";
     std::string m_window_border_color_inactive = "#99c2ff";
+    BorderPaint m_border_paint_active;
+    BorderPaint m_border_paint_inactive;
+    bool m_window_border_shading = false;
+    float m_window_border_shading_strength = 0.35f;
+
+    bool m_shadow_enabled = true;
+    float m_shadow_blur_sigma = 12.0f;
+    std::string m_shadow_color_active = "#00000066";
+    std::string m_shadow_color_inactive = "#00000044";
+    int m_shadow_offset_x = 0;
+    int m_shadow_offset_y = 4;
 
     std::vector<KeyBinding> m_keybindings;
     std::vector<GestureBinding> m_gesture_bindings;
