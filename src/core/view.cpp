@@ -57,6 +57,7 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     wl_list_init(&m_foreign_request_activate_listener.link);
     wl_list_init(&m_foreign_request_close_listener.link);
     wl_list_init(&m_new_popup_listener.link);
+    wl_list_init(&m_scene_tree_destroy_listener.link);
     wl_list_init(&m_associate_listener.link);
     wl_list_init(&m_dissociate_listener.link);
     wl_list_init(&m_request_configure_listener.link);
@@ -71,6 +72,9 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
     m_scene_tree->node.data = this;
     wlr_scene_node_set_enabled(&m_scene_tree->node, false);
+
+    m_scene_tree_destroy_listener.notify = handle_scene_tree_destroy;
+    wl_signal_add(&m_scene_tree->node.events.destroy, &m_scene_tree_destroy_listener);
 
     // Create xdg surface scene tree under view container tree (Child 1 - bottom layer)
     m_surface_scene_tree = wlr_scene_xdg_surface_create(m_scene_tree, toplevel->base);
@@ -162,6 +166,7 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
     wl_list_init(&m_foreign_request_activate_listener.link);
     wl_list_init(&m_foreign_request_close_listener.link);
     wl_list_init(&m_new_popup_listener.link);
+    wl_list_init(&m_scene_tree_destroy_listener.link);
     wl_list_init(&m_associate_listener.link);
     wl_list_init(&m_dissociate_listener.link);
     wl_list_init(&m_request_configure_listener.link);
@@ -175,6 +180,9 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
     // Create view container scene tree
     m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
     m_scene_tree->node.data = this;
+
+    m_scene_tree_destroy_listener.notify = handle_scene_tree_destroy;
+    wl_signal_add(&m_scene_tree->node.events.destroy, &m_scene_tree_destroy_listener);
 
     if (m_is_override_redirect) {
         m_x = xsurface->x;
@@ -303,6 +311,11 @@ View::~View() {
 
     safe_remove_listener(m_foreign_request_activate_listener);
     safe_remove_listener(m_foreign_request_close_listener);
+    safe_remove_listener(m_scene_tree_destroy_listener);
+
+    if (m_server && m_server->get_animation_manager()) {
+        m_server->get_animation_manager()->cancel_for_view(this);
+    }
 
     if (m_parent_view) {
         auto& children = m_parent_view->m_child_dialogs;
@@ -325,6 +338,8 @@ View::~View() {
         wlr_scene_node_destroy(&m_scene_tree->node);
         m_scene_tree = nullptr;
     }
+    m_surface_scene_tree = nullptr;
+    m_border_scene_buffer = nullptr;
     m_blur_node = nullptr;
     m_shadow_node = nullptr;
 }
@@ -1388,13 +1403,21 @@ void View::close() {
         return;
     }
 
+    // Windows on inactive/hidden workspaces must not visually animate onto the active screen
+    if (m_workspace && !m_workspace->is_visible()) {
+        do_send_close();
+        return;
+    }
+
     m_is_animating_close = true;
     if (m_server && m_server->get_animation_manager()) {
+        // Reparent closing view to workspaces root tree so it renders above all workspaces,
+        // below top/overlay layer surfaces, and is immune to workspace destruction/pruning
+        if (m_scene_tree && m_server->get_workspaces_tree()) {
+            wlr_scene_node_reparent(&m_scene_tree->node, m_server->get_workspaces_tree());
+            wlr_scene_node_raise_to_top(&m_scene_tree->node);
+        }
         if (m_workspace && !is_floating() && !is_dialog()) {
-            if (m_scene_tree && m_workspace->get_floating_tree()) {
-                wlr_scene_node_reparent(&m_scene_tree->node, m_workspace->get_floating_tree());
-                wlr_scene_node_raise_to_top(&m_scene_tree->node);
-            }
             m_server->get_workspace_manager()->remove_view(this);
         }
         m_server->get_animation_manager()->schedule_window_close(this, do_send_close);
@@ -1824,6 +1847,22 @@ void View::handle_foreign_request_activate(struct wl_listener* listener, void* d
 void View::handle_foreign_request_close(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_foreign_request_close_listener);
     view->close();
+}
+
+void View::handle_scene_tree_destroy(struct wl_listener* listener, void* data) {
+    View* view = wl_container_of(listener, view, m_scene_tree_destroy_listener);
+    wl_list_remove(&view->m_scene_tree_destroy_listener.link);
+    wl_list_init(&view->m_scene_tree_destroy_listener.link);
+
+    if (view->m_server && view->m_server->get_animation_manager()) {
+        view->m_server->get_animation_manager()->cancel_for_view(view);
+    }
+
+    view->m_scene_tree = nullptr;
+    view->m_surface_scene_tree = nullptr;
+    view->m_border_scene_buffer = nullptr;
+    view->m_blur_node = nullptr;
+    view->m_shadow_node = nullptr;
 }
 
 void View::handle_new_popup(struct wl_listener* listener, void* data) {

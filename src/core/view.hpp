@@ -119,6 +119,7 @@ private:
     static void handle_foreign_request_activate(struct wl_listener* listener, void* data);
     static void handle_foreign_request_close(struct wl_listener* listener, void* data);
     static void handle_new_popup(struct wl_listener* listener, void* data);
+    static void handle_scene_tree_destroy(struct wl_listener* listener, void* data);
 
     // XWayland Handlers
     static void handle_xwayland_associate(struct wl_listener* listener, void* data);
@@ -194,6 +195,7 @@ private:
     struct wl_listener m_foreign_request_activate_listener;
     struct wl_listener m_foreign_request_close_listener;
     struct wl_listener m_new_popup_listener;
+    struct wl_listener m_scene_tree_destroy_listener;
 
     // XWayland specific listeners
     struct wl_listener m_associate_listener;

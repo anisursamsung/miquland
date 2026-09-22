@@ -45,6 +45,7 @@ public:
 
     void remove_surface(SessionLockSurface* surface);
     void check_and_send_locked();
+    bool is_locked_sent() const { return m_locked_sent; }
 
     struct wlr_surface* get_active_surface() const;
     SessionLockSurface* surface_at(double lx, double ly, double* sx, double* sy);
@@ -61,6 +62,7 @@ private:
     struct wl_listener m_new_surface_listener;
     struct wl_listener m_unlock_listener;
     struct wl_listener m_destroy_listener;
+    bool m_locked_sent = false;
     bool m_unlocking = false;
 };
 

@@ -30,8 +30,14 @@ SessionLockSurface::SessionLockSurface(SessionLock* lock, struct wlr_session_loc
 }
 
 SessionLockSurface::~SessionLockSurface() {
-    wl_list_remove(&m_destroy_listener.link);
-    wl_list_remove(&m_surface_commit_listener.link);
+    if (m_destroy_listener.link.next) {
+        wl_list_remove(&m_destroy_listener.link);
+        m_destroy_listener.link.next = nullptr;
+    }
+    if (m_surface_commit_listener.link.next) {
+        wl_list_remove(&m_surface_commit_listener.link);
+        m_surface_commit_listener.link.next = nullptr;
+    }
     if (m_scene_tree) {
         wlr_scene_node_destroy(&m_scene_tree->node);
         m_scene_tree = nullptr;
@@ -40,6 +46,10 @@ SessionLockSurface::~SessionLockSurface() {
 
 void SessionLockSurface::handle_destroy(struct wl_listener* listener, void* data) {
     SessionLockSurface* surface = wl_container_of(listener, surface, m_destroy_listener);
+    if (surface->m_destroy_listener.link.next) {
+        wl_list_remove(&surface->m_destroy_listener.link);
+        surface->m_destroy_listener.link.next = nullptr;
+    }
     surface->m_lock->remove_surface(surface);
 }
 
@@ -75,9 +85,18 @@ SessionLock::SessionLock(Server* server, struct wlr_session_lock_v1* lock)
 }
 
 SessionLock::~SessionLock() {
-    wl_list_remove(&m_new_surface_listener.link);
-    wl_list_remove(&m_unlock_listener.link);
-    wl_list_remove(&m_destroy_listener.link);
+    if (m_new_surface_listener.link.next) {
+        wl_list_remove(&m_new_surface_listener.link);
+        m_new_surface_listener.link.next = nullptr;
+    }
+    if (m_unlock_listener.link.next) {
+        wl_list_remove(&m_unlock_listener.link);
+        m_unlock_listener.link.next = nullptr;
+    }
+    if (m_destroy_listener.link.next) {
+        wl_list_remove(&m_destroy_listener.link);
+        m_destroy_listener.link.next = nullptr;
+    }
     m_surfaces.clear();
 }
 
@@ -111,14 +130,37 @@ void SessionLock::remove_surface(SessionLockSurface* surface) {
 }
 
 void SessionLock::check_and_send_locked() {
-    if (!m_wlr_lock) return;
+    if (!m_wlr_lock || m_locked_sent) return;
 
     if (m_surfaces.empty()) return;
 
-    for (const auto& s : m_surfaces) {
-        if (!s->is_configured()) return;
+    // Verify all active (enabled) outputs have a configured lock surface
+    if (m_server && m_server->get_output_manager()) {
+        const auto& outputs = m_server->get_output_manager()->get_outputs();
+        for (const auto& out : outputs) {
+            if (!out || !out->get_wlr_output() || !out->get_wlr_output()->enabled) {
+                continue;
+            }
+            bool found = false;
+            for (const auto& s : m_surfaces) {
+                if (s && s->get_wlr_lock_surface() && s->get_wlr_lock_surface()->output == out->get_wlr_output()) {
+                    if (s->is_configured()) {
+                        found = true;
+                    }
+                    break;
+                }
+            }
+            if (!found) {
+                return;
+            }
+        }
     }
 
+    for (const auto& s : m_surfaces) {
+        if (!s || !s->is_configured()) return;
+    }
+
+    m_locked_sent = true;
     wlr_session_lock_v1_send_locked(m_wlr_lock);
 
     if (!m_surfaces.empty()) {
@@ -133,8 +175,9 @@ struct wlr_surface* SessionLock::get_active_surface() const {
 
 SessionLockSurface* SessionLock::surface_at(double lx, double ly, double* sx, double* sy) {
     for (const auto& s : m_surfaces) {
-        if (!s->get_wlr_lock_surface() || !s->get_wlr_surface()) continue;
+        if (!s || !s->get_wlr_lock_surface() || !s->get_wlr_surface()) continue;
         struct wlr_output* output = s->get_wlr_lock_surface()->output;
+        if (!output || !output->enabled) continue;
         struct wlr_output_layout* layout = m_server->get_output_manager()->get_layout();
         struct wlr_output_layout_output* layout_output = wlr_output_layout_get(layout, output);
         if (layout_output) {

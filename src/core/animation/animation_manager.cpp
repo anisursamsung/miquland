@@ -1181,7 +1181,7 @@ void AnimationManager::tick(double now_ms) {
 
     // 2. Tick view geometry animations (smooth tiling transitions)
     for (auto& anim : m_geometry_animations) {
-        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped()) {
+        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped() || !anim.view->get_scene_tree()) {
             anim.completed = true;
             continue;
         }
@@ -1217,7 +1217,7 @@ void AnimationManager::tick(double now_ms) {
 
     // 3. Tick view pop-in / fade animations (open & close transforms)
     for (auto& anim : m_view_animations) {
-        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped()) {
+        if (!anim.view || !m_server || !m_server->is_valid_view(anim.view) || !anim.view->is_mapped() || !anim.view->get_scene_tree()) {
             anim.completed = true;
             continue;
         }
