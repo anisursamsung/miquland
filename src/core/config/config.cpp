@@ -1223,10 +1223,10 @@ static Config::LayerAnimStyle parse_layer_anim_style(const std::string& str) {
     if (lower == "fold" || lower == "roll") return Config::LayerAnimStyle::Unroll;
     if (lower == "unfold" || lower == "unroll_center" || lower == "expand_vertical") return Config::LayerAnimStyle::Unfold;
     if (lower == "popin") return Config::LayerAnimStyle::Popin;
-    if (lower == "slidetop" || lower == "slide_top" || lower == "top") return Config::LayerAnimStyle::SlideTop;
-    if (lower == "slidebottom" || lower == "slide_bottom" || lower == "bottom") return Config::LayerAnimStyle::SlideBottom;
-    if (lower == "slideleft" || lower == "slide_left" || lower == "left") return Config::LayerAnimStyle::SlideLeft;
-    if (lower == "slideright" || lower == "slide_right" || lower == "right") return Config::LayerAnimStyle::SlideRight;
+    if (lower == "slidetop" || lower == "slide_top" || lower == "slide top" || lower == "top") return Config::LayerAnimStyle::SlideTop;
+    if (lower == "slidebottom" || lower == "slide_bottom" || lower == "slide bottom" || lower == "bottom") return Config::LayerAnimStyle::SlideBottom;
+    if (lower == "slideleft" || lower == "slide_left" || lower == "slide left" || lower == "left") return Config::LayerAnimStyle::SlideLeft;
+    if (lower == "slideright" || lower == "slide_right" || lower == "slide right" || lower == "right") return Config::LayerAnimStyle::SlideRight;
     if (lower == "slide") return Config::LayerAnimStyle::Slide;
     return Config::LayerAnimStyle::DefaultAuto;
 }
