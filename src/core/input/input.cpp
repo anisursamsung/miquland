@@ -1040,6 +1040,11 @@ void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void*
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_begin_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_begin_event*>(data);
     (void)event;
+
+    if (manager->m_server->is_locked()) {
+        return;
+    }
+
     manager->m_swipe_dx = 0.0;
     manager->m_swipe_dy = 0.0;
     manager->m_swipe_triggered = false;
@@ -1049,6 +1054,10 @@ void InputManager::handle_cursor_swipe_begin(struct wl_listener* listener, void*
 void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_update_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_update_event*>(data);
+
+    if (manager->m_server->is_locked()) {
+        return;
+    }
 
     double screen_w = 1920.0;
     if (manager->m_server && manager->m_server->get_output_manager()) {
@@ -1102,6 +1111,10 @@ void InputManager::handle_cursor_swipe_update(struct wl_listener* listener, void
 void InputManager::handle_cursor_swipe_end(struct wl_listener* listener, void* data) {
     InputManager* manager = wl_container_of(listener, manager, m_cursor_swipe_end_listener);
     auto* event = static_cast<struct wlr_pointer_swipe_end_event*>(data);
+
+    if (manager->m_server->is_locked()) {
+        return;
+    }
 
     if (manager->m_touchpad_workspace_swipe_active) {
         manager->m_server->get_animation_manager()->end_workspace_swipe(event->cancelled);
@@ -1248,6 +1261,15 @@ void InputManager::handle_cursor_touch_motion(struct wl_listener* listener, void
 
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(manager->m_cursor, &event->touch->base, event->x, event->y, &lx, &ly);
+
+    if (manager->m_server->is_locked()) {
+        double sx = 0.0, sy = 0.0;
+        SessionLockSurface* lock_surf = manager->m_server->get_session_lock()->surface_at(lx, ly, &sx, &sy);
+        if (lock_surf && lock_surf->get_wlr_surface()) {
+            wlr_seat_touch_notify_motion(manager->m_seat, event->time_msec, event->touch_id, sx, sy);
+        }
+        return;
+    }
 
     auto it = manager->m_touch_points.find(event->touch_id);
     if (it != manager->m_touch_points.end()) {
