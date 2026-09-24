@@ -54,6 +54,9 @@ public:
     bool is_smart_gaps_enabled() const { return m_smart_gaps; }
     void set_smart_gaps_enabled(bool enabled) { m_smart_gaps = enabled; }
 
+    bool is_tearing_allowed() const { return m_allow_tearing; }
+    void set_tearing_allowed(bool enabled) { m_allow_tearing = enabled; }
+
     bool is_animations_enabled() const { return m_animations_enabled; }
     void set_animations_enabled(bool enabled) { m_animations_enabled = enabled; }
 
@@ -438,6 +441,7 @@ public:
     const std::vector<WindowRule>& get_window_rules() const { return m_window_rules; }
     void add_window_rule(const WindowRule& rule) { m_window_rules.push_back(rule); }
     bool should_float(const std::string& app_id, const std::string& title) const;
+    bool should_tear(const std::string& app_id, const std::string& title) const;
     int get_target_workspace(const std::string& app_id, const std::string& title) const;
     float get_rule_opacity(const std::string& app_id, const std::string& title, float default_val) const;
 
@@ -573,6 +577,7 @@ private:
     int m_border_grab_area = 5;
     int m_space_between_windows = 8;
     int m_screen_edge_padding = 10;
+    bool m_allow_tearing = false;
     float m_window_opacity_active = 1.0f;
     float m_window_opacity_inactive = 0.85f;
     bool m_blur_enabled = true;

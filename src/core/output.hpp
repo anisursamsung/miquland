@@ -21,6 +21,8 @@ public:
     const struct wlr_box& get_usable_area() const { return m_usable_area; }
     void set_usable_area(const struct wlr_box& area) { m_usable_area = area; }
 
+    bool commit_tearing();
+
 private:
     static void handle_frame(struct wl_listener* listener, void* data);
     static void handle_request_state(struct wl_listener* listener, void* data);

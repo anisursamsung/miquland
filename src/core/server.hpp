@@ -47,6 +47,7 @@ public:
     InputManager* get_input_manager() const { return m_input_manager.get(); }
     PluginManager* get_plugin_manager() const { return m_plugin_manager.get(); }
     AnimationManager* get_animation_manager() const { return m_animation_manager.get(); }
+    struct wlr_tearing_control_manager_v1* get_tearing_manager() const { return m_tearing_manager; }
 
     void add_view(std::unique_ptr<View> view);
     void remove_view(View* view);
@@ -138,6 +139,7 @@ private:
     struct wlr_pointer_constraints_v1* m_pointer_constraints = nullptr;
     struct wlr_viewporter* m_viewporter = nullptr;
     struct wlr_fractional_scale_manager_v1* m_fractional_scale_manager = nullptr;
+    struct wlr_tearing_control_manager_v1* m_tearing_manager = nullptr;
     size_t m_idle_inhibitor_count = 0;
 
     const char* m_socket_name = nullptr;

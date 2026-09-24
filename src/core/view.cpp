@@ -436,6 +436,57 @@ float View::get_output_scale() const {
     return 1.0f;
 }
 
+Output* View::get_output() const {
+    if (!m_server || !m_server->get_output_manager()) return nullptr;
+    auto* layout = m_server->get_output_manager()->get_layout();
+    if (!layout) return m_server->get_output_manager()->get_primary_output();
+
+    double cx = m_x + (m_width > 0 ? m_width : 1) / 2.0;
+    double cy = m_y + (m_height > 0 ? m_height : 1) / 2.0;
+    struct wlr_output* wlr_out = wlr_output_layout_output_at(layout, cx, cy);
+    if (wlr_out) {
+        return m_server->get_output_manager()->find_output(wlr_out);
+    }
+    return m_server->get_output_manager()->get_primary_output();
+}
+
+struct wlr_surface* View::get_wlr_surface() const {
+    if (m_type == ViewType::Xdg && m_xdg_toplevel && m_xdg_toplevel->base) {
+        return m_xdg_toplevel->base->surface;
+    }
+    if (m_type == ViewType::XWayland && m_xwayland_surface) {
+        return m_xwayland_surface->surface;
+    }
+    return nullptr;
+}
+
+bool View::tearing_allowed() const {
+    if (!Config::get().is_tearing_allowed()) {
+        return false;
+    }
+
+    if (!m_is_fullscreen || m_is_overview_scaled || has_child_dialogs()) {
+        return false;
+    }
+
+    std::string app_id = get_app_id();
+    std::string title = get_title();
+    if (Config::get().should_tear(app_id, title)) {
+        return true;
+    }
+
+    struct wlr_surface* surface = get_wlr_surface();
+    if (surface && m_server && m_server->get_tearing_manager()) {
+        enum wp_tearing_control_v1_presentation_hint hint =
+            wlr_tearing_control_manager_v1_surface_hint_from_surface(m_server->get_tearing_manager(), surface);
+        if (hint == WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void View::set_geometry(int x, int y, int width, int height) {
     if (m_x == x && m_y == y && m_width == width && m_height == height && m_mapped) {
         return;
@@ -1742,6 +1793,13 @@ void View::handle_commit(struct wl_listener* listener, void* data) {
             view->reapply_overview_scale();
         } else {
             view->update_frame();
+        }
+
+        if (view->tearing_allowed()) {
+            Output* out = view->get_output();
+            if (out) {
+                out->commit_tearing();
+            }
         }
     }
 }

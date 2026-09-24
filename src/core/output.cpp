@@ -134,6 +134,33 @@ void Output::handle_frame(struct wl_listener* listener, void* data) {
     wlr_scene_output_send_frame_done(output->m_scene_output, &now);
 }
 
+bool Output::commit_tearing() {
+    if (!m_scene_output || !m_wlr_output) return false;
+
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+
+    if (!wlr_scene_output_build_state(m_scene_output, &state, nullptr)) {
+        wlr_output_state_finish(&state);
+        return false;
+    }
+
+    state.tearing_page_flip = true;
+
+    bool ok = wlr_output_commit_state(m_wlr_output, &state);
+    wlr_output_state_finish(&state);
+
+    if (ok) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        wlr_scene_output_send_frame_done(m_scene_output, &now);
+        return true;
+    }
+
+    wlr_output_schedule_frame(m_wlr_output);
+    return false;
+}
+
 void Output::handle_request_state(struct wl_listener* listener, void* data) {
     Output* output = wl_container_of(listener, output, m_request_state_listener);
     auto* event = static_cast<struct wlr_output_event_request_state*>(data);

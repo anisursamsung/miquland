@@ -122,6 +122,7 @@ void Config::set_defaults() {
 
     m_focus_follows_mouse = true;
     m_smart_gaps = false;
+    m_allow_tearing = false;
     m_xwayland_force_zero_scaling = false;
     m_cursor_theme = "";
     m_cursor_size = 24;
@@ -207,6 +208,17 @@ bool Config::should_float(const std::string& app_id, const std::string& title) c
             if (matches_target(r.target, app_id) || matches_target(r.target, title)) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+bool Config::should_tear(const std::string& app_id, const std::string& title) const {
+    if (!m_allow_tearing) return false;
+    for (const auto& r : m_window_rules) {
+        if ((r.rule == "immediate" || r.rule == "tearing") &&
+            (matches_target(r.target, app_id) || matches_target(r.target, title))) {
+            return (r.extra.empty() || r.extra == "true" || r.extra == "1" || r.extra == "yes");
         }
     }
     return false;
@@ -936,6 +948,8 @@ void Config::parse_general_entry(const std::string& path_str, const std::string&
             try { m_default_split_ratio = std::clamp(std::stod(value), 0.1, 0.9); } catch (...) {}
         } else if (key == "smart_gaps") {
             m_smart_gaps = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "allow_tearing" || key == "tearing") {
+            m_allow_tearing = (value == "true" || value == "1" || value == "yes");
         } else if (key == "workspace_cycle") {
             m_workspace_cycle = (value == "true" || value == "1" || value == "yes");
         } else if (key == "resize_on_border") {
@@ -1517,6 +1531,9 @@ void Config::parse_windowrule_entry(const std::string& target, const std::string
     } else if (key == "blur") {
         file_rules.push_back({ "blur", target, value });
         has_rules_in_file = true;
+    } else if (key == "immediate" || key == "tearing") {
+        file_rules.push_back({ "immediate", target, value });
+        has_rules_in_file = true;
     }
 }
 
@@ -1726,6 +1743,7 @@ void Config::save() {
     file << "    layout = " << (m_layout_mode == LayoutMode::Stack ? "stack" : "spiral") << "\n";
     file << "    default_split_ratio = " << m_default_split_ratio << "\n";
     file << "    smart_gaps = " << (m_smart_gaps ? "true" : "false") << "\n";
+    file << "    allow_tearing = " << (m_allow_tearing ? "true" : "false") << "\n";
     file << "    workspace_cycle = " << (m_workspace_cycle ? "true" : "false") << "\n";
     file << "    resize_on_border = " << (m_resize_on_border ? "true" : "false") << "\n";
     file << "    border_grab_area = " << m_border_grab_area << "\n";
@@ -1895,6 +1913,7 @@ void Config::save() {
         else if (r.rule == "opacity") file << "    opacity = " << r.extra << "\n";
         else if (r.rule == "center") file << "    center = true\n";
         else if (r.rule == "size") file << "    size = " << r.extra << "\n";
+        else if (r.rule == "immediate" || r.rule == "tearing") file << "    immediate = true\n";
         file << "}\n\n";
     }
 

@@ -13,6 +13,7 @@ namespace miquland {
 class Server;
 class Workspace;
 class Popup;
+class Output;
 
 enum class ViewType {
     Xdg,
@@ -98,6 +99,9 @@ public:
     bool is_animating_open() const { return m_is_animating_open; }
     void set_animating_open(bool animating) { m_is_animating_open = animating; }
     float get_output_scale() const;
+    Output* get_output() const;
+    struct wlr_surface* get_wlr_surface() const;
+    bool tearing_allowed() const;
 
     void set_overview_scaled(bool scaled, double scale = 1.0);
     void reapply_overview_scale();

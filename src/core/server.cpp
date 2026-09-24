@@ -237,6 +237,10 @@ bool Server::init() {
 
     m_viewporter = wlr_viewporter_create(m_wl_display);
     m_fractional_scale_manager = wlr_fractional_scale_manager_v1_create(m_wl_display, 1);
+    m_tearing_manager = wlr_tearing_control_manager_v1_create(m_wl_display, 1);
+    if (m_tearing_manager) {
+        log_info("Initialized tearing control protocol manager v1");
+    }
 
     m_xwayland = wlr_xwayland_create(m_wl_display, m_wlr_compositor, true);
     if (m_xwayland) {

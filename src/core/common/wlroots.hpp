@@ -84,6 +84,7 @@ extern "C" {
 #include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
+#include <wlr/types/wlr_tearing_control_v1.h>
 
 #ifdef __cplusplus
 }
