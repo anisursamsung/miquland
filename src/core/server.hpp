@@ -86,6 +86,7 @@ public:
     void reload_config();
 
     struct wlr_scene_tree* get_session_lock_tree() const { return m_session_lock_tree; }
+    struct wlr_scene_tree* get_popup_tree() const { return m_popup_tree; }
     bool is_locked() const;
     SessionLock* get_session_lock() const;
     void unlock_session();
@@ -115,6 +116,7 @@ private:
     struct wlr_scene_tree* m_layer_bottom_tree = nullptr;
     struct wlr_scene_tree* m_workspaces_tree = nullptr;
     struct wlr_scene_tree* m_layer_top_tree = nullptr;
+    struct wlr_scene_tree* m_popup_tree = nullptr;
     struct wlr_scene_tree* m_layer_overlay_tree = nullptr;
     struct wlr_scene_tree* m_session_lock_tree = nullptr;
 

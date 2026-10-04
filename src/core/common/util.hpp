@@ -25,6 +25,13 @@ inline void log_debug(const std::string& msg) {
     wlr_log(WLR_DEBUG, "%s", msg.c_str());
 }
 
+inline void safe_remove_listener(struct wl_listener& listener) {
+    if (listener.link.prev != nullptr && listener.link.next != nullptr && !wl_list_empty(&listener.link)) {
+        wl_list_remove(&listener.link);
+        wl_list_init(&listener.link);
+    }
+}
+
 inline void spawn_async_command(const std::vector<std::string>& argv) {
     if (argv.empty()) return;
     pid_t pid = fork();

@@ -813,13 +813,13 @@ void InputManager::process_cursor_motion(uint32_t time) {
                 m_border_hover_view = view;
                 m_border_hover_edges = edges;
                 set_cursor_icon(edge_to_cursor_name(edges));
-                wlr_seat_pointer_clear_focus(m_seat);
+                wlr_seat_pointer_notify_clear_focus(m_seat);
                 return;
             }
         }
 
         set_cursor_icon("default");
-        wlr_seat_pointer_clear_focus(m_seat);
+        wlr_seat_pointer_notify_clear_focus(m_seat);
         return;
     }
 
@@ -838,7 +838,11 @@ void InputManager::process_cursor_motion(uint32_t time) {
     }
 
     // Hover to focus: if enabled and cursor hovers over a view, focus it!
-    if (Config::get().is_focus_follows_mouse_enabled()) {
+    // Inhibit focus switching while a popup grab is active or while the focused view has active popups
+    bool has_grab = wlr_seat_pointer_has_grab(m_seat) || wlr_seat_keyboard_has_grab(m_seat);
+    bool focused_has_popups = (m_server->get_focused_view() && m_server->get_focused_view()->has_popups());
+
+    if (Config::get().is_focus_follows_mouse_enabled() && !has_grab && !focused_has_popups) {
         if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
             target_view->focus();
         }
@@ -987,7 +991,7 @@ void InputManager::handle_cursor_button(struct wl_listener* listener, void* data
             }
         }
 
-        if (target_view && !target_view->is_override_redirect()) {
+        if (target_view && !target_view->is_override_redirect() && target_view != manager->m_server->get_focused_view()) {
             target_view->focus();
         }
     }

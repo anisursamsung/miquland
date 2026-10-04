@@ -66,6 +66,7 @@ public:
     bool has_child_dialogs() const;
     View* get_top_dialog() const;
     const std::vector<View*>& get_child_dialogs() const { return m_child_dialogs; }
+    bool has_popups() const { return !m_popups.empty(); }
 
     struct wlr_xdg_toplevel* get_xdg_toplevel() const { return m_xdg_toplevel; }
     struct wlr_xwayland_surface* get_xwayland_surface() const { return m_xwayland_surface; }

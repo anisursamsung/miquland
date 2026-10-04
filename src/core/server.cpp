@@ -159,6 +159,7 @@ bool Server::init() {
     m_workspaces_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_top_tree = wlr_scene_tree_create(&m_scene->tree);
     m_layer_overlay_tree = wlr_scene_tree_create(&m_scene->tree);
+    m_popup_tree = wlr_scene_tree_create(&m_scene->tree);
     m_session_lock_tree = wlr_scene_tree_create(&m_scene->tree);
 
     m_session_lock_manager = wlr_session_lock_manager_v1_create(m_wl_display);

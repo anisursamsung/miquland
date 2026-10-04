@@ -952,6 +952,8 @@ void Config::parse_general_entry(const std::string& path_str, const std::string&
             m_allow_tearing = (value == "true" || value == "1" || value == "yes");
         } else if (key == "workspace_cycle") {
             m_workspace_cycle = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "auto_float_fixed_size") {
+            m_auto_float_fixed_size = (value == "true" || value == "1" || value == "yes");
         } else if (key == "resize_on_border") {
             m_resize_on_border = (value == "true" || value == "1" || value == "yes");
         } else if (key == "border_grab_area") {

@@ -386,7 +386,10 @@ void LayerSurface::handle_new_popup(struct wl_listener* listener, void* data) {
 
     if (!surface->m_scene_layer_surface) return;
 
-    auto p = std::make_unique<Popup>(popup, surface->m_scene_layer_surface->tree, surface, [surface](Popup* target) {
+    struct wlr_scene_tree* popup_layer = surface->m_server ? surface->m_server->get_popup_tree() : nullptr;
+    if (!popup_layer) popup_layer = surface->m_scene_layer_surface->tree;
+
+    auto p = std::make_unique<Popup>(popup, popup_layer, surface, [surface](Popup* target) {
         for (auto it = surface->m_popups.begin(); it != surface->m_popups.end(); ++it) {
             if (it->get() == target) {
                 surface->m_popups.erase(it);

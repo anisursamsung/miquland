@@ -29,13 +29,6 @@ static void draw_rounded_rectangle(cairo_t* cr, double x, double y, double w, do
 
 namespace {
 static std::atomic<uint64_t> s_next_view_id{1};
-
-static void safe_remove_listener(struct wl_listener& listener) {
-    if (!wl_list_empty(&listener.link)) {
-        wl_list_remove(&listener.link);
-        wl_list_init(&listener.link);
-    }
-}
 }
 
 View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
@@ -68,8 +61,9 @@ View::View(Server* server, struct wlr_xdg_toplevel* toplevel)
     wl_list_init(&m_set_class_listener.link);
     wl_list_init(&m_set_override_redirect_listener.link);
 
-    // Create view container scene tree under root scene (reparented to workspace later)
-    m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
+    // Create view container scene tree under workspaces tree (reparented to specific workspace later)
+    struct wlr_scene_tree* root_parent = server->get_workspaces_tree() ? server->get_workspaces_tree() : &server->get_scene()->tree;
+    m_scene_tree = wlr_scene_tree_create(root_parent);
     m_scene_tree->node.data = this;
     wlr_scene_node_set_enabled(&m_scene_tree->node, false);
 
@@ -177,8 +171,12 @@ View::View(Server* server, struct wlr_xwayland_surface* xsurface)
     wl_list_init(&m_set_class_listener.link);
     wl_list_init(&m_set_override_redirect_listener.link);
 
-    // Create view container scene tree
-    m_scene_tree = wlr_scene_tree_create(&server->get_scene()->tree);
+    // Create view container scene tree: override-redirect windows (popups/menus) belong in popup_tree,
+    // while regular application windows belong under workspaces_tree
+    struct wlr_scene_tree* root_parent = m_is_override_redirect
+        ? (server->get_popup_tree() ? server->get_popup_tree() : &server->get_scene()->tree)
+        : (server->get_workspaces_tree() ? server->get_workspaces_tree() : &server->get_scene()->tree);
+    m_scene_tree = wlr_scene_tree_create(root_parent);
     m_scene_tree->node.data = this;
 
     m_scene_tree_destroy_listener.notify = handle_scene_tree_destroy;
@@ -568,6 +566,10 @@ void View::set_geometry(int x, int y, int width, int height) {
     }
 
     update_frame();
+
+    for (auto& popup : m_popups) {
+        if (popup) popup->update_position();
+    }
 
     if (m_workspace && !m_child_dialogs.empty()) {
         auto* out_mgr = m_server->get_output_manager();
@@ -1271,6 +1273,10 @@ void View::finish_geometry_animation(int target_x, int target_y, int target_w, i
     }
 
     update_frame();
+
+    for (auto& popup : m_popups) {
+        if (popup) popup->update_position();
+    }
 }
 
 void View::set_overview_scaled(bool scaled, double scale) {
@@ -1382,7 +1388,16 @@ void View::focus() {
     }
 
     View* prev = m_server->get_focused_view();
-    if (prev && prev != this) {
+    if (prev == this) {
+        for (auto& popup : m_popups) {
+            if (popup && popup->get_scene_tree()) {
+                wlr_scene_node_raise_to_top(&popup->get_scene_tree()->node);
+            }
+        }
+        return;
+    }
+
+    if (prev) {
         if (prev->m_type == ViewType::Xdg && prev->m_xdg_toplevel) {
             wlr_xdg_toplevel_set_activated(prev->m_xdg_toplevel, false);
         } else if (prev->m_type == ViewType::XWayland && prev->m_xwayland_surface) {
@@ -1400,6 +1415,11 @@ void View::focus() {
         for (auto* dialog : m_child_dialogs) {
             if (dialog && dialog->is_mapped() && dialog->get_scene_tree()) {
                 wlr_scene_node_raise_to_top(&dialog->get_scene_tree()->node);
+            }
+        }
+        for (auto& popup : m_popups) {
+            if (popup && popup->get_scene_tree()) {
+                wlr_scene_node_raise_to_top(&popup->get_scene_tree()->node);
             }
         }
     }
@@ -1477,6 +1497,19 @@ void View::close() {
     }
 }
 
+// Returns true when an xdg_toplevel has declared fixed, non-resizable dimensions by
+// setting min_width == max_width (and min_height == max_height) to the same positive
+// value.  This is the canonical Wayland signal that the client cannot be freely
+// resized, so we should float-and-center it rather than force a tile geometry onto it.
+static bool is_fixed_size_xdg_toplevel(struct wlr_xdg_toplevel* toplevel) {
+    if (!toplevel) return false;
+    const auto& s = toplevel->current;
+
+    const bool w_fixed = (s.min_width > 0 && s.max_width > 0 && s.min_width == s.max_width);
+    const bool h_fixed = (s.min_height > 0 && s.max_height > 0 && s.min_height == s.max_height);
+    return w_fixed && h_fixed;
+}
+
 void View::handle_map(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_map_listener);
     view->m_mapped = true;
@@ -1540,6 +1573,12 @@ void View::handle_map(struct wl_listener* listener, void* data) {
                    app_id == "pip" || app_id == "Picture-in-Picture");
 
     if (Config::get().should_float(app_id, title) || is_pip) {
+        view->set_floating(true);
+    } else if (view->m_type == ViewType::Xdg &&
+               Config::get().is_auto_float_fixed_size_enabled() &&
+               is_fixed_size_xdg_toplevel(view->m_xdg_toplevel)) {
+        // The client declared fixed, non-resizable size constraints (min==max).
+        // Tiling it would force a geometry it cannot honour; float and center it instead.
         view->set_floating(true);
     }
 
@@ -1927,10 +1966,14 @@ void View::handle_new_popup(struct wl_listener* listener, void* data) {
     View* view = wl_container_of(listener, view, m_new_popup_listener);
     auto* popup = static_cast<struct wlr_xdg_popup*>(data);
 
-    struct wlr_scene_tree* parent_tree = view->m_surface_scene_tree ? view->m_surface_scene_tree : view->get_scene_tree();
-    if (!parent_tree) return;
+    Server* server = view->m_server;
+    struct wlr_scene_tree* popup_layer = server ? server->get_popup_tree() : nullptr;
+    if (!popup_layer) {
+        popup_layer = view->m_surface_scene_tree ? view->m_surface_scene_tree : view->get_scene_tree();
+    }
+    if (!popup_layer) return;
 
-    auto p = std::make_unique<Popup>(popup, parent_tree, view, [view](Popup* target) {
+    auto p = std::make_unique<Popup>(popup, popup_layer, view, [view](Popup* target) {
         for (auto it = view->m_popups.begin(); it != view->m_popups.end(); ++it) {
             if (it->get() == target) {
                 view->m_popups.erase(it);
@@ -2085,6 +2128,10 @@ void View::handle_xwayland_set_override_redirect(struct wl_listener* listener, v
             view->m_server->get_workspace_manager()->remove_view(view);
             if (view->m_border_scene_buffer) {
                 wlr_scene_node_set_enabled(&view->m_border_scene_buffer->node, false);
+            }
+            if (view->m_scene_tree && view->m_server->get_popup_tree()) {
+                wlr_scene_node_reparent(&view->m_scene_tree->node, view->m_server->get_popup_tree());
+                wlr_scene_node_raise_to_top(&view->m_scene_tree->node);
             }
         } else {
             view->m_server->get_workspace_manager()->add_view_auto(view);
