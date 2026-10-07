@@ -44,6 +44,15 @@ void AnimationManager::schedule_workspace_transition(
     cancel_for_workspace(from_ws);
     cancel_for_workspace(to_ws);
 
+    // Cancel any in-flight workspace node animations to prevent stale lingering animations
+    for (auto it = m_animations.begin(); it != m_animations.end(); ) {
+        if (it->bound_workspace_id != 0) {
+            it = m_animations.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     int duration = Config::get().get_workspace_animation_duration_ms();
     auto easing = Easing::from_name(Config::get().get_workspace_animation_curve());
     int offset = slide_right ? screen_width : -screen_width;

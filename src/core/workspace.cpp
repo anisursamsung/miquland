@@ -424,6 +424,12 @@ void WorkspaceManager::switch_to_workspace(size_t id, View* focus_view) {
             m_server->set_focused_view(nullptr);
         }
     }
+
+    if (!m_server->get_animation_manager() || !Config::get().is_workspace_animations_enabled()) {
+        if (m_server->get_input_manager()) {
+            m_server->get_input_manager()->recheck_cursor_focus();
+        }
+    }
 }
 
 void WorkspaceManager::commit_workspace_switch(size_t id) {
@@ -449,6 +455,10 @@ void WorkspaceManager::commit_workspace_switch(size_t id) {
         best->focus();
     } else {
         m_server->set_focused_view(nullptr);
+    }
+
+    if (m_server->get_input_manager()) {
+        m_server->get_input_manager()->recheck_cursor_focus();
     }
 }
 
@@ -672,6 +682,22 @@ View* WorkspaceManager::find_best_focus_view(Workspace* ws) const {
 
     if (!has_cursor) {
         return ws->get_view(0);
+    }
+
+    // If workspace is on-screen and visible, check for direct surface hit under cursor first
+    if (ws->is_visible() && ws->get_scene_tree() && ws->get_scene_tree()->node.x == 0 && ws->get_scene_tree()->node.y == 0) {
+        double sx = 0.0, sy = 0.0;
+        struct wlr_surface* surface = nullptr;
+        View* direct_v = m_server->view_at(cursor_x, cursor_y, &surface, &sx, &sy);
+        if (direct_v && direct_v->get_workspace() == ws && !direct_v->is_animating_close() && !direct_v->is_override_redirect()) {
+            if (direct_v->has_child_dialogs()) {
+                View* top_dialog = direct_v->get_top_dialog();
+                if (top_dialog && top_dialog->is_mapped() && !top_dialog->is_animating_close()) {
+                    return top_dialog;
+                }
+            }
+            return direct_v;
+        }
     }
 
     int cx = static_cast<int>(std::round(cursor_x));

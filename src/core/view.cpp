@@ -1394,6 +1394,11 @@ void View::focus() {
                 wlr_scene_node_raise_to_top(&popup->get_scene_tree()->node);
             }
         }
+        for (const auto& v : m_server->get_views()) {
+            if (v && v->is_mapped() && v->is_override_redirect() && v->get_scene_tree()) {
+                wlr_scene_node_raise_to_top(&v->get_scene_tree()->node);
+            }
+        }
         return;
     }
 
@@ -1422,6 +1427,11 @@ void View::focus() {
                 wlr_scene_node_raise_to_top(&popup->get_scene_tree()->node);
             }
         }
+        for (const auto& v : m_server->get_views()) {
+            if (v && v->is_mapped() && v->is_override_redirect() && v->get_scene_tree()) {
+                wlr_scene_node_raise_to_top(&v->get_scene_tree()->node);
+            }
+        }
     }
 
     struct wlr_surface* target_surface = nullptr;
@@ -1431,7 +1441,6 @@ void View::focus() {
     } else if (m_type == ViewType::XWayland && m_xwayland_surface) {
         if (!is_override_redirect()) {
             wlr_xwayland_surface_activate(m_xwayland_surface, true);
-            wlr_xwayland_surface_restack(m_xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
         }
         target_surface = m_xwayland_surface->surface;
     }
@@ -1452,6 +1461,21 @@ void View::focus() {
         if (keyboard) {
             wlr_seat_keyboard_notify_enter(seat, target_surface,
                 keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers);
+        }
+
+        if (seat && m_server->get_input_manager()) {
+            auto* cursor = m_server->get_input_manager()->get_cursor();
+            if (cursor) {
+                double sx = 0.0, sy = 0.0;
+                struct wlr_surface* surf_at_cursor = nullptr;
+                View* v = m_server->view_at(cursor->x, cursor->y, &surf_at_cursor, &sx, &sy);
+                if (v == this && surf_at_cursor) {
+                    if (seat->pointer_state.focused_surface != surf_at_cursor) {
+                        wlr_seat_pointer_notify_enter(seat, surf_at_cursor, sx, sy);
+                    }
+                    wlr_seat_pointer_notify_motion(seat, 0, sx, sy);
+                }
+            }
         }
     }
 }
@@ -1541,8 +1565,18 @@ void View::handle_map(struct wl_listener* listener, void* data) {
         }
 
         if (view->is_override_redirect()) {
+            if (view->m_server && view->m_server->get_popup_tree() && view->m_scene_tree &&
+                view->m_scene_tree->node.parent != view->m_server->get_popup_tree()) {
+                wlr_scene_node_reparent(&view->m_scene_tree->node, view->m_server->get_popup_tree());
+            }
+
             int lx = view->m_xwayland_surface->x;
             int ly = view->m_xwayland_surface->y;
+            view->m_x = lx;
+            view->m_y = ly;
+            view->m_width = view->m_xwayland_surface->width;
+            view->m_height = view->m_xwayland_surface->height;
+
             if (Config::get().is_xwayland_force_zero_scaling_enabled()) {
                 float scale = view->get_output_scale();
                 if (scale > 1.001f) {
@@ -1682,7 +1716,7 @@ void View::handle_unmap(struct wl_listener* listener, void* data) {
 
     // Reparent scene tree back to root scene and disable it so that if the workspace is pruned
     // while the window is hidden/minimized to tray, view->m_scene_tree is not destroyed!
-    if (view->m_scene_tree && view->m_server && view->m_server->get_scene()) {
+    if (!view->is_override_redirect() && view->m_scene_tree && view->m_server && view->m_server->get_scene()) {
         wlr_scene_node_reparent(&view->m_scene_tree->node, &view->m_server->get_scene()->tree);
         wlr_scene_node_set_enabled(&view->m_scene_tree->node, false);
     }

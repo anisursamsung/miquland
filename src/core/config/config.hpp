@@ -48,8 +48,7 @@ public:
     void load();
     void save();
 
-    bool is_focus_follows_mouse_enabled() const { return m_focus_follows_mouse; }
-    void set_focus_follows_mouse_enabled(bool enabled) { m_focus_follows_mouse = enabled; }
+    bool is_focus_follows_mouse_enabled() const { return true; }
 
     bool is_smart_gaps_enabled() const { return m_smart_gaps; }
     void set_smart_gaps_enabled(bool enabled) { m_smart_gaps = enabled; }
@@ -509,7 +508,6 @@ private:
     std::vector<std::string> m_exec_commands;
     std::vector<std::string> m_exec_once_commands;
 
-    bool m_focus_follows_mouse = true;
     bool m_smart_gaps = false;
     bool m_animations_enabled = true;
     bool m_workspace_animations_enabled = true;

@@ -58,16 +58,17 @@ Server::~Server() {
     if (m_foreign_toplevel_manager) {
         // Destroyed with display
     }
+    if (!wl_list_empty(&m_xwayland_ready_listener.link)) wl_list_remove(&m_xwayland_ready_listener.link);
+    if (!wl_list_empty(&m_xwayland_new_surface_listener.link)) wl_list_remove(&m_xwayland_new_surface_listener.link);
     if (m_xwayland) {
         wlr_xwayland_destroy(m_xwayland);
+        m_xwayland = nullptr;
     }
 
     if (!wl_list_empty(&m_new_xdg_toplevel_listener.link)) wl_list_remove(&m_new_xdg_toplevel_listener.link);
     if (!wl_list_empty(&m_new_layer_shell_surface_listener.link)) wl_list_remove(&m_new_layer_shell_surface_listener.link);
     if (!wl_list_empty(&m_session_lock_new_lock_listener.link)) wl_list_remove(&m_session_lock_new_lock_listener.link);
     if (!wl_list_empty(&m_ext_workspace_commit_listener.link)) wl_list_remove(&m_ext_workspace_commit_listener.link);
-    if (!wl_list_empty(&m_xwayland_ready_listener.link)) wl_list_remove(&m_xwayland_ready_listener.link);
-    if (!wl_list_empty(&m_xwayland_new_surface_listener.link)) wl_list_remove(&m_xwayland_new_surface_listener.link);
     if (!wl_list_empty(&m_gamma_set_gamma_listener.link)) wl_list_remove(&m_gamma_set_gamma_listener.link);
     if (!wl_list_empty(&m_output_power_set_mode_listener.link)) wl_list_remove(&m_output_power_set_mode_listener.link);
     if (!wl_list_empty(&m_new_idle_inhibitor_listener.link)) wl_list_remove(&m_new_idle_inhibitor_listener.link);

@@ -120,7 +120,6 @@ void Config::set_defaults() {
     m_resize_on_border = true;
     m_border_grab_area = 6;
 
-    m_focus_follows_mouse = true;
     m_smart_gaps = false;
     m_allow_tearing = false;
     m_xwayland_force_zero_scaling = false;
@@ -1171,8 +1170,7 @@ void Config::parse_input_entry(const std::string& path_str, const std::string& t
                                const std::vector<SectionFrame>& stack, const std::string& key, const std::string& value,
                                std::vector<GestureBinding>& file_gestures, bool& has_gestures_in_file) {
     if (path_str == "input" || top_type == "input") {
-        if (key == "focus_follows_mouse") m_focus_follows_mouse = (value == "true" || value == "1" || value == "yes");
-        else if (key == "terminal") m_terminal = value;
+        if (key == "terminal") m_terminal = value;
     } else if (path_str == "input.keyboard" || (top_type == "keyboard" && is_in_path(stack, "input"))) {
         if (key == "layout") m_kb_layout = value;
         else if (key == "variant") m_kb_variant = value;
@@ -1825,7 +1823,6 @@ void Config::save() {
     file << "}\n\n";
 
     file << "input {\n";
-    file << "    focus_follows_mouse = " << (m_focus_follows_mouse ? "true" : "false") << "\n";
     file << "    terminal = " << m_terminal << "\n";
     file << "    keyboard {\n";
     file << "        layout = " << m_kb_layout << "\n";

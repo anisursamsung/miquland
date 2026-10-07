@@ -544,7 +544,57 @@ void InputManager::notify_view_destroyed(View* view) {
 }
 
 void InputManager::recheck_cursor_focus() {
-    process_cursor_motion(0);
+    if (m_server->is_locked()) return;
+
+    m_border_hover_view = nullptr;
+    m_border_hover_edges = 0;
+
+    double sx = 0.0, sy = 0.0;
+    struct wlr_surface* surface = nullptr;
+    View* view = m_server->view_at(m_cursor->x, m_cursor->y, &surface, &sx, &sy);
+
+    View* target_view = view;
+    if (target_view && target_view->has_child_dialogs()) {
+        View* top_dialog = target_view->get_top_dialog();
+        if (top_dialog) {
+            target_view = top_dialog;
+        }
+    }
+
+    if (surface) {
+        if (m_seat->pointer_state.focused_surface != surface) {
+            wlr_seat_pointer_notify_enter(m_seat, surface, sx, sy);
+            set_cursor_icon("default");
+        }
+        wlr_seat_pointer_notify_motion(m_seat, 0, sx, sy);
+    } else {
+        wlr_seat_pointer_notify_clear_focus(m_seat);
+        set_cursor_icon("default");
+
+        if (view && Config::get().is_resize_on_border_enabled() && !view->is_fullscreen() && !view->is_override_redirect()) {
+            int grab = std::max(Config::get().get_window_border_width(), Config::get().get_border_grab_area());
+            uint32_t edges = detect_border_edges(view, sx, sy, grab);
+            if (edges != 0) {
+                m_border_hover_view = view;
+                m_border_hover_edges = edges;
+                set_cursor_icon(edge_to_cursor_name(edges));
+            }
+        }
+    }
+
+    if (target_view && !target_view->is_override_redirect()) {
+        if (target_view != m_server->get_focused_view()) {
+            target_view->focus();
+        }
+    } else {
+        Workspace* active_ws = m_server->get_workspace_manager() ? m_server->get_workspace_manager()->get_active_workspace() : nullptr;
+        if (active_ws) {
+            View* best = m_server->get_workspace_manager()->find_best_focus_view(active_ws);
+            if (best && best != m_server->get_focused_view() && !best->is_override_redirect()) {
+                best->focus();
+            }
+        }
+    }
 }
 
 bool InputManager::handle_keybinding(uint32_t modifiers, xkb_keysym_t keysym) {
@@ -842,7 +892,7 @@ void InputManager::process_cursor_motion(uint32_t time) {
     bool has_grab = wlr_seat_pointer_has_grab(m_seat) || wlr_seat_keyboard_has_grab(m_seat);
     bool focused_has_popups = (m_server->get_focused_view() && m_server->get_focused_view()->has_popups());
 
-    if (Config::get().is_focus_follows_mouse_enabled() && !has_grab && !focused_has_popups) {
+    if (!has_grab && !focused_has_popups) {
         if (target_view && !target_view->is_override_redirect() && target_view != m_server->get_focused_view()) {
             target_view->focus();
         }
